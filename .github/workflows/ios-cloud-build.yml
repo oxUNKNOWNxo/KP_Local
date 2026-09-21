@@ -3,6 +3,9 @@ name: KoishiPro2 iOS cloud build
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/ios-cloud-build.yml'
 
 permissions:
   contents: read
@@ -12,10 +15,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  register:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Register workflow
+        run: echo 'GitHub Actions workflow registered.'
+
   build:
-    # On the canonical repository, only the repository owner may run this job.
-    # Fork owners can still run their own fork without affecting this repository.
-    if: github.actor == github.repository_owner
+    # Only manual dispatch by the repository owner may start the macOS build.
+    if: github.event_name == 'workflow_dispatch' && github.actor == github.repository_owner
     runs-on: macos-15
     timeout-minutes: 120
 
@@ -48,7 +57,6 @@ jobs:
         run: |
           set -euo pipefail
           UNITY="$UNITY_CLI_HOME/bin/unity"
-          # Suppress license metadata (serial/machine identifiers) from public logs.
           "$UNITY" license activate --personal --accept-eula --format json >/dev/null
           echo 'Unity Personal activation completed.'
 
