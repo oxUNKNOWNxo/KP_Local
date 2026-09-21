@@ -1,11 +1,7 @@
-# Refreshed after public-history reset so GitHub Actions re-indexes this workflow.
 name: KoishiPro2 iOS cloud build
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/ios-cloud-build.yml'
 
 permissions:
   contents: read
@@ -15,18 +11,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  register:
-    if: github.event_name == 'push'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Register workflow
-        run: echo 'GitHub Actions workflow registered.'
-
   build:
     # Only manual dispatch by the repository owner may start the macOS build.
     if: github.event_name == 'workflow_dispatch' && github.actor == github.repository_owner
     runs-on: macos-15
-    timeout-minutes: 120
+    timeout-minutes: 240
 
     env:
       UNITY_VERSION: 2021.3.45f1
@@ -101,6 +90,13 @@ jobs:
           echo "Source revision verified: $SOURCE_COMMIT"
           cat source/ProjectSettings/ProjectVersion.txt
 
+      - name: Restore Unity Library cache
+        id: library-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: source/Library
+          key: koishipro2-library-${{ runner.os }}-${{ runner.arch }}-${{ env.UNITY_VERSION }}-ios-${{ env.SOURCE_COMMIT }}-v2
+
       - name: Locate Unity Editor
         id: editor
         shell: bash
@@ -115,46 +111,110 @@ jobs:
           echo "path=$EDITOR" >> "$GITHUB_OUTPUT"
           echo 'Unity Editor located.'
 
-      - name: Import and compile Unity project
-        timeout-minutes: 30
+      - name: Import and compile Unity project for iOS
+        id: unity-import
+        timeout-minutes: 75
         shell: bash
         run: |
           set -euo pipefail
           EDITOR='${{ steps.editor.outputs.path }}'
           LOG="$RUNNER_TEMP/unity-import.log"
-          if ! "$EDITOR" \
+
+          safe_tail() {
+            tail -80 "$LOG" 2>/dev/null | sed -E '/[Ll]icen[sc]e|serial|machine.?id|access.?token|refresh.?token|oauth|services\.api\.unity\.com\/app-linking|Sign-in URL/d' || true
+          }
+
+          "$EDITOR" \
             -batchmode \
             -nographics \
             -silent-crashes \
             -accept-apiupdate \
+            -buildTarget iOS \
             -projectPath "$GITHUB_WORKSPACE/source" \
             -logFile "$LOG" \
-            -quit; then
-            echo 'Unity import failed. Showing a redacted tail of the log:'
-            tail -200 "$LOG" | sed -E '/[Ll]icen[sc]e|serial|machine.?id|access.?token|refresh.?token|oauth/d'
-            exit 1
+            -quit &
+          UNITY_PID=$!
+
+          (
+            while kill -0 "$UNITY_PID" 2>/dev/null; do
+              sleep 300
+              if kill -0 "$UNITY_PID" 2>/dev/null; then
+                echo '--- Unity iOS import progress (redacted tail) ---'
+                safe_tail
+              fi
+            done
+          ) &
+          MONITOR_PID=$!
+
+          set +e
+          wait "$UNITY_PID"
+          STATUS=$?
+          set -e
+          kill "$MONITOR_PID" 2>/dev/null || true
+          wait "$MONITOR_PID" 2>/dev/null || true
+
+          if [ "$STATUS" -ne 0 ]; then
+            echo "Unity iOS import failed with exit code $STATUS."
+            safe_tail
+            exit "$STATUS"
           fi
-          echo 'Unity import completed.'
+
+          echo 'Unity iOS-target import completed.'
+
+      - name: Save Unity Library cache
+        if: steps.unity-import.outcome == 'success' && steps.library-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: source/Library
+          key: koishipro2-library-${{ runner.os }}-${{ runner.arch }}-${{ env.UNITY_VERSION }}-ios-${{ env.SOURCE_COMMIT }}-v2
 
       - name: Export Unity iOS Xcode project
-        timeout-minutes: 45
+        timeout-minutes: 120
         shell: bash
         run: |
           set -euo pipefail
           EDITOR='${{ steps.editor.outputs.path }}'
           LOG="$RUNNER_TEMP/unity-build.log"
-          if ! "$EDITOR" \
+
+          safe_tail() {
+            tail -100 "$LOG" 2>/dev/null | sed -E '/[Ll]icen[sc]e|serial|machine.?id|access.?token|refresh.?token|oauth|services\.api\.unity\.com\/app-linking|Sign-in URL/d' || true
+          }
+
+          "$EDITOR" \
             -batchmode \
             -silent-crashes \
             -accept-apiupdate \
+            -buildTarget iOS \
             -projectPath "$GITHUB_WORKSPACE/source" \
             -logFile "$LOG" \
             -executeMethod BuildHelper.Build \
-            -quit; then
-            echo 'Unity iOS export failed. Showing a redacted tail of the log:'
-            tail -200 "$LOG" | sed -E '/[Ll]icen[sc]e|serial|machine.?id|access.?token|refresh.?token|oauth/d'
-            exit 1
+            -quit &
+          UNITY_PID=$!
+
+          (
+            while kill -0 "$UNITY_PID" 2>/dev/null; do
+              sleep 300
+              if kill -0 "$UNITY_PID" 2>/dev/null; then
+                echo '--- Unity iOS export progress (redacted tail) ---'
+                safe_tail
+              fi
+            done
+          ) &
+          MONITOR_PID=$!
+
+          set +e
+          wait "$UNITY_PID"
+          STATUS=$?
+          set -e
+          kill "$MONITOR_PID" 2>/dev/null || true
+          wait "$MONITOR_PID" 2>/dev/null || true
+
+          if [ "$STATUS" -ne 0 ]; then
+            echo "Unity iOS export failed with exit code $STATUS."
+            safe_tail
+            exit "$STATUS"
           fi
+
           test -d "$GITHUB_WORKSPACE/source/output/Unity-iPhone.xcodeproj"
           echo 'Unity iOS export completed.'
 
@@ -170,6 +230,7 @@ jobs:
             /usr/libexec/PlistBuddy -c 'Set :LSSupportsOpeningDocumentsInPlace true' Info.plist
 
       - name: Build unsigned iOS app with Xcode
+        timeout-minutes: 60
         shell: bash
         run: |
           set -euo pipefail
