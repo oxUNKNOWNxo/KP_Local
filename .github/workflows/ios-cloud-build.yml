@@ -17,7 +17,6 @@ concurrency:
 
 jobs:
   build:
-    # Manual runs and owner-authored workflow fixes may start the macOS build.
     if: github.actor == github.repository_owner && (github.event_name == 'workflow_dispatch' || github.event_name == 'push')
     runs-on: macos-15-intel
     timeout-minutes: 210
@@ -30,6 +29,11 @@ jobs:
       UNITY_CLI_HOME: /tmp/unity-cli
 
     steps:
+      - name: Checkout build control files
+        uses: actions/checkout@v4
+        with:
+          path: control
+
       - name: Show runner environment
         shell: bash
         run: |
@@ -102,6 +106,12 @@ jobs:
           test "$(git -C source rev-parse HEAD)" = "$SOURCE_COMMIT"
           echo "Source revision verified: $SOURCE_COMMIT"
           cat source/ProjectSettings/ProjectVersion.txt
+
+      - name: Apply KoishiPro2 iOS modifications
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 control/patches/apply_ios_mods.py source
 
       - name: Restore Unity Library cache
         id: library-cache
@@ -284,6 +294,10 @@ jobs:
             /usr/libexec/PlistBuddy -c 'Set :UIFileSharingEnabled true' Info.plist
           /usr/libexec/PlistBuddy -c 'Add :LSSupportsOpeningDocumentsInPlace bool true' Info.plist 2>/dev/null || \
             /usr/libexec/PlistBuddy -c 'Set :LSSupportsOpeningDocumentsInPlace true' Info.plist
+          cd "$GITHUB_WORKSPACE"
+          python3 control/patches/prepare_notch_compat.py source/output
+          echo '--- launch configuration after compatibility patch ---'
+          plutil -p source/output/Info.plist | grep -E 'UILaunch|UIRequiresFullScreen' || true
 
       - name: Build unsigned iOS app with Xcode
         timeout-minutes: 60
@@ -304,6 +318,7 @@ jobs:
             CODE_SIGN_IDENTITY='' \
             DEVELOPMENT_TEAM='' \
             ENABLE_BITCODE=NO \
+            ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME=LaunchImage \
             build
 
       - name: Package TrollStore IPA
@@ -312,6 +327,18 @@ jobs:
           set -euo pipefail
           APP=$(find "$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos" -maxdepth 1 -type d -name '*.app' -print -quit)
           test -n "$APP"
+
+          echo '--- final app launch configuration ---'
+          plutil -p "$APP/Info.plist" | grep -E 'UILaunch|UIRequiresFullScreen' || true
+          if /usr/libexec/PlistBuddy -c 'Print :UILaunchStoryboardName' "$APP/Info.plist" >/dev/null 2>&1; then
+            echo 'Unexpected iPhone base launch storyboard remains; refusing to package full-screen notch build.'
+            exit 1
+          fi
+          if /usr/libexec/PlistBuddy -c 'Print :UILaunchStoryboardName~iphone' "$APP/Info.plist" >/dev/null 2>&1; then
+            echo 'Unexpected iPhone-specific launch storyboard remains; refusing to package full-screen notch build.'
+            exit 1
+          fi
+
           rm -rf ipa
           mkdir -p ipa/Payload
           cp -R "$APP" ipa/Payload/
