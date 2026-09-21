@@ -12,16 +12,15 @@ permissions:
   contents: read
 
 concurrency:
-  group: koishipro2-source-inspection-cache
+  group: koishipro2-source-inspection-cache-arm
   cancel-in-progress: true
 
 jobs:
   inspect:
     if: github.actor == github.repository_owner && (github.event_name == 'workflow_dispatch' || github.event_name == 'push')
-    runs-on: macos-15-intel
+    runs-on: macos-15
     timeout-minutes: 20
     env:
-      UNITY_VERSION: 2021.3.45f1
       SOURCE_COMMIT: c1850e1120df6a5885692eadacad8ad114a3cf11
     steps:
       - name: Restore successful Unity Library cache
@@ -29,7 +28,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: source/Library
-          key: koishipro2-library-${{ runner.os }}-${{ runner.arch }}-${{ env.UNITY_VERSION }}-ios-${{ env.SOURCE_COMMIT }}-v3
+          key: koishipro2-library-macOS-X64-2021.3.45f1-ios-c1850e1120df6a5885692eadacad8ad114a3cf11-v3
 
       - name: Locate compiled game assembly
         shell: bash
