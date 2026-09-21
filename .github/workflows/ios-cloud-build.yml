@@ -77,18 +77,20 @@ jobs:
           set -euo pipefail
           python3 control/patches/apply_ios_mods.py source
 
-      - name: Verify KoishiPro2 DB protection patch
+      - name: Verify forced DB sync removal
         shell: bash
         run: |
           set -euo pipefail
           PROGRAM=$(grep -RIl --include='*.cs' 'UseBundledBasicData()' source/Assets | head -1)
           test -n "$PROGRAM"
           echo "Program source: $PROGRAM"
-          ! grep -q 'https://cdntx2.moecube.com/koishipro/content/cards.cdb' "$PROGRAM"
-          grep -q 'https://cdntx2.moecube.com/koishipro/content/lflist.conf' "$PROGRAM"
-          grep -q 'https://cdntx2.moecube.com/koishipro/content/strings.conf' "$PROGRAM"
           grep -q 'UseBundledBasicData();' "$PROGRAM"
-          echo 'DB protection patch validation passed.'
+          if grep -Eq '^[[:space:]]*RetryBasicDataUpdate\(\);[[:space:]]*$' "$PROGRAM"; then
+            echo 'Forced startup RetryBasicDataUpdate call is still present.'
+            exit 1
+          fi
+          grep -q 'https://cdntx2.moecube.com/koishipro/content/cards.cdb' "$PROGRAM"
+          echo 'Forced DB sync removal validation passed; manual Resource Update remains available.'
 
       - name: Install Unity CLI
         shell: bash
