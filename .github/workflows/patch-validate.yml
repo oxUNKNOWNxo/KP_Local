@@ -15,7 +15,7 @@ permissions:
 jobs:
   validate:
     if: github.actor == github.repository_owner && (github.event_name == 'workflow_dispatch' || github.event_name == 'push')
-    runs-on: macos-15
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
       SOURCE_REPO: https://code.moenext.com/hex/ygopro2.git
