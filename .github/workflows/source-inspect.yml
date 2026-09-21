@@ -11,10 +11,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: koishipro2-source-inspection
+  cancel-in-progress: true
+
 jobs:
   inspect:
     if: github.actor == github.repository_owner && (github.event_name == 'workflow_dispatch' || github.event_name == 'push')
-    runs-on: ubuntu-latest
+    runs-on: macos-15-intel
     timeout-minutes: 20
     env:
       SOURCE_REPO: https://code.moenext.com/hex/ygopro2.git
