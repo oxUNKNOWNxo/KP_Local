@@ -1,0 +1,206 @@
+name: KoishiPro2 iOS cloud build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: koishipro2-ios-build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    # On the canonical repository, only the repository owner may run this job.
+    # Fork owners can still run their own fork without affecting this repository.
+    if: github.actor == github.repository_owner
+    runs-on: macos-15
+    timeout-minutes: 120
+
+    env:
+      UNITY_VERSION: 2021.3.45f1
+      UNITY_CHANGESET: 0da89fac8e79
+      SOURCE_REPO: https://code.moenext.com/hex/ygopro2.git
+      SOURCE_COMMIT: c1850e1120df6a5885692eadacad8ad114a3cf11
+      UNITY_CLI_HOME: /tmp/unity-cli
+
+    steps:
+      - name: Install Unity CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL https://unity.com/install.sh | UNITY_CLI_CHANNEL=beta UNITY_CLI_HOME="$UNITY_CLI_HOME" bash >/dev/null
+          test -x "$UNITY_CLI_HOME/bin/unity"
+
+      - name: Sign in to Unity account
+        shell: bash
+        run: |
+          set -euo pipefail
+          UNITY="$UNITY_CLI_HOME/bin/unity"
+          echo 'Open the one-time Unity Sign-in URL printed below and complete sign-in.'
+          echo 'Do not share account credentials in the Actions log.'
+          "$UNITY" auth login --no-color
+
+      - name: Activate Unity Personal
+        shell: bash
+        run: |
+          set -euo pipefail
+          UNITY="$UNITY_CLI_HOME/bin/unity"
+          # Suppress license metadata (serial/machine identifiers) from public logs.
+          "$UNITY" license activate --personal --accept-eula --format json >/dev/null
+          echo 'Unity Personal activation completed.'
+
+      - name: Install Unity Editor and iOS Build Support
+        shell: bash
+        run: |
+          set -euo pipefail
+          UNITY="$UNITY_CLI_HOME/bin/unity"
+          "$UNITY" install "$UNITY_VERSION" \
+            --changeset "$UNITY_CHANGESET" \
+            --module ios \
+            --architecture arm64 \
+            --no-color >/dev/null
+          echo "Unity $UNITY_VERSION with iOS support installed."
+
+      - name: Fetch exact KoishiPro2 source revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf source
+          mkdir source
+          git -C source init -q
+          git -C source remote add origin "$SOURCE_REPO"
+          git -C source config http.version HTTP/1.1
+          git -C source config protocol.version 2
+
+          fetched=0
+          for attempt in 1 2 3 4 5; do
+            echo "Fetch attempt $attempt/5"
+            if git -C source fetch --quiet --no-tags --depth=1 origin "$SOURCE_COMMIT"; then
+              fetched=1
+              break
+            fi
+            if [ "$attempt" -lt 5 ]; then
+              sleep 5
+            fi
+          done
+
+          test "$fetched" -eq 1
+          git -C source checkout --quiet --detach FETCH_HEAD
+          test "$(git -C source rev-parse HEAD)" = "$SOURCE_COMMIT"
+          echo "Source revision verified: $SOURCE_COMMIT"
+          cat source/ProjectSettings/ProjectVersion.txt
+
+      - name: Locate Unity Editor
+        id: editor
+        shell: bash
+        run: |
+          set -euo pipefail
+          EDITOR="/Applications/Unity/Hub/Editor/$UNITY_VERSION/Unity.app/Contents/MacOS/Unity"
+          if [ ! -x "$EDITOR" ]; then
+            EDITOR=$(find /Applications "$HOME" -type f -path "*/$UNITY_VERSION/Unity.app/Contents/MacOS/Unity" -print -quit 2>/dev/null || true)
+          fi
+          test -n "$EDITOR"
+          test -x "$EDITOR"
+          echo "path=$EDITOR" >> "$GITHUB_OUTPUT"
+          echo 'Unity Editor located.'
+
+      - name: Import and compile Unity project
+        timeout-minutes: 30
+        shell: bash
+        run: |
+          set -euo pipefail
+          EDITOR='${{ steps.editor.outputs.path }}'
+          LOG="$RUNNER_TEMP/unity-import.log"
+          if ! "$EDITOR" \
+            -batchmode \
+            -nographics \
+            -silent-crashes \
+            -accept-apiupdate \
+            -projectPath "$GITHUB_WORKSPACE/source" \
+            -logFile "$LOG" \
+            -quit; then
+            echo 'Unity import failed. Showing a redacted tail of the log:'
+            tail -200 "$LOG" | sed -E '/[Ll]icen[sc]e|serial|machine.?id|access.?token|refresh.?token|oauth/d'
+            exit 1
+          fi
+          echo 'Unity import completed.'
+
+      - name: Export Unity iOS Xcode project
+        timeout-minutes: 45
+        shell: bash
+        run: |
+          set -euo pipefail
+          EDITOR='${{ steps.editor.outputs.path }}'
+          LOG="$RUNNER_TEMP/unity-build.log"
+          if ! "$EDITOR" \
+            -batchmode \
+            -silent-crashes \
+            -accept-apiupdate \
+            -projectPath "$GITHUB_WORKSPACE/source" \
+            -logFile "$LOG" \
+            -executeMethod BuildHelper.Build \
+            -quit; then
+            echo 'Unity iOS export failed. Showing a redacted tail of the log:'
+            tail -200 "$LOG" | sed -E '/[Ll]icen[sc]e|serial|machine.?id|access.?token|refresh.?token|oauth/d'
+            exit 1
+          fi
+          test -d "$GITHUB_WORKSPACE/source/output/Unity-iPhone.xcodeproj"
+          echo 'Unity iOS export completed.'
+
+      - name: Prepare generated Xcode project
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd source/output
+          sed -i '' 's/ENABLE_BITCODE = YES;/ENABLE_BITCODE = NO;/g' Unity-iPhone.xcodeproj/project.pbxproj || true
+          /usr/libexec/PlistBuddy -c 'Add :UIFileSharingEnabled bool true' Info.plist 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c 'Set :UIFileSharingEnabled true' Info.plist
+          /usr/libexec/PlistBuddy -c 'Add :LSSupportsOpeningDocumentsInPlace bool true' Info.plist 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c 'Set :LSSupportsOpeningDocumentsInPlace true' Info.plist
+
+      - name: Build unsigned iOS app with Xcode
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd source/output
+          xcodebuild \
+            -quiet \
+            -project Unity-iPhone.xcodeproj \
+            -scheme Unity-iPhone \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY='' \
+            DEVELOPMENT_TEAM='' \
+            ENABLE_BITCODE=NO \
+            build
+
+      - name: Package TrollStore IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP=$(find "$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos" -maxdepth 1 -type d -name '*.app' -print -quit)
+          test -n "$APP"
+          rm -rf ipa
+          mkdir -p ipa/Payload
+          cp -R "$APP" ipa/Payload/
+          cd ipa
+          /usr/bin/zip -qry ../KoishiPro2-unsigned.ipa Payload
+          cd ..
+          shasum -a 256 KoishiPro2-unsigned.ipa > KoishiPro2-unsigned.ipa.sha256
+          ls -lh KoishiPro2-unsigned.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: KoishiPro2-iOS-cloud-build
+          path: |
+            KoishiPro2-unsigned.ipa
+            KoishiPro2-unsigned.ipa.sha256
+          if-no-files-found: error
+          retention-days: 1
