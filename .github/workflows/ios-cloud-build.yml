@@ -81,8 +81,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          PROGRAM=$(grep -RIl --include='*.cs' 'UseBundledBasicData()' source/Assets | head -1)
-          test -n "$PROGRAM"
+          PROGRAM="source/Assets/SibylSystem/Program.cs"
+          test -f "$PROGRAM"
           echo "Program source: $PROGRAM"
           grep -q 'UseBundledBasicData();' "$PROGRAM"
           if grep -Eq '^[[:space:]]*RetryBasicDataUpdate\(\);[[:space:]]*$' "$PROGRAM"; then
