@@ -1,3 +1,4 @@
+# Refreshed after public-history reset so GitHub Actions re-indexes this workflow.
 name: KoishiPro2 iOS cloud build
 
 on:
