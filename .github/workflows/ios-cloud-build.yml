@@ -42,6 +42,54 @@ jobs:
           sw_vers
           system_profiler SPDisplaysDataType 2>/dev/null | sed -n '1,80p' || true
 
+      - name: Fetch exact KoishiPro2 source revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf source
+          mkdir source
+          git -C source init -q
+          git -C source remote add origin "$SOURCE_REPO"
+          git -C source config http.version HTTP/1.1
+          git -C source config protocol.version 2
+
+          fetched=0
+          for attempt in 1 2 3 4 5; do
+            echo "Fetch attempt $attempt/5"
+            if git -C source fetch --quiet --no-tags --depth=1 origin "$SOURCE_COMMIT"; then
+              fetched=1
+              break
+            fi
+            if [ "$attempt" -lt 5 ]; then
+              sleep 5
+            fi
+          done
+
+          test "$fetched" -eq 1
+          git -C source checkout --quiet --detach FETCH_HEAD
+          test "$(git -C source rev-parse HEAD)" = "$SOURCE_COMMIT"
+          echo "Source revision verified: $SOURCE_COMMIT"
+          cat source/ProjectSettings/ProjectVersion.txt
+
+      - name: Apply KoishiPro2 iOS modifications
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 control/patches/apply_ios_mods.py source
+
+      - name: Verify KoishiPro2 DB protection patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          PROGRAM=$(grep -RIl --include='*.cs' 'UseBundledBasicData()' source/Assets | head -1)
+          test -n "$PROGRAM"
+          echo "Program source: $PROGRAM"
+          ! grep -q 'https://cdntx2.moecube.com/koishipro/content/cards.cdb' "$PROGRAM"
+          grep -q 'https://cdntx2.moecube.com/koishipro/content/lflist.conf' "$PROGRAM"
+          grep -q 'https://cdntx2.moecube.com/koishipro/content/strings.conf' "$PROGRAM"
+          grep -q 'UseBundledBasicData();' "$PROGRAM"
+          echo 'DB protection patch validation passed.'
+
       - name: Install Unity CLI
         shell: bash
         run: |
@@ -77,41 +125,6 @@ jobs:
             --architecture x86_64 \
             --no-color >/dev/null
           echo "Unity $UNITY_VERSION x86_64 with iOS support installed."
-
-      - name: Fetch exact KoishiPro2 source revision
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -rf source
-          mkdir source
-          git -C source init -q
-          git -C source remote add origin "$SOURCE_REPO"
-          git -C source config http.version HTTP/1.1
-          git -C source config protocol.version 2
-
-          fetched=0
-          for attempt in 1 2 3 4 5; do
-            echo "Fetch attempt $attempt/5"
-            if git -C source fetch --quiet --no-tags --depth=1 origin "$SOURCE_COMMIT"; then
-              fetched=1
-              break
-            fi
-            if [ "$attempt" -lt 5 ]; then
-              sleep 5
-            fi
-          done
-
-          test "$fetched" -eq 1
-          git -C source checkout --quiet --detach FETCH_HEAD
-          test "$(git -C source rev-parse HEAD)" = "$SOURCE_COMMIT"
-          echo "Source revision verified: $SOURCE_COMMIT"
-          cat source/ProjectSettings/ProjectVersion.txt
-
-      - name: Apply KoishiPro2 iOS modifications
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 control/patches/apply_ios_mods.py source
 
       - name: Restore Unity Library cache
         id: library-cache
