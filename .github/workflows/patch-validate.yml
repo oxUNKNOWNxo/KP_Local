@@ -1,0 +1,68 @@
+name: KoishiPro2 patch validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'patches/apply_ios_mods.py'
+      - '.github/workflows/patch-validate.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    if: github.actor == github.repository_owner && (github.event_name == 'workflow_dispatch' || github.event_name == 'push')
+    runs-on: macos-15
+    timeout-minutes: 20
+    env:
+      SOURCE_REPO: https://code.moenext.com/hex/ygopro2.git
+      SOURCE_COMMIT: c1850e1120df6a5885692eadacad8ad114a3cf11
+    steps:
+      - name: Checkout patch
+        uses: actions/checkout@v4
+        with:
+          path: control
+
+      - name: Fetch exact KoishiPro2 source revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir source
+          git -C source init -q
+          git -C source remote add origin "$SOURCE_REPO"
+          git -C source config http.version HTTP/1.1
+          fetched=0
+          for attempt in 1 2 3 4 5; do
+            echo "Fetch attempt $attempt/5"
+            if git -C source fetch --quiet --no-tags --depth=1 origin "$SOURCE_COMMIT"; then
+              fetched=1
+              break
+            fi
+            sleep 5
+          done
+          test "$fetched" -eq 1
+          git -C source checkout --quiet --detach FETCH_HEAD
+          test "$(git -C source rev-parse HEAD)" = "$SOURCE_COMMIT"
+
+      - name: Apply iOS DB protection patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 control/patches/apply_ios_mods.py source
+
+      - name: Verify patched source
+        shell: bash
+        run: |
+          set -euo pipefail
+          PROGRAM=$(grep -RIl --include='*.cs' 'UseBundledBasicData()' source/Assets | head -1)
+          test -n "$PROGRAM"
+          echo "Program source: $PROGRAM"
+          grep -n 'InitializeBasicDataSyncState();' "$PROGRAM"
+          grep -n 'UseBundledBasicData();' "$PROGRAM"
+          ! grep -q 'https://cdntx2.moecube.com/koishipro/content/cards.cdb' "$PROGRAM"
+          grep -q 'https://cdntx2.moecube.com/koishipro/content/lflist.conf' "$PROGRAM"
+          grep -q 'https://cdntx2.moecube.com/koishipro/content/strings.conf' "$PROGRAM"
+          echo 'Patch validation passed.'
