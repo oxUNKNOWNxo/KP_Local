@@ -21,55 +21,48 @@ jobs:
     runs-on: macos-15-intel
     timeout-minutes: 20
     env:
-      SOURCE_REPO: https://code.moenext.com/hex/ygopro2.git
+      UNITY_VERSION: 2021.3.45f1
       SOURCE_COMMIT: c1850e1120df6a5885692eadacad8ad114a3cf11
     steps:
-      - name: Fetch exact KoishiPro2 source revision
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir source
-          git -C source init -q
-          git -C source remote add origin "$SOURCE_REPO"
-          git -C source config http.version HTTP/1.1
-          fetched=0
-          for attempt in 1 2 3 4 5; do
-            echo "Fetch attempt $attempt/5"
-            if git -C source fetch --quiet --no-tags --depth=1 origin "$SOURCE_COMMIT"; then
-              fetched=1
-              break
-            fi
-            sleep 5
-          done
-          test "$fetched" -eq 1
-          git -C source checkout --quiet --detach FETCH_HEAD
-          test "$(git -C source rev-parse HEAD)" = "$SOURCE_COMMIT"
+      - name: Restore successful Unity Library cache
+        id: library-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: source/Library
+          key: koishipro2-library-${{ runner.os }}-${{ runner.arch }}-${{ env.UNITY_VERSION }}-ios-${{ env.SOURCE_COMMIT }}-v3
 
-      - name: Build source inspection package
+      - name: Locate compiled game assembly
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p inspection/files
+          test '${{ steps.library-cache.outputs.cache-hit }}' = 'true'
+          DLL='source/Library/ScriptAssemblies/Assembly-CSharp.dll'
+          test -f "$DLL"
+          ls -lh "$DLL"
+          file "$DLL"
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Decompile Assembly-CSharp
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet tool install --global ilspycmd
+          export PATH="$PATH:$HOME/.dotnet/tools"
+          mkdir -p inspection/decompiled
+          ilspycmd -p -o inspection/decompiled source/Library/ScriptAssemblies/Assembly-CSharp.dll
+          cp source/Library/ScriptAssemblies/Assembly-CSharp.dll inspection/Assembly-CSharp.dll
 
           {
-            echo '=== CDB / DB / download / sync candidates ==='
-            grep -RniE --include='*.cs' --include='*.mm' --include='*.m' --include='*.h' --include='*.cpp' --include='*.json' --include='*.conf' \
-              'cards\.cdb|\.cdb|database|card.?data|download|sync|update|WWW|UnityWebRequest|HttpClient' source/Assets 2>/dev/null || true
+            echo '=== CDB / DB / basic-data sync candidates ==='
+            grep -RniE --include='*.cs' 'cards\.cdb|BasicData|ReloadGameDatabases|DownloadAndProcessFile|database|\.cdb|online.?sync' inspection/decompiled 2>/dev/null || true
             echo
-            echo '=== Safe area / resolution / notch / iOS candidates ==='
-            grep -RniE --include='*.cs' --include='*.mm' --include='*.m' --include='*.h' --include='*.cpp' \
-              'safe.?area|Screen\.safeArea|resolution|SetResolution|notch|iPhone|iOS|Screen\.width|Screen\.height|Display' source/Assets 2>/dev/null || true
+            echo '=== Safe area / notch / screen candidates ==='
+            grep -RniE --include='*.cs' 'Screen\.safeArea|safeArea|cutouts|notch|GetLeftScreenOffset|fixScreenProblems|fixALLcameras|SetResolution|Screen\.width|Screen\.height' inspection/decompiled 2>/dev/null || true
           } > inspection/search-report.txt
-
-          cd source
-          while IFS= read -r -d '' f; do
-            mkdir -p "../inspection/files/$(dirname "$f")"
-            cp "$f" "../inspection/files/$f"
-          done < <(find Assets ProjectSettings -type f \( \
-            -name '*.cs' -o -name '*.mm' -o -name '*.m' -o -name '*.h' -o -name '*.cpp' \
-            -o -name '*.plist' -o -name '*.json' -o -name '*.conf' -o -name '*.txt' \
-          \) -print0)
-          cd ..
 
           printf '%s\n' "$SOURCE_COMMIT" > inspection/SOURCE_COMMIT.txt
           zip -qry KoishiPro2-source-inspection.zip inspection
