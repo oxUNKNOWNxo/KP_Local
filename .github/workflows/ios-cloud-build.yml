@@ -2,20 +2,25 @@ name: KoishiPro2 iOS cloud build
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/ios-cloud-build.yml'
 
 permissions:
   contents: read
 
 concurrency:
   group: koishipro2-ios-build
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build:
-    # Only manual dispatch by the repository owner may start the macOS build.
-    if: github.event_name == 'workflow_dispatch' && github.actor == github.repository_owner
-    runs-on: macos-15
-    timeout-minutes: 240
+    # Manual runs and owner-authored workflow fixes may start the macOS build.
+    if: github.actor == github.repository_owner && (github.event_name == 'workflow_dispatch' || github.event_name == 'push')
+    runs-on: macos-15-intel
+    timeout-minutes: 210
 
     env:
       UNITY_VERSION: 2021.3.45f1
@@ -25,6 +30,14 @@ jobs:
       UNITY_CLI_HOME: /tmp/unity-cli
 
     steps:
+      - name: Show runner environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "runner arch: $(uname -m)"
+          sw_vers
+          system_profiler SPDisplaysDataType 2>/dev/null | sed -n '1,80p' || true
+
       - name: Install Unity CLI
         shell: bash
         run: |
@@ -57,9 +70,9 @@ jobs:
           "$UNITY" install "$UNITY_VERSION" \
             --changeset "$UNITY_CHANGESET" \
             --module ios \
-            --architecture arm64 \
+            --architecture x86_64 \
             --no-color >/dev/null
-          echo "Unity $UNITY_VERSION with iOS support installed."
+          echo "Unity $UNITY_VERSION x86_64 with iOS support installed."
 
       - name: Fetch exact KoishiPro2 source revision
         shell: bash
@@ -95,7 +108,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: source/Library
-          key: koishipro2-library-${{ runner.os }}-${{ runner.arch }}-${{ env.UNITY_VERSION }}-ios-${{ env.SOURCE_COMMIT }}-v2
+          key: koishipro2-library-${{ runner.os }}-${{ runner.arch }}-${{ env.UNITY_VERSION }}-ios-${{ env.SOURCE_COMMIT }}-v3
 
       - name: Locate Unity Editor
         id: editor
@@ -108,6 +121,7 @@ jobs:
           fi
           test -n "$EDITOR"
           test -x "$EDITOR"
+          file "$EDITOR"
           echo "path=$EDITOR" >> "$GITHUB_OUTPUT"
           echo 'Unity Editor located.'
 
@@ -166,18 +180,27 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: source/Library
-          key: koishipro2-library-${{ runner.os }}-${{ runner.arch }}-${{ env.UNITY_VERSION }}-ios-${{ env.SOURCE_COMMIT }}-v2
+          key: koishipro2-library-${{ runner.os }}-${{ runner.arch }}-${{ env.UNITY_VERSION }}-ios-${{ env.SOURCE_COMMIT }}-v3
 
       - name: Export Unity iOS Xcode project
-        timeout-minutes: 120
+        timeout-minutes: 75
         shell: bash
         run: |
           set -euo pipefail
           EDITOR='${{ steps.editor.outputs.path }}'
           LOG="$RUNNER_TEMP/unity-build.log"
+          STALL_FLAG="$RUNNER_TEMP/unity-export-stalled"
+          rm -f "$STALL_FLAG"
 
           safe_tail() {
-            tail -100 "$LOG" 2>/dev/null | sed -E '/[Ll]icen[sc]e|serial|machine.?id|access.?token|refresh.?token|oauth|services\.api\.unity\.com\/app-linking|Sign-in URL/d' || true
+            tail -120 "$LOG" 2>/dev/null | sed -E '/[Ll]icen[sc]e|serial|machine.?id|access.?token|refresh.?token|oauth|services\.api\.unity\.com\/app-linking|Sign-in URL/d' || true
+          }
+
+          show_processes() {
+            echo '--- Unity-related processes ---'
+            ps -axo pid,ppid,%cpu,%mem,etime,command | grep -E 'Unity|JobProcess|ShaderCompiler|il2cpp|bee_backend' | grep -v grep | head -80 || true
+            echo '--- output size ---'
+            du -sh "$GITHUB_WORKSPACE/source/output" 2>/dev/null || true
           }
 
           "$EDITOR" \
@@ -192,11 +215,38 @@ jobs:
           UNITY_PID=$!
 
           (
+            last_size=-1
+            unchanged=0
+            tick=0
             while kill -0 "$UNITY_PID" 2>/dev/null; do
-              sleep 300
-              if kill -0 "$UNITY_PID" 2>/dev/null; then
-                echo '--- Unity iOS export progress (redacted tail) ---'
+              sleep 60
+              kill -0 "$UNITY_PID" 2>/dev/null || break
+              size=$(wc -c < "$LOG" 2>/dev/null || echo 0)
+              if [ "$size" = "$last_size" ]; then
+                unchanged=$((unchanged + 1))
+              else
+                unchanged=0
+                last_size="$size"
+              fi
+              tick=$((tick + 1))
+
+              if [ $((tick % 5)) -eq 0 ]; then
+                echo "--- Unity iOS export progress: ${tick}m (redacted tail) ---"
                 safe_tail
+                show_processes
+              fi
+
+              if [ "$unchanged" -ge 10 ]; then
+                if tail -160 "$LOG" 2>/dev/null | grep -Eq 'Builtin Sky manager started|Starting cubemap convolution|GfxDevice renderer is null'; then
+                  echo 'Detected a 10-minute Unity log stall around SkyManager/cubemap processing.'
+                  safe_tail
+                  show_processes
+                  touch "$STALL_FLAG"
+                  kill -TERM "$UNITY_PID" 2>/dev/null || true
+                  sleep 10
+                  kill -KILL "$UNITY_PID" 2>/dev/null || true
+                  break
+                fi
               fi
             done
           ) &
@@ -209,9 +259,15 @@ jobs:
           kill "$MONITOR_PID" 2>/dev/null || true
           wait "$MONITOR_PID" 2>/dev/null || true
 
+          if [ -f "$STALL_FLAG" ]; then
+            echo 'Unity export was terminated after a confirmed SkyManager/cubemap log stall.'
+            exit 124
+          fi
+
           if [ "$STATUS" -ne 0 ]; then
             echo "Unity iOS export failed with exit code $STATUS."
             safe_tail
+            show_processes
             exit "$STATUS"
           fi
 
