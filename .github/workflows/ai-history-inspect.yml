@@ -1,0 +1,104 @@
+name: KoishiPro2 AI history inspection
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/ai-history-inspect.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: koishipro2-ai-history-inspection
+  cancel-in-progress: true
+
+jobs:
+  inspect:
+    if: github.actor == github.repository_owner && (github.event_name == 'workflow_dispatch' || github.event_name == 'push')
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      SOURCE_REPO: https://code.moenext.com/hex/ygopro2.git
+      SOURCE_COMMIT: c1850e1120df6a5885692eadacad8ad114a3cf11
+    steps:
+      - name: Fetch KoishiPro2 history
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf source inspection
+          git clone --filter=blob:none --no-checkout "$SOURCE_REPO" source
+          git -C source config http.version HTTP/1.1
+          git -C source checkout --detach "$SOURCE_COMMIT"
+          mkdir -p inspection
+          git -C source log --all --date=iso --pretty=format:'%H %ad %s' > inspection/git-log.txt
+
+      - name: Locate AI implementation history
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd source
+          AIR=$(find Assets -type f -name 'AIRoom.cs' -print -quit)
+          MENU=$(find Assets -type f -name 'Menu.cs' -print -quit)
+          printf '%s\n' "$AIR" > ../inspection/AIRoom-path.txt
+          printf '%s\n' "$MENU" > ../inspection/Menu-path.txt
+          test -n "$AIR"
+          test -n "$MENU"
+
+          {
+            echo '=== AIRoom file history ==='
+            git log --all --follow --date=iso --pretty=format:'%H %ad %s' -- "$AIR" || true
+            echo
+            echo '=== commits changing removed-local-AI marker ==='
+            git log --all -S'本地AI模式已移除' --date=iso --pretty=format:'%H %ad %s' -- "$AIR" "$MENU" || true
+            echo
+            echo '=== commits mentioning AIRoom/AI in patches ==='
+            git log --all -G'AIRoom|aiRoom|onClickAI|ai/ydk|Percy AI' --date=iso --pretty=format:'%H %ad %s' -- "$AIR" "$MENU" || true
+          } > ../inspection/ai-history.txt
+
+          # Save current source and every historical AIRoom revision reachable from the file history.
+          mkdir -p ../inspection/airoom-revisions
+          git show HEAD:"$AIR" > ../inspection/airoom-revisions/current-AIRoom.cs
+          git log --all --follow --format='%H' -- "$AIR" | while read -r sha; do
+            if git cat-file -e "$sha:$AIR" 2>/dev/null; then
+              git show "$sha:$AIR" > "../inspection/airoom-revisions/${sha}-AIRoom.cs" || true
+            fi
+          done
+
+          # Capture likely pre-removal snapshots and matching Menu files.
+          git log --all -S'本地AI模式已移除' --format='%H' -- "$AIR" "$MENU" | while read -r sha; do
+            parent="${sha}^"
+            if git rev-parse "$parent" >/dev/null 2>&1; then
+              if git cat-file -e "$parent:$AIR" 2>/dev/null; then
+                git show "$parent:$AIR" > "../inspection/pre-removal-${sha}-AIRoom.cs" || true
+              fi
+              if git cat-file -e "$parent:$MENU" 2>/dev/null; then
+                git show "$parent:$MENU" > "../inspection/pre-removal-${sha}-Menu.cs" || true
+              fi
+              git show --stat --oneline "$sha" > "../inspection/removal-${sha}-stat.txt" || true
+              git show --format=fuller --find-renames "$sha" -- "$AIR" "$MENU" > "../inspection/removal-${sha}-patch.txt" || true
+            fi
+          done
+
+          # Search historical tree names for local duel engine / WindBot / native host pieces.
+          {
+            echo '=== current AI/duel-related paths ==='
+            git ls-tree -r --name-only HEAD | grep -Ei '(^|/)(ai|windbot|ocgcore|ygopro|duel|server|bot)(/|\.|$)' || true
+            echo
+            echo '=== historical filenames containing windbot/ocgcore/server ==='
+            git log --all --name-only --pretty=format: | grep -Ei 'windbot|ocgcore|duelserver|ygopro.*server|server.*ygopro|ai/' | sort -u || true
+          } > ../inspection/engine-paths.txt
+
+          cd ..
+          zip -qry KoishiPro2-ai-history-inspection.zip inspection
+          ls -lh KoishiPro2-ai-history-inspection.zip
+
+      - name: Upload AI history inspection
+        uses: actions/upload-artifact@v4
+        with:
+          name: KoishiPro2-ai-history-inspection
+          path: KoishiPro2-ai-history-inspection.zip
+          if-no-files-found: error
+          retention-days: 1
