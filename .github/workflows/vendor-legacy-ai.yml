@@ -63,4 +63,6 @@ jobs:
             exit 0
           fi
           git commit -m 'Vendor exact pre-removal KoishiPro2 AI wrappers'
+          git fetch origin main
+          git rebase origin/main
           git push origin HEAD:main
