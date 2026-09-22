@@ -20,9 +20,9 @@ for required in (bootstrap_source, viewport_source):
 shutil.copyfile(bootstrap_source, bootstrap_target)
 shutil.copyfile(viewport_source, viewport_target)
 
-# Explicitly install the viewport from KoishiPro2's normal startup path. Keep
-# RuntimeInitializeOnLoadMethod as a second path, but do not depend on it under
-# iOS IL2CPP stripping/runtime initialization.
+# Install the viewport from KoishiPro2's normal startup path as well as the
+# RuntimeInitializeOnLoadMethod path. This avoids depending on IL2CPP runtime
+# initialization alone on iOS.
 program_path = assets / "SibylSystem" / "Program.cs"
 program = program_path.read_text(encoding="utf-8-sig")
 if "IPhone16x9Viewport.EnsureInstalled();" not in program:
@@ -86,19 +86,18 @@ precy = precy.replace(
 )
 precy_path.write_text(precy, encoding="utf-8")
 
-# Restore a usable AI entry in every live menu creation path. The prefabs do
-# contain ai_, but trans_menu hides an ancestor group named ai. The old patch
-# only SetActive(true)'d ai_ itself, which cannot override an inactive parent.
-# Also Menu.cs creates new_ui_menu in more than one code path, so re-apply the
-# wiring after every createWindow(new_ui_menu) call.
+# The current prefabs already contain ai_. In trans_menu, ai_ is active but an
+# ancestor group named ai is inactive. Enable that hidden branch and wire the
+# restored handler. Only the first createWindow(new_ui_menu) is Menu.initialize;
+# a later call in the same source file belongs to another class/context, so it
+# must not receive a call to this private Menu helper.
 menu_path = assets / "SibylSystem" / "Menu" / "Menu.cs"
 menu = menu_path.read_text(encoding="utf-8-sig")
 create_anchor = "        createWindow(Program.I().new_ui_menu);\n"
-create_count = menu.count(create_anchor)
-if create_count == 0:
-    raise SystemExit("Could not locate any main menu createWindow calls")
+if create_anchor not in menu:
+    raise SystemExit("Could not locate Menu.initialize main-menu createWindow call")
 if "EnableAiMenuEntry();" not in menu:
-    menu = menu.replace(create_anchor, create_anchor + "        EnableAiMenuEntry();\n")
+    menu = menu.replace(create_anchor, create_anchor + "        EnableAiMenuEntry();\n", 1)
 
 helper_anchor = "    private void CreateSuperPreMenuItem()\n"
 if "private void EnableAiMenuEntry()" not in menu:
@@ -127,9 +126,6 @@ if "private void EnableAiMenuEntry()" not in menu:
             }
         }
 
-        // Some menu variants are instantiated outside this servant's direct
-        // transform tree. Active scene lookup is only a fallback; inactive
-        // descendants are already covered by GetComponentsInChildren(true).
         if (aiEntry == null)
         {
             GameObject activeAi = GameObject.Find("ai_");
@@ -175,8 +171,6 @@ if "private void EnableAiMenuEntry()" not in menu:
 
         ActivateAiMenuHierarchy(aiEntry);
 
-        // Register against the actual parent as well as the normal Menu root.
-        // This covers menu prefabs instantiated under a separate window root.
         if (aiEntry.parent != null)
         {
             UIHelper.registEvent(aiEntry.parent.gameObject, "ai_", onClickAI);
@@ -192,11 +186,6 @@ if "private void EnableAiMenuEntry()" not in menu:
         bool activatedHiddenBranch = false;
         int depth = 0;
 
-        // ai_ itself is active in current prefabs, while trans_menu's ancestor
-        // group named ai is inactive. Walk upward through that hidden branch
-        // until reaching the first already-active ancestor above it (or the
-        // Menu root). This exposes the AI branch without enabling unrelated
-        // hidden menu branches.
         while (cursor != null && depth < 12)
         {
             if (!cursor.gameObject.activeSelf)
@@ -305,7 +294,7 @@ print(f"  - installed {viewport_target}")
 print("  - explicitly installed 16:9 viewport from Program startup")
 print("  - made UTF-8 native paths NUL-terminated and byte-safe")
 print("  - enabled first-use bundled AI data bootstrap")
-print(f"  - restored/wired AI menu entry after {create_count} menu creation path(s)")
+print("  - restored/wired AI menu entry in Menu.initialize only")
 print("  - activates hidden AI ancestor branch, with single_ clone fallback")
 print("  - installed centred 16:9 runtime viewport for extra-wide iPhones")
 print("  - replaced obsolete non-ASCII filename warning")
