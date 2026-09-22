@@ -39,7 +39,6 @@ jobs:
           CORE="$GITHUB_WORKSPACE/source/AI_core_vs2017solution/ocgcore"
           python3 - <<'PY'
           from pathlib import Path
-
           h = Path('source/AI_core_vs2017solution/ocgcore/ocgapi.h')
           s = h.read_text(encoding='utf-8-sig')
           old = '#define WIN32\n#include "common.h"\n#ifdef WIN32\n#include <windows.h>\n#define DECL_DLLEXPORT __declspec(dllexport)\n#else\n#define DECL_DLLEXPORT\n#endif'
@@ -47,39 +46,13 @@ jobs:
           if old not in s:
               raise SystemExit('Expected Windows-only export block not found')
           h.write_text(s.replace(old, new, 1), encoding='utf-8')
-
           los = Path('source/AI_core_vs2017solution/ocgcore/loslib.c')
           s = los.read_text(encoding='utf-8-sig')
-          old = '''static int os_execute (lua_State *L) {
-  const char *cmd = luaL_optstring(L, 1, NULL);
-  int stat = system(cmd);
-  if (cmd != NULL)
-    return luaL_execresult(L, stat);
-  else {
-    lua_pushboolean(L, stat);  /* true if there is a shell */
-    return 1;
-  }
-}'''
-          new = '''static int os_execute (lua_State *L) {
-#if defined(__APPLE__) && defined(__ENVIRONMENT_IPHONE_OS_VERSION_MIN_REQUIRED__)
-  (void)L;
-  lua_pushnil(L);
-  lua_pushliteral(L, "os.execute is unavailable on iOS");
-  return 2;
-#else
-  const char *cmd = luaL_optstring(L, 1, NULL);
-  int stat = system(cmd);
-  if (cmd != NULL)
-    return luaL_execresult(L, stat);
-  else {
-    lua_pushboolean(L, stat);  /* true if there is a shell */
-    return 1;
-  }
-#endif
-}'''
-          if old not in s:
-              raise SystemExit('Expected Lua os_execute implementation not found')
-          los.write_text(s.replace(old, new, 1), encoding='utf-8')
+          marker = 'static int os_execute (lua_State *L) {'
+          start = s.index(marker)
+          end = s.index('\n}\n', start) + 3
+          replacement = 'static int os_execute (lua_State *L) {\n#if defined(__APPLE__) && defined(__ENVIRONMENT_IPHONE_OS_VERSION_MIN_REQUIRED__)\n  (void)L;\n  lua_pushnil(L);\n  lua_pushliteral(L, "os.execute is unavailable on iOS");\n  return 2;\n#else\n  const char *cmd = luaL_optstring(L, 1, NULL);\n  int stat = system(cmd);\n  if (cmd != NULL)\n    return luaL_execresult(L, stat);\n  else {\n    lua_pushboolean(L, stat);\n    return 1;\n  }\n#endif\n}\n'
+          los.write_text(s[:start] + replacement + s[end:], encoding='utf-8')
           PY
           {
             echo '=== ocgapi portability ==='
@@ -99,27 +72,19 @@ jobs:
           CLANGXX="$(xcrun --sdk iphoneos --find clang++)"
           AR="$(xcrun --sdk iphoneos --find ar)"
           mkdir -p probe/obj
-
           echo "SDKROOT=$SDKROOT" | tee probe/build-info.txt
           "$CLANG" --version >> probe/build-info.txt
           find "$CORE" -maxdepth 1 -type f \( -name '*.cpp' -o -name '*.c' \) -print | sort > probe/sources.txt
           cat probe/sources.txt
-
           COMMON=( -arch arm64 -isysroot "$SDKROOT" -miphoneos-version-min=13.0 -O2 -fPIC -fvisibility=hidden -I"$CORE" )
-
           while IFS= read -r src; do
             base="$(basename "$src")"
             obj="probe/obj/${base%.*}.o"
             case "$src" in
-              *.cpp)
-                "$CLANGXX" "${COMMON[@]}" -std=gnu++11 -Wno-deprecated-declarations -c "$src" -o "$obj"
-                ;;
-              *.c)
-                "$CLANG" "${COMMON[@]}" -std=gnu99 -Wno-deprecated-declarations -c "$src" -o "$obj"
-                ;;
+              *.cpp) "$CLANGXX" "${COMMON[@]}" -std=gnu++11 -Wno-deprecated-declarations -c "$src" -o "$obj" ;;
+              *.c) "$CLANG" "${COMMON[@]}" -std=gnu99 -Wno-deprecated-declarations -c "$src" -o "$obj" ;;
             esac
           done < probe/sources.txt
-
           "$AR" rcs probe/libocgcore.a probe/obj/*.o
           file probe/libocgcore.a | tee -a probe/build-info.txt
           xcrun nm -gU probe/libocgcore.a | grep -E '(_create_duel|_process|_set_response|_query_|_set_chat_handler|_preload_script)' | head -160 | tee probe/exported-symbols.txt
