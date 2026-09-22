@@ -1,0 +1,77 @@
+name: KoishiPro2 AI core recovery
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/ai-core-recover.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  recover:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      SOURCE_REPO: https://code.moenext.com/hex/ygopro2.git
+      REMOVAL_COMMIT: 1cd5d12ad7b888b8774da7d67c8dba9898a108ee
+    steps:
+      - name: Fetch removal commit and parent
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf source recovered
+          mkdir source recovered
+          git -C source init -q
+          git -C source remote add origin "$SOURCE_REPO"
+          git -C source config http.version HTTP/1.1
+          git -C source fetch --quiet --no-tags --depth=2 origin "$REMOVAL_COMMIT"
+          git -C source checkout --quiet --detach FETCH_HEAD^
+          git -C source rev-parse HEAD | tee recovered/PRE_REMOVAL_COMMIT.txt
+
+      - name: Collect removed AI wrapper and engine sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p recovered/Assets/SibylSystem recovered/engine
+          cp source/Assets/SibylSystem/coreWrapper.cs recovered/Assets/SibylSystem/
+          cp source/Assets/SibylSystem/precy.cs recovered/Assets/SibylSystem/
+          cp source/Assets/SibylSystem/Room/AIRoom.cs recovered/Assets/SibylSystem/
+          cp source/Assets/SibylSystem/Menu/Menu.cs recovered/Assets/SibylSystem/
+
+          if [ -d source/AI_core_vs2017solution ]; then
+            rsync -a \
+              --exclude bin \
+              --exclude build \
+              --exclude '*.sln' \
+              --exclude '*.vcxproj.user' \
+              source/AI_core_vs2017solution/ recovered/engine/AI_core_vs2017solution/
+          fi
+
+          {
+            echo '=== wrapper native imports ==='
+            grep -RniE 'DllImport|ocgcore|PrecyOcg|create_duel|process|set_response|query_' recovered/Assets/SibylSystem/*.cs || true
+            echo
+            echo '=== engine build files ==='
+            find recovered/engine -maxdepth 4 -type f \( -name 'premake5.lua' -o -name 'CMakeLists.txt' -o -name 'Makefile' -o -name '*.make' -o -name '*.lua' \) -print | sort || true
+            echo
+            echo '=== historical native libraries ==='
+            find source/Assets/Plugins -type f | grep -Ei 'ocgcore|libocg' || true
+            echo
+            echo '=== AI content paths ==='
+            find source -type f | grep -Ei '/ai/.*\.(lua|ydk)$|/deck/.*\.ydk$' | head -400 || true
+          } > recovered/recovery-report.txt
+
+          zip -qry KoishiPro2-ai-core-recovery.zip recovered
+          ls -lh KoishiPro2-ai-core-recovery.zip
+
+      - name: Upload recovery package
+        uses: actions/upload-artifact@v4
+        with:
+          name: KoishiPro2-ai-core-recovery
+          path: KoishiPro2-ai-core-recovery.zip
+          if-no-files-found: error
+          retention-days: 1
