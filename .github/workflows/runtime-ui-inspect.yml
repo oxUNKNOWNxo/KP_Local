@@ -42,7 +42,6 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-          import re
 
           root = Path('source/Assets')
           out = Path('runtime-ui-report.txt')
@@ -64,36 +63,38 @@ jobs:
               if any(k in l for k in ['new_ui_menu', 'new_ui_aiRoom', 'aiRoom', 'new_main_menu', 'trans_menu']):
                   add(f'{i}: {l}')
 
-          add('\n=== Source references to main menu prefab names ===')
-          for path in root.rglob('*.cs'):
-              try: t=path.read_text(encoding='utf-8-sig', errors='replace')
-              except: continue
-              for i,l in enumerate(t.splitlines(),1):
-                  if any(k in l for k in ['new_main_menu', 'new_main_menuR', 'trans_menu']):
-                      add(f'{path}:{i}: {l}')
-
-          add('\n=== ai_ GameObjects in YAML assets ===')
+          add('\n=== ai_ and single_ GameObjects in YAML assets ===')
           for path in list(root.rglob('*.prefab')) + list(root.rglob('*.unity')) + list(root.rglob('*.asset')):
               try: raw=path.read_text(encoding='utf-8-sig', errors='replace')
               except: continue
               rows=raw.splitlines()
               for idx,row in enumerate(rows):
-                  if row.strip() == 'm_Name: ai_':
-                      start=max(0, idx-18); end=min(len(rows), idx+42)
-                      add(f'--- {path} lines {start+1}-{end} ---')
+                  if row.strip() in ('m_Name: ai_', 'm_Name: single_'):
+                      start=max(0, idx-28); end=min(len(rows), idx+70)
+                      add(f'--- {path} lines {start+1}-{end} / {row.strip()} ---')
                       for j in range(start,end): add(f'{j+1}: {rows[j]}')
 
-          add('\n=== All code that disables/filters ai_ ===')
+          add('\n=== single-related labels/text around menu assets ===')
+          for path in list(root.rglob('*.prefab')):
+              try: raw=path.read_text(encoding='utf-8-sig', errors='replace')
+              except: continue
+              if 'single_' not in raw:
+                  continue
+              rows=raw.splitlines()
+              for i,row in enumerate(rows):
+                  if row.strip() == 'm_Name: single_':
+                      lo=max(0,i-120); hi=min(len(rows),i+180)
+                      for j in range(lo,hi):
+                          if any(k in rows[j] for k in ['m_Name:', 'mText:', 'm_Text:', 'm_Father:', 'm_Children:', 'm_IsActive:', 'm_LocalPosition:']):
+                              add(f'{path}:{j+1}: {rows[j]}')
+
+          add('\n=== All code that references AI/single entry ===')
           for path in root.rglob('*.cs'):
               try: t=path.read_text(encoding='utf-8-sig', errors='replace')
               except: continue
               for i,l in enumerate(t.splitlines(),1):
-                  if 'ai_' in l or 'onClickAI' in l:
+                  if 'ai_' in l or 'onClickAI' in l or 'single_' in l or 'onClickPizzle' in l:
                       add(f'{path}:{i}: {l}')
-
-          add('\n=== Build scenes ===')
-          bs = Path('source/ProjectSettings/EditorBuildSettings.asset')
-          if bs.exists(): add(bs.read_text(encoding='utf-8-sig', errors='replace'))
 
           out.write_text('\n'.join(lines)+'\n', encoding='utf-8')
           print(out.read_text(encoding='utf-8'))
@@ -113,7 +114,7 @@ jobs:
               Assets/ArtSystem/MainMenu/new_main_menuR.prefab \
               Assets/transUI/prefab/trans_menu.prefab; do
               echo "===== $f =====" | tee -a pre-removal-report.txt
-              git -C source show "$PRE:$f" 2>/dev/null | grep -n -B18 -A40 -E 'm_Name: ai_|onClickAI|new_ui_menu|new_ui_aiRoom|aiRoom' | tee -a pre-removal-report.txt || true
+              git -C source show "$PRE:$f" 2>/dev/null | grep -n -B28 -A70 -E 'm_Name: ai_|m_Name: single_|onClickAI|onClickPizzle|new_ui_menu|new_ui_aiRoom|aiRoom' | tee -a pre-removal-report.txt || true
             done
           fi
 
