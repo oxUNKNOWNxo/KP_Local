@@ -20,7 +20,7 @@ for required in (bootstrap_source, viewport_source):
 shutil.copyfile(bootstrap_source, bootstrap_target)
 shutil.copyfile(viewport_source, viewport_target)
 
-# Explicitly install the viewport from KoishiPro2's normal startup path.  Keep
+# Explicitly install the viewport from KoishiPro2's normal startup path. Keep
 # RuntimeInitializeOnLoadMethod as a second path, but do not depend on it under
 # iOS IL2CPP stripping/runtime initialization.
 program_path = assets / "SibylSystem" / "Program.cs"
@@ -86,18 +86,19 @@ precy = precy.replace(
 )
 precy_path.write_text(precy, encoding="utf-8")
 
-# Restore a usable AI entry in the live menu.  Prefer the historical ai_ entry
-# when it exists, but do not assume the current prefab still contains it: if it
-# is absent, clone the visible single_ entry, rename it to ai_, relabel it, and
-# wire it directly to onClickAI.  This removes the prefab-history dependency
-# that made the previous visibility-only patch a no-op on some menu variants.
+# Restore a usable AI entry in every live menu creation path. The prefabs do
+# contain ai_, but trans_menu hides an ancestor group named ai. The old patch
+# only SetActive(true)'d ai_ itself, which cannot override an inactive parent.
+# Also Menu.cs creates new_ui_menu in more than one code path, so re-apply the
+# wiring after every createWindow(new_ui_menu) call.
 menu_path = assets / "SibylSystem" / "Menu" / "Menu.cs"
 menu = menu_path.read_text(encoding="utf-8-sig")
 create_anchor = "        createWindow(Program.I().new_ui_menu);\n"
+create_count = menu.count(create_anchor)
+if create_count == 0:
+    raise SystemExit("Could not locate any main menu createWindow calls")
 if "EnableAiMenuEntry();" not in menu:
-    if create_anchor not in menu:
-        raise SystemExit("Could not locate main menu createWindow call")
-    menu = menu.replace(create_anchor, create_anchor + "        EnableAiMenuEntry();\n", 1)
+    menu = menu.replace(create_anchor, create_anchor + "        EnableAiMenuEntry();\n")
 
 helper_anchor = "    private void CreateSuperPreMenuItem()\n"
 if "private void EnableAiMenuEntry()" not in menu:
@@ -127,8 +128,8 @@ if "private void EnableAiMenuEntry()" not in menu:
         }
 
         // Some menu variants are instantiated outside this servant's direct
-        // transform tree.  The visible single_ object is active, so use the
-        // scene lookup as a safe fallback.
+        // transform tree. Active scene lookup is only a fallback; inactive
+        // descendants are already covered by GetComponentsInChildren(true).
         if (aiEntry == null)
         {
             GameObject activeAi = GameObject.Find("ai_");
@@ -172,7 +173,7 @@ if "private void EnableAiMenuEntry()" not in menu:
             return;
         }
 
-        aiEntry.gameObject.SetActive(true);
+        ActivateAiMenuHierarchy(aiEntry);
 
         // Register against the actual parent as well as the normal Menu root.
         // This covers menu prefabs instantiated under a separate window root.
@@ -182,7 +183,43 @@ if "private void EnableAiMenuEntry()" not in menu:
         }
         UIHelper.registEvent(gameObject, "ai_", onClickAI);
 
-        UnityEngine.Debug.Log("[OfflineAI] AI menu entry ready. cloned=" + cloned + " path=" + aiEntry.name);
+        UnityEngine.Debug.Log("[OfflineAI] AI menu entry ready. cloned=" + cloned + " activeInHierarchy=" + aiEntry.gameObject.activeInHierarchy);
+    }
+
+    private void ActivateAiMenuHierarchy(Transform entry)
+    {
+        Transform cursor = entry;
+        bool activatedHiddenBranch = false;
+        int depth = 0;
+
+        // ai_ itself is active in current prefabs, while trans_menu's ancestor
+        // group named ai is inactive. Walk upward through that hidden branch
+        // until reaching the first already-active ancestor above it (or the
+        // Menu root). This exposes the AI branch without enabling unrelated
+        // hidden menu branches.
+        while (cursor != null && depth < 12)
+        {
+            if (!cursor.gameObject.activeSelf)
+            {
+                cursor.gameObject.SetActive(true);
+                activatedHiddenBranch = true;
+                UnityEngine.Debug.Log("[OfflineAI] Activated hidden AI ancestor: " + cursor.name);
+            }
+            else if (activatedHiddenBranch && cursor != entry)
+            {
+                break;
+            }
+
+            if (cursor == gameObject.transform)
+            {
+                break;
+            }
+
+            cursor = cursor.parent;
+            depth++;
+        }
+
+        entry.gameObject.SetActive(true);
     }
 
     private void SetAiMenuLabel(GameObject root)
@@ -268,6 +305,7 @@ print(f"  - installed {viewport_target}")
 print("  - explicitly installed 16:9 viewport from Program startup")
 print("  - made UTF-8 native paths NUL-terminated and byte-safe")
 print("  - enabled first-use bundled AI data bootstrap")
-print("  - restored/wired AI menu entry with single_ clone fallback")
+print(f"  - restored/wired AI menu entry after {create_count} menu creation path(s)")
+print("  - activates hidden AI ancestor branch, with single_ clone fallback")
 print("  - installed centred 16:9 runtime viewport for extra-wide iPhones")
 print("  - replaced obsolete non-ASCII filename warning")
