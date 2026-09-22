@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - native-ui-fix
     paths:
       - '.github/workflows/ai-integration-validate.yml'
       - 'patches/apply_ios_mods.py'
@@ -18,7 +19,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: koishipro2-ai-integration-validation
+  group: koishipro2-ai-integration-validation-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
