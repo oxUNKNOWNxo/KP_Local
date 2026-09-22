@@ -23,13 +23,18 @@ test -f "$WORK/scripts/AI/decks/Blackwing.lua"
 test -f "$WORK/scripts/AI/decks/Shaddoll.lua"
 test -f "$WORK/scripts/LICENSE.md"
 
-mapfile -t DATA_ZIPS < <(find "$SOURCE_ROOT/Assets" -type f -name 'ygopro2-data.zip' -print)
-if [ "${#DATA_ZIPS[@]}" -ne 1 ]; then
-  echo "Expected exactly one ygopro2-data.zip under Assets; found ${#DATA_ZIPS[@]}" >&2
-  printf '%s\n' "${DATA_ZIPS[@]}" >&2
+# macOS ships Bash 3.2, so avoid Bash 4-only mapfile/readarray.
+DATA_LIST="$WORK/ygopro2-data-zips.txt"
+find "$SOURCE_ROOT/Assets" -type f -name 'ygopro2-data.zip' -print > "$DATA_LIST"
+DATA_COUNT=$(awk 'END { print NR + 0 }' "$DATA_LIST")
+if [ "$DATA_COUNT" -ne 1 ]; then
+  echo "Expected exactly one ygopro2-data.zip under Assets; found $DATA_COUNT" >&2
+  cat "$DATA_LIST" >&2
   exit 1
 fi
-DATA_ZIP="${DATA_ZIPS[0]}"
+DATA_ZIP=$(sed -n '1p' "$DATA_LIST")
+test -n "$DATA_ZIP"
+
 OUT_DIR="$SOURCE_ROOT/Assets/StreamingAssets"
 OUT_ZIP="$OUT_DIR/koishi-ai-pack.zip"
 mkdir -p "$OUT_DIR"
