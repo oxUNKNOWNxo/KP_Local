@@ -7,6 +7,13 @@ if [ "$#" -ne 1 ]; then
 fi
 
 SOURCE_ROOT="$(cd "$1" && pwd)"
+PATCH_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# finalize_offline_ai.py has already restored the managed AI sources when this
+# production pack step runs. Apply device/runtime fixes now so they are compiled
+# by Unity in the same build.
+python3 "$PATCH_DIR/apply_ai_runtime_fixes.py" "$SOURCE_ROOT"
+
 AI_REPO='https://github.com/Snarkie/YGOProAIScript.git'
 AI_COMMIT='1f57db863fb9b5a46e5fe17b7285bde82032e6e4'
 CARD_REPO='https://github.com/Fluorohydride/ygopro-scripts.git'
