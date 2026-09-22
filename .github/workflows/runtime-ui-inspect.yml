@@ -1,3 +1,4 @@
+# inspection trigger: runtime wiring verification
 name: KoishiPro2 runtime UI inspection
 
 on:
