@@ -28,6 +28,7 @@ jobs:
       SOURCE_REPO: https://code.moenext.com/hex/ygopro2.git
       SOURCE_COMMIT: c1850e1120df6a5885692eadacad8ad114a3cf11
       UNITY_CLI_HOME: /tmp/unity-cli
+      UNITY_CACHE_SCHEMA: v4
 
     steps:
       - name: Checkout build control files
@@ -181,7 +182,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: source/Library
-          key: koishipro2-library-${{ runner.os }}-${{ runner.arch }}-${{ env.UNITY_VERSION }}-ios-${{ env.SOURCE_COMMIT }}-${{ steps.patch-fingerprint.outputs.hash }}-v4
+          key: koishipro2-library-${{ runner.os }}-${{ runner.arch }}-${{ env.UNITY_VERSION }}-ios-${{ env.SOURCE_COMMIT }}-${{ steps.patch-fingerprint.outputs.hash }}-${{ env.UNITY_CACHE_SCHEMA }}
 
       - name: Locate Unity Editor
         id: editor
@@ -253,7 +254,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: source/Library
-          key: koishipro2-library-${{ runner.os }}-${{ runner.arch }}-${{ env.UNITY_VERSION }}-ios-${{ env.SOURCE_COMMIT }}-${{ steps.patch-fingerprint.outputs.hash }}-v4
+          key: koishipro2-library-${{ runner.os }}-${{ runner.arch }}-${{ env.UNITY_VERSION }}-ios-${{ env.SOURCE_COMMIT }}-${{ steps.patch-fingerprint.outputs.hash }}-${{ env.UNITY_CACHE_SCHEMA }}
 
       - name: Export Unity iOS Xcode project
         timeout-minutes: 75
