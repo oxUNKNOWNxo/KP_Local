@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from pathlib import Path
 import re
+import shutil
 import sys
 
 root = Path(sys.argv[1] if len(sys.argv) > 1 else "source")
@@ -8,6 +9,9 @@ assets = root / "Assets"
 if not assets.is_dir():
     raise SystemExit(f"Assets directory not found: {assets}")
 
+# ---------------------------------------------------------------------------
+# Keep the user's local/basic data on normal startup.
+# ---------------------------------------------------------------------------
 candidates = []
 for path in assets.rglob("*.cs"):
     try:
@@ -27,14 +31,7 @@ if len(candidates) != 1:
         f"{[str(p) for p, _ in candidates]}"
     )
 
-path, text = candidates[0]
-
-# Disable only the automatic basic-data synchronization performed at game
-# startup. Do not modify the explicit Resource Update path: it remains
-# available when the user intentionally invokes it.
-#
-# Do not depend on the exact declaration of gameStart(). The original C# may
-# omit an explicit 'private' modifier although a decompiler later displays it.
+program_path, text = candidates[0]
 startup_matches = list(
     re.finditer(r"(?m)^(?P<indent>[ \t]*)RetryBasicDataUpdate\(\);[ \t]*$", text)
 )
@@ -50,13 +47,150 @@ startup_replacement = (
     f"{indent}UseBundledBasicData();"
 )
 text = text[: m.start()] + startup_replacement + text[m.end() :]
-
 if re.search(r"(?m)^[ \t]*RetryBasicDataUpdate\(\);[ \t]*$", text):
     raise SystemExit("Startup RetryBasicDataUpdate call is still present after patch")
-if "UseBundledBasicData();" not in text:
-    raise SystemExit("UseBundledBasicData startup path was not installed")
-
-path.write_text(text, encoding="utf-8")
-print(f"Patched: {path}")
+program_path.write_text(text, encoding="utf-8")
+print(f"Patched: {program_path}")
 print("  - disabled forced basic-data sync at startup")
 print("  - left explicit/manual Resource Update behavior unchanged")
+
+# ---------------------------------------------------------------------------
+# Restore the last upstream in-process AI implementation removed by
+# 1cd5d12ad7b888b8774da7d67c8dba9898a108ee (parent bd251b8...).
+# The exact recovered sources are vendored next to this patch script.
+# ---------------------------------------------------------------------------
+patch_root = Path(__file__).resolve().parent
+legacy = patch_root / "ai" / "legacy"
+required_legacy = [legacy / "coreWrapper.cs", legacy / "precy.cs", legacy / "AIRoom.cs"]
+missing = [str(p) for p in required_legacy if not p.is_file()]
+if missing:
+    raise SystemExit(f"Vendored legacy AI sources are missing: {missing}")
+
+core_target = assets / "SibylSystem" / "coreWrapper.cs"
+precy_target = assets / "SibylSystem" / "precy.cs"
+airoom_target = assets / "SibylSystem" / "Room" / "AIRoom.cs"
+core_target.parent.mkdir(parents=True, exist_ok=True)
+airoom_target.parent.mkdir(parents=True, exist_ok=True)
+shutil.copyfile(legacy / "coreWrapper.cs", core_target)
+shutil.copyfile(legacy / "precy.cs", precy_target)
+shutil.copyfile(legacy / "AIRoom.cs", airoom_target)
+
+# Unity iOS statically links native plugins into the main executable. P/Invoke
+# must therefore resolve through __Internal on device, while keeping the old
+# dynamic library name available for editor/desktop use.
+core_text = core_target.read_text(encoding="utf-8-sig")
+class_marker = "    unsafe static class dll\n    {"
+if class_marker not in core_text:
+    raise SystemExit("Could not locate Percy.dll wrapper class")
+lib_block = (
+    class_marker
+    + "\n#if UNITY_IOS && !UNITY_EDITOR\n"
+    + '        const string OcgCoreLibrary = "__Internal";\n'
+    + "#else\n"
+    + '        const string OcgCoreLibrary = "ocgcore";\n'
+    + "#endif"
+)
+core_text = core_text.replace(class_marker, lib_block, 1)
+count = core_text.count('[DllImport("ocgcore",')
+if count < 20:
+    raise SystemExit(f"Unexpected legacy ocgcore import count: {count}")
+core_text = core_text.replace('[DllImport("ocgcore",', '[DllImport(OcgCoreLibrary,')
+core_target.write_text(core_text, encoding="utf-8")
+
+# Make the restored AI room safe when the optional AI pack has not yet been
+# installed. The original desktop implementation assumed these folders always
+# existed and would throw while opening the room on a clean iOS install.
+ai_text = airoom_target.read_text(encoding="utf-8-sig")
+print_marker = "    void printFile()\n    {\n        string deckInUse"
+print_replacement = (
+    "    void printFile()\n    {\n"
+    '        Directory.CreateDirectory("deck");\n'
+    '        Directory.CreateDirectory("ai");\n'
+    '        Directory.CreateDirectory("ai/ydk");\n'
+    "        string deckInUse"
+)
+if print_marker not in ai_text:
+    raise SystemExit("Could not install AI data-directory guard")
+ai_text = ai_text.replace(print_marker, print_replacement, 1)
+
+start_marker = "        if (!isShowed)\n        {\n            return;\n        }"
+start_replacement = (
+    start_marker
+    + "\n"
+    + "        if (list_aideck == null || list_airank == null || "
+      "list_aideck.items == null || list_aideck.items.Count <= 1 || "
+      "list_airank.items == null || list_airank.items.Count == 0)\n"
+    + "        {\n"
+    + '            RMSshow_none("AIデータが見つかりません。ai フォルダにAIスクリプト、ai/ydk にAIデッキを配置してください。");\n'
+    + "            return;\n"
+    + "        }"
+)
+if start_marker not in ai_text:
+    raise SystemExit("Could not install AI start guard")
+ai_text = ai_text.replace(start_marker, start_replacement, 1)
+airoom_target.write_text(ai_text, encoding="utf-8")
+
+# Restore the AI menu button without replacing the current Menu implementation.
+menu_path = assets / "SibylSystem" / "Menu" / "Menu.cs"
+if not menu_path.is_file():
+    raise SystemExit(f"Menu source not found: {menu_path}")
+menu_text = menu_path.read_text(encoding="utf-8-sig")
+if not re.search(r'(?m)^[ \t]*UIHelper\.registEvent\(gameObject,\s*"ai_",\s*onClickAI\);', menu_text):
+    anchor_matches = list(re.finditer(
+        r'(?m)^(?P<indent>[ \t]*)UIHelper\.registEvent\(gameObject,\s*"single_",\s*onClickPizzle\);[ \t]*$',
+        menu_text,
+    ))
+    if len(anchor_matches) != 1:
+        raise SystemExit(f"Could not uniquely locate menu AI registration anchor: {len(anchor_matches)}")
+    a = anchor_matches[0]
+    line = a.group(0)
+    insertion = line + "\n" + a.group("indent") + 'UIHelper.registEvent(gameObject, "ai_", onClickAI);'
+    menu_text = menu_text[: a.start()] + insertion + menu_text[a.end() :]
+
+
+def replace_method_body(source: str, method_name: str, body: str) -> str:
+    match = re.search(rf"\bvoid\s+{re.escape(method_name)}\s*\(\s*\)\s*\{{", source)
+    if not match:
+        raise SystemExit(f"Method not found: {method_name}")
+    open_brace = source.find("{", match.start())
+    depth = 0
+    in_string = False
+    escape = False
+    for i in range(open_brace, len(source)):
+        ch = source[i]
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                line_start = source.rfind("\n", 0, match.start()) + 1
+                indent_match = re.match(r"[ \t]*", source[line_start:match.start()])
+                indent = indent_match.group(0) if indent_match else ""
+                inner = indent + "    " + body
+                return source[: open_brace + 1] + "\n" + inner + "\n" + indent + source[i:]
+    raise SystemExit(f"Unbalanced braces while replacing {method_name}")
+
+menu_text = replace_method_body(
+    menu_text,
+    "onClickAI",
+    "Program.I().shiftToServant(Program.I().aiRoom);",
+)
+menu_path.write_text(menu_text, encoding="utf-8")
+
+print("Restored offline AI sources:")
+print(f"  - {core_target}")
+print(f"  - {precy_target}")
+print(f"  - {airoom_target}")
+print(f"  - enabled ai_ menu handler in {menu_path}")
+print("  - configured iOS P/Invoke through __Internal")
+print("  - added safe handling for a missing AI data pack")
