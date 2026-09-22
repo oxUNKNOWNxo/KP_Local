@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - native-ui-fix
     paths:
       - '.github/workflows/ai-integration-validate.yml'
       - 'patches/apply_ios_mods.py'
@@ -12,12 +13,13 @@ on:
       - 'patches/build_ai_core_ios.sh'
       - 'patches/prepare_ai_pack.sh'
       - 'patches/ai/**'
+      - 'patches/ios/**'
 
 permissions:
   contents: read
 
 concurrency:
-  group: koishipro2-ai-integration-validation
+  group: koishipro2-ai-integration-validation-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -85,8 +87,9 @@ jobs:
           BOOTSTRAP='source/Assets/SibylSystem/AIBootstrap.cs'
           MENU='source/Assets/SibylSystem/Menu/Menu.cs'
           PROGRAM='source/Assets/SibylSystem/Program.cs'
+          VIEWPORT='source/Assets/Plugins/iOS/KoishiViewport.mm'
 
-          for f in "$CORE" "$PRECY" "$AIROOM" "$BOOTSTRAP" "$MENU" "$PROGRAM"; do test -s "$f"; done
+          for f in "$CORE" "$PRECY" "$AIROOM" "$BOOTSTRAP" "$MENU" "$PROGRAM" "$VIEWPORT"; do test -s "$f"; done
 
           grep -q 'OcgCoreLibrary = "__Internal"' "$CORE"
           grep -q 'AOT.MonoPInvokeCallback(typeof(CardReader))' "$CORE"
@@ -102,15 +105,31 @@ jobs:
           grep -q 'AIデータが見つかりません' "$AIROOM"
           grep -q 'koishi-ai-pack.zip' "$BOOTSTRAP"
           grep -Eq 'UIHelper\.registEvent\(gameObject,[[:space:]]*"ai_",[[:space:]]*onClickAI\);' "$MENU"
+          grep -Eq 'UIHelper\.registEvent\(gameObject,[[:space:]]*"single_",[[:space:]]*onClickAI\);' "$MENU"
+          grep -q 'labels\[j\].text = "AI対戦"' "$MENU"
           grep -q 'shiftToServant(Program.I().aiRoom)' "$MENU"
           grep -q 'UseBundledBasicData();' "$PROGRAM"
           ! grep -Eq '^[[:space:]]*RetryBasicDataUpdate\(\);[[:space:]]*$' "$PROGRAM"
+          grep -q 'UnityGetGLView' "$VIEWPORT"
+          grep -q 'targetAspect = 16.0 / 9.0' "$VIEWPORT"
 
-          echo '--- AI menu asset references ---'
-          grep -Rni --include='*.prefab' --include='*.unity' --include='*.asset' 'ai_' source/Assets | head -40 || true
-          echo '--- unsafe-code related project settings ---'
-          grep -RniE 'allowUnsafe|unsafe' source/ProjectSettings source/Assets/*.asmdef source/Assets/*/*.asmdef 2>/dev/null | head -40 || true
-          echo 'Managed AI restoration validation passed.'
+          echo 'Managed AI/menu/native viewport validation passed.'
+
+      - name: Compile-check native iOS viewport
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKROOT="$(xcrun --sdk iphoneos --show-sdk-path)"
+          CLANGXX="$(xcrun --sdk iphoneos --find clang++)"
+          "$CLANGXX" \
+            -arch arm64 \
+            -isysroot "$SDKROOT" \
+            -miphoneos-version-min=13.0 \
+            -fobjc-arc \
+            -fsyntax-only \
+            -x objective-c++ \
+            source/Assets/Plugins/iOS/KoishiViewport.mm
+          echo 'Native viewport Objective-C++ syntax validation passed.'
 
       - name: Build and validate ARM64 iOS AI core
         shell: bash
@@ -136,6 +155,7 @@ jobs:
             source/Assets/SibylSystem/Room/AIRoom.cs
             source/Assets/SibylSystem/AIBootstrap.cs
             source/Assets/SibylSystem/Menu/Menu.cs
+            source/Assets/Plugins/iOS/KoishiViewport.mm
             source/Assets/Plugins/iOS/libocgcore.a
             source/Assets/Plugins/iOS/ocgcore-LICENSE.txt
             source/Assets/StreamingAssets/koishi-ai-pack.zip
