@@ -8,8 +8,10 @@ on:
     paths:
       - '.github/workflows/ai-integration-validate.yml'
       - 'patches/apply_ios_mods.py'
+      - 'patches/finalize_offline_ai.py'
       - 'patches/build_ai_core_ios.sh'
-      - 'patches/ai/legacy/**'
+      - 'patches/prepare_ai_pack.sh'
+      - 'patches/ai/**'
 
 permissions:
   contents: read
@@ -21,7 +23,7 @@ concurrency:
 jobs:
   validate:
     runs-on: macos-15-intel
-    timeout-minutes: 35
+    timeout-minutes: 40
     env:
       SOURCE_REPO: https://code.moenext.com/hex/ygopro2.git
       SOURCE_COMMIT: c1850e1120df6a5885692eadacad8ad114a3cf11
@@ -58,6 +60,20 @@ jobs:
         run: |
           set -euo pipefail
           python3 control/patches/apply_ios_mods.py source
+          python3 control/patches/finalize_offline_ai.py source
+
+      - name: Prepare bundled offline AI data pack
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash control/patches/prepare_ai_pack.sh source
+          PACK='source/Assets/StreamingAssets/koishi-ai-pack.zip'
+          test -s "$PACK"
+          unzip -l "$PACK" | grep -q 'ai/ai.lua'
+          unzip -l "$PACK" | grep -q 'ai/decks/Blackwing.lua'
+          unzip -l "$PACK" | grep -q 'ai/ydk/Blackwing.ydk'
+          unzip -l "$PACK" | grep -q 'ai/ydk/Shaddoll.ydk'
+          echo 'Bundled AI data pack validation passed.'
 
       - name: Validate restored managed AI integration
         shell: bash
@@ -66,20 +82,25 @@ jobs:
           CORE='source/Assets/SibylSystem/coreWrapper.cs'
           PRECY='source/Assets/SibylSystem/precy.cs'
           AIROOM='source/Assets/SibylSystem/Room/AIRoom.cs'
+          BOOTSTRAP='source/Assets/SibylSystem/AIBootstrap.cs'
           MENU='source/Assets/SibylSystem/Menu/Menu.cs'
           PROGRAM='source/Assets/SibylSystem/Program.cs'
 
-          for f in "$CORE" "$PRECY" "$AIROOM" "$MENU" "$PROGRAM"; do test -s "$f"; done
+          for f in "$CORE" "$PRECY" "$AIROOM" "$BOOTSTRAP" "$MENU" "$PROGRAM"; do test -s "$f"; done
 
           grep -q 'OcgCoreLibrary = "__Internal"' "$CORE"
           grep -q 'AOT.MonoPInvokeCallback(typeof(CardReader))' "$CORE"
           grep -q 'AOT.MonoPInvokeCallback(typeof(MessageHandler))' "$CORE"
+          grep -q 'Marshal.WriteByte(ptrFileName, s.Length, 0)' "$CORE"
+          grep -q 'Marshal.AllocHGlobal(s.Length + 1)' "$CORE"
           ! grep -q '\[DllImport("ocgcore"' "$CORE"
           grep -q 'class PrecyOcg' "$PRECY"
           grep -q 'new Percy.smallYgopro' "$PRECY"
           grep -q 'new PrecyOcg()' "$AIROOM"
+          grep -q 'AIBootstrap.EnsureInstalled()' "$AIROOM"
           grep -q 'startAI(' "$AIROOM"
           grep -q 'AIデータが見つかりません' "$AIROOM"
+          grep -q 'koishi-ai-pack.zip' "$BOOTSTRAP"
           grep -Eq 'UIHelper\.registEvent\(gameObject,[[:space:]]*"ai_",[[:space:]]*onClickAI\);' "$MENU"
           grep -q 'shiftToServant(Program.I().aiRoom)' "$MENU"
           grep -q 'UseBundledBasicData();' "$PROGRAM"
@@ -113,8 +134,10 @@ jobs:
             source/Assets/SibylSystem/coreWrapper.cs
             source/Assets/SibylSystem/precy.cs
             source/Assets/SibylSystem/Room/AIRoom.cs
+            source/Assets/SibylSystem/AIBootstrap.cs
             source/Assets/SibylSystem/Menu/Menu.cs
             source/Assets/Plugins/iOS/libocgcore.a
             source/Assets/Plugins/iOS/ocgcore-LICENSE.txt
+            source/Assets/StreamingAssets/koishi-ai-pack.zip
           if-no-files-found: warn
           retention-days: 1
