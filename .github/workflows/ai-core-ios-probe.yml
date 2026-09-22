@@ -1,0 +1,79 @@
+name: KoishiPro2 AI core iOS probe
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/ai-core-ios-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: macos-15-intel
+    timeout-minutes: 25
+    env:
+      SOURCE_REPO: https://code.moenext.com/hex/ygopro2.git
+      REMOVAL_COMMIT: 1cd5d12ad7b888b8774da7d67c8dba9898a108ee
+    steps:
+      - name: Fetch pre-removal source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf source probe
+          mkdir source probe
+          git -C source init -q
+          git -C source remote add origin "$SOURCE_REPO"
+          git -C source config http.version HTTP/1.1
+          git -C source fetch --quiet --no-tags --depth=2 origin "$REMOVAL_COMMIT"
+          git -C source checkout --quiet --detach FETCH_HEAD^
+          git -C source rev-parse HEAD | tee probe/PRE_REMOVAL_COMMIT.txt
+
+      - name: Build ocgcore static library for iOS arm64
+        shell: bash
+        run: |
+          set -euo pipefail
+          CORE="$GITHUB_WORKSPACE/source/AI_core_vs2017solution/ocgcore"
+          test -d "$CORE"
+          SDKROOT="$(xcrun --sdk iphoneos --show-sdk-path)"
+          CLANG="$(xcrun --sdk iphoneos --find clang)"
+          CLANGXX="$(xcrun --sdk iphoneos --find clang++)"
+          AR="$(xcrun --sdk iphoneos --find ar)"
+          mkdir -p probe/obj
+
+          echo "SDKROOT=$SDKROOT" | tee probe/build-info.txt
+          "$CLANG" --version >> probe/build-info.txt
+          find "$CORE" -maxdepth 1 -type f \( -name '*.cpp' -o -name '*.c' \) -print | sort > probe/sources.txt
+          cat probe/sources.txt
+
+          COMMON=( -arch arm64 -isysroot "$SDKROOT" -miphoneos-version-min=13.0 -O2 -fPIC -I"$CORE" -I"$CORE/lua" -I"$CORE/sqlite3" )
+
+          while IFS= read -r src; do
+            base="$(basename "$src")"
+            obj="probe/obj/${base%.*}.o"
+            case "$src" in
+              *.cpp)
+                "$CLANGXX" "${COMMON[@]}" -std=gnu++11 -Wno-deprecated-declarations -c "$src" -o "$obj"
+                ;;
+              *.c)
+                "$CLANG" "${COMMON[@]}" -std=gnu99 -Wno-deprecated-declarations -c "$src" -o "$obj"
+                ;;
+            esac
+          done < probe/sources.txt
+
+          "$AR" rcs probe/libocgcore.a probe/obj/*.o
+          file probe/libocgcore.a | tee -a probe/build-info.txt
+          xcrun nm -gU probe/libocgcore.a | grep -E '(_create_duel|_process|_set_response|_query_)' | head -120 | tee probe/exported-symbols.txt
+          ls -lh probe/libocgcore.a
+
+      - name: Upload probe package
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: KoishiPro2-ai-core-ios-probe
+          path: probe
+          if-no-files-found: warn
+          retention-days: 1
