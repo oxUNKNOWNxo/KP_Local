@@ -23,6 +23,7 @@ jobs:
     env:
       SOURCE_REPO: https://code.moenext.com/hex/ygopro2.git
       SOURCE_COMMIT: c1850e1120df6a5885692eadacad8ad114a3cf11
+      REMOVAL_COMMIT: 1cd5d12ad7b888b8774da7d67c8dba9898a108ee
     steps:
       - name: Fetch KoishiPro2 history
         shell: bash
@@ -35,7 +36,7 @@ jobs:
           mkdir -p inspection
           git -C source log --all --date=iso --pretty=format:'%H %ad %s' > inspection/git-log.txt
 
-      - name: Locate AI implementation history
+      - name: Recover removed local AI implementation
         shell: bash
         run: |
           set -euo pipefail
@@ -58,7 +59,6 @@ jobs:
             git log --all -G'AIRoom|aiRoom|onClickAI|ai/ydk|Percy AI' --date=iso --pretty=format:'%H %ad %s' -- "$AIR" "$MENU" || true
           } > ../inspection/ai-history.txt
 
-          # Save current source and every historical AIRoom revision reachable from the file history.
           mkdir -p ../inspection/airoom-revisions
           git show HEAD:"$AIR" > ../inspection/airoom-revisions/current-AIRoom.cs
           git log --all --follow --format='%H' -- "$AIR" | while read -r sha; do
@@ -67,22 +67,52 @@ jobs:
             fi
           done
 
-          # Capture likely pre-removal snapshots and matching Menu files.
-          git log --all -S'本地AI模式已移除' --format='%H' -- "$AIR" "$MENU" | while read -r sha; do
-            parent="${sha}^"
-            if git rev-parse "$parent" >/dev/null 2>&1; then
-              if git cat-file -e "$parent:$AIR" 2>/dev/null; then
-                git show "$parent:$AIR" > "../inspection/pre-removal-${sha}-AIRoom.cs" || true
-              fi
-              if git cat-file -e "$parent:$MENU" 2>/dev/null; then
-                git show "$parent:$MENU" > "../inspection/pre-removal-${sha}-Menu.cs" || true
-              fi
-              git show --stat --oneline "$sha" > "../inspection/removal-${sha}-stat.txt" || true
-              git show --format=fuller --find-renames "$sha" -- "$AIR" "$MENU" > "../inspection/removal-${sha}-patch.txt" || true
+          parent="${REMOVAL_COMMIT}^"
+          git rev-parse "$parent" > ../inspection/pre-removal-parent.txt
+          mkdir -p ../inspection/pre-removal
+          for path in \
+            Assets/SibylSystem/Room/AIRoom.cs \
+            Assets/SibylSystem/Menu/Menu.cs \
+            Assets/SibylSystem/coreWrapper.cs \
+            Assets/SibylSystem/coreWrapper.cs.meta \
+            Assets/SibylSystem/precy.cs \
+            Assets/SibylSystem/precy.cs.meta \
+            Assets/SibylSystem/puzzleSystem/puzzleMode.cs; do
+            if git cat-file -e "$parent:$path" 2>/dev/null; then
+              mkdir -p "../inspection/pre-removal/$(dirname "$path")"
+              git show "$parent:$path" > "../inspection/pre-removal/$path"
             fi
           done
 
-          # Search historical tree names for local duel engine / WindBot / native host pieces.
+          git show --stat --oneline "$REMOVAL_COMMIT" > ../inspection/removal-stat.txt
+          git show --format=fuller --find-renames "$REMOVAL_COMMIT" > ../inspection/removal-full.patch
+
+          # Record every file that existed immediately before removal and is related to
+          # the local duel engine, native plugins, AI scripts/decks, or managed wrappers.
+          git ls-tree -r --name-only "$parent" | \
+            grep -Ei '(^|/)(ai|ocgcore|plugins|precy|corewrapper|windbot|ygopro|duel|server|bot)(/|\.|$)' \
+            > ../inspection/pre-removal-engine-paths.txt || true
+
+          # Find native libraries and plugin metadata that may be required on iOS.
+          git ls-tree -r --name-only "$parent" | \
+            grep -Ei '\.(a|so|dylib|bundle|framework|dll|aar|jar|meta)$' | \
+            grep -Ei 'ocg|core|ygopro|precy|ai|wind|plugin' \
+            > ../inspection/pre-removal-native-candidates.txt || true
+
+          # Save histories for the two deleted managed wrappers.
+          {
+            echo '=== coreWrapper.cs history ==='
+            git log --all --follow --date=iso --pretty=format:'%H %ad %s' -- Assets/SibylSystem/coreWrapper.cs || true
+            echo
+            echo '=== precy.cs history ==='
+            git log --all --follow --date=iso --pretty=format:'%H %ad %s' -- Assets/SibylSystem/precy.cs || true
+          } > ../inspection/wrapper-history.txt
+
+          # Capture the exact pre-removal wrapper source dependencies.
+          grep -RniE 'DllImport|extern |ocgcore|ygopro|WindBot|startAI|create_duel|process|set_card_reader|set_script_reader|set_message_handler|load_script' \
+            ../inspection/pre-removal/Assets/SibylSystem 2>/dev/null \
+            > ../inspection/wrapper-dependencies.txt || true
+
           {
             echo '=== current AI/duel-related paths ==='
             git ls-tree -r --name-only HEAD | grep -Ei '(^|/)(ai|windbot|ocgcore|ygopro|duel|server|bot)(/|\.|$)' || true
