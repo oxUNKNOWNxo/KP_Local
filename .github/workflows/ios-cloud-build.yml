@@ -42,6 +42,33 @@ jobs:
           sw_vers
           system_profiler SPDisplaysDataType 2>/dev/null | sed -n '1,80p' || true
 
+      # Authentication is intentionally kept near the start. The browser login
+      # is the only interactive step; completing it first avoids wasting a long
+      # build only to discover later that the sign-in window was missed.
+      - name: Install Unity CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL https://unity.com/install.sh | UNITY_CLI_CHANNEL=beta UNITY_CLI_HOME="$UNITY_CLI_HOME" bash >/dev/null
+          test -x "$UNITY_CLI_HOME/bin/unity"
+
+      - name: Sign in to Unity account
+        shell: bash
+        run: |
+          set -euo pipefail
+          UNITY="$UNITY_CLI_HOME/bin/unity"
+          echo 'Open the one-time Unity Sign-in URL printed below and complete sign-in.'
+          echo 'Do not share account credentials in the Actions log.'
+          "$UNITY" auth login --no-color
+
+      - name: Activate Unity Personal
+        shell: bash
+        run: |
+          set -euo pipefail
+          UNITY="$UNITY_CLI_HOME/bin/unity"
+          "$UNITY" license activate --personal --accept-eula --format json >/dev/null
+          echo 'Unity Personal activation completed.'
+
       - name: Fetch exact KoishiPro2 source revision
         shell: bash
         run: |
@@ -92,30 +119,9 @@ jobs:
           grep -q 'https://cdntx2.moecube.com/koishipro/content/cards.cdb' "$PROGRAM"
           echo 'Forced DB sync removal validation passed; manual Resource Update remains available.'
 
-      - name: Install Unity CLI
-        shell: bash
-        run: |
-          set -euo pipefail
-          curl -fsSL https://unity.com/install.sh | UNITY_CLI_CHANNEL=beta UNITY_CLI_HOME="$UNITY_CLI_HOME" bash >/dev/null
-          test -x "$UNITY_CLI_HOME/bin/unity"
-
-      - name: Sign in to Unity account
-        shell: bash
-        run: |
-          set -euo pipefail
-          UNITY="$UNITY_CLI_HOME/bin/unity"
-          echo 'Open the one-time Unity Sign-in URL printed below and complete sign-in.'
-          echo 'Do not share account credentials in the Actions log.'
-          "$UNITY" auth login --no-color
-
-      - name: Activate Unity Personal
-        shell: bash
-        run: |
-          set -euo pipefail
-          UNITY="$UNITY_CLI_HOME/bin/unity"
-          "$UNITY" license activate --personal --accept-eula --format json >/dev/null
-          echo 'Unity Personal activation completed.'
-
+      # The large Unity Editor download stays after source/patch validation.
+      # This keeps authentication early without wasting the editor install when
+      # the source revision or local patch itself is invalid.
       - name: Install Unity Editor and iOS Build Support
         shell: bash
         run: |
