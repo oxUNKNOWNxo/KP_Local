@@ -12,12 +12,12 @@ plist_path = root / "Info.plist"
 if not plist_path.is_file():
     raise SystemExit(f"Info.plist not found: {plist_path}")
 
-# iPhone X full-screen mode is enabled by the modern iPhone launch storyboard.
-# For this TrollStore build we intentionally omit the iPhone launch storyboard
-# and provide legacy launch images only through the iPhone 8/8 Plus generation.
-# iOS then uses its compatibility/letterbox mode on notched iPhones, keeping the
-# entire Unity surface and touch coordinate system out of the notch/home-indicator
-# region. Keep the iPad-specific storyboard untouched.
+# Keep iOS in its normal modern full-screen launch mode.  The previous attempt
+# intentionally omitted modern launch metadata to trigger old iPhone
+# compatibility mode, but iOS 16 on iPhone X did not letterbox KoishiPro2 and
+# the launch transition felt slower.  UILaunchScreen is Apple's storyboard-free
+# modern launch-screen key.  Runtime 16:9 containment is now handled inside
+# Unity by IPhone16x9Viewport instead of relying on iOS compatibility behavior.
 with plist_path.open("rb") as f:
     plist = plistlib.load(f)
 
@@ -25,20 +25,22 @@ for key in (
     "UILaunchStoryboardName",
     "UILaunchStoryboardName~iphone",
     "UILaunchStoryboardName~ipod",
-    "UILaunchScreen",
     "UILaunchScreens",
 ):
     plist.pop(key, None)
+plist["UILaunchScreen"] = {}
 
 with plist_path.open("wb") as f:
     plistlib.dump(plist, f, fmt=plistlib.FMT_XML, sort_keys=False)
 
+# The Xcode command line still names LaunchImage for compatibility with the
+# existing Unity project.  Keep a tiny, deterministic pre-notch launch-image set
+# as a fallback build resource; UILaunchScreen is what modern iOS uses at run
+# time, so these images no longer control iPhone X display mode.
 catalogs = sorted(root.rglob("*.xcassets"))
 if not catalogs:
     raise SystemExit("No Xcode asset catalog (*.xcassets) found")
 
-# Prefer the catalog containing the app icon, because it is already part of the
-# Unity-iPhone target's Resources build phase.
 catalog = None
 for candidate in catalogs:
     if any(candidate.glob("*.appiconset")):
@@ -63,7 +65,6 @@ def png_chunk(kind: bytes, data: bytes) -> bytes:
 
 
 def write_black_png(path: Path, width: int, height: int) -> None:
-    # Opaque black RGBA launch image. Uniform scanlines compress very small.
     signature = b"\x89PNG\r\n\x1a\n"
     ihdr = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
     row = b"\x00" + (b"\x00\x00\x00\xff" * width)
@@ -78,7 +79,6 @@ def write_black_png(path: Path, width: int, height: int) -> None:
 
 
 images = [
-    # Deliberately stop at pre-notch iPhones. Do NOT add 2436h/812h images.
     {
         "filename": "Default@2x.png",
         "size": (640, 960),
@@ -151,6 +151,6 @@ for item in images:
     json.dumps(contents, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
 )
 
-print(f"Prepared iPhone notch compatibility launch assets: {launch_set}")
-print("Removed iPhone modern launch storyboard keys from Info.plist")
-print("No iPhone X/2436h launch image is intentionally provided")
+print(f"Prepared fallback launch assets: {launch_set}")
+print("Configured modern storyboard-free UILaunchScreen for iPhone")
+print("Runtime notch containment is handled by IPhone16x9Viewport")
