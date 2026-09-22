@@ -184,6 +184,13 @@ jobs:
           path: source/Library
           key: koishipro2-library-${{ runner.os }}-${{ runner.arch }}-${{ env.UNITY_VERSION }}-ios-${{ env.SOURCE_COMMIT }}-${{ steps.patch-fingerprint.outputs.hash }}-${{ env.UNITY_CACHE_SCHEMA }}
 
+      - name: Report Unity cache decision
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "cache-hit=${{ steps.library-cache.outputs.cache-hit }}"
+          echo "cache-key=koishipro2-library-${{ runner.os }}-${{ runner.arch }}-${{ env.UNITY_VERSION }}-ios-${{ env.SOURCE_COMMIT }}-${{ steps.patch-fingerprint.outputs.hash }}-${{ env.UNITY_CACHE_SCHEMA }}"
+
       - name: Locate Unity Editor
         id: editor
         shell: bash
