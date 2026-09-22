@@ -57,7 +57,6 @@ print("  - left explicit/manual Resource Update behavior unchanged")
 # ---------------------------------------------------------------------------
 # Restore the last upstream in-process AI implementation removed by
 # 1cd5d12ad7b888b8774da7d67c8dba9898a108ee (parent bd251b8...).
-# The exact recovered sources are vendored next to this patch script.
 # ---------------------------------------------------------------------------
 patch_root = Path(__file__).resolve().parent
 legacy = patch_root / "ai" / "legacy"
@@ -76,8 +75,8 @@ shutil.copyfile(legacy / "precy.cs", precy_target)
 shutil.copyfile(legacy / "AIRoom.cs", airoom_target)
 
 # Unity iOS statically links native plugins into the main executable. P/Invoke
-# must therefore resolve through __Internal on device, while keeping the old
-# dynamic library name available for editor/desktop use.
+# must resolve through __Internal on device. The native->managed callbacks also
+# need explicit AOT thunks and rooted delegate instances under IL2CPP.
 core_text = core_target.read_text(encoding="utf-8-sig")
 class_marker = "    unsafe static class dll\n    {"
 if class_marker not in core_text:
@@ -91,10 +90,44 @@ lib_block = (
     + "#endif"
 )
 core_text = core_text.replace(class_marker, lib_block, 1)
+
+callback_marker = (
+    "        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]\n"
+    "        delegate UInt32 MessageHandler(IntPtr pDuel, UInt32 messageType);"
+)
+callback_block = (
+    callback_marker
+    + "\n        static readonly CardReader NativeCardReader = OnCardReader;\n"
+    + "        static readonly MessageHandler NativeMessageHandler = OnMessageHandler;"
+)
+if callback_marker not in core_text:
+    raise SystemExit("Could not locate native AI callback delegate declarations")
+core_text = core_text.replace(callback_marker, callback_block, 1)
+core_text = core_text.replace("set_card_reader(OnCardReader);", "set_card_reader(NativeCardReader);")
+core_text = core_text.replace("set_message_handler(OnMessageHandler);", "set_message_handler(NativeMessageHandler);")
+core_text = core_text.replace("set_chat_handler(OnMessageHandler);", "set_chat_handler(NativeMessageHandler);")
+
+card_cb = "        private static UInt32 OnCardReader(UInt32 code, CardData* pData)"
+msg_cb = "        private static UInt32 OnMessageHandler(IntPtr pDuel, UInt32 messageType)"
+if card_cb not in core_text or msg_cb not in core_text:
+    raise SystemExit("Could not locate native AI callback methods")
+core_text = core_text.replace(
+    card_cb,
+    "        [AOT.MonoPInvokeCallback(typeof(CardReader))]\n" + card_cb,
+    1,
+)
+core_text = core_text.replace(
+    msg_cb,
+    "        [AOT.MonoPInvokeCallback(typeof(MessageHandler))]\n" + msg_cb,
+    1,
+)
+
 count = core_text.count('[DllImport("ocgcore",')
 if count < 20:
     raise SystemExit(f"Unexpected legacy ocgcore import count: {count}")
 core_text = core_text.replace('[DllImport("ocgcore",', '[DllImport(OcgCoreLibrary,')
+if '[DllImport("ocgcore",' in core_text:
+    raise SystemExit("A legacy dynamic ocgcore import remains")
 core_target.write_text(core_text, encoding="utf-8")
 
 # Make the restored AI room safe when the optional AI pack has not yet been
@@ -175,9 +208,9 @@ def replace_method_body(source: str, method_name: str, body: str) -> str:
             if depth == 0:
                 line_start = source.rfind("\n", 0, match.start()) + 1
                 indent_match = re.match(r"[ \t]*", source[line_start:match.start()])
-                indent = indent_match.group(0) if indent_match else ""
-                inner = indent + "    " + body
-                return source[: open_brace + 1] + "\n" + inner + "\n" + indent + source[i:]
+                method_indent = indent_match.group(0) if indent_match else ""
+                inner = method_indent + "    " + body
+                return source[: open_brace + 1] + "\n" + inner + "\n" + method_indent + source[i:]
     raise SystemExit(f"Unbalanced braces while replacing {method_name}")
 
 menu_text = replace_method_body(
@@ -193,4 +226,5 @@ print(f"  - {precy_target}")
 print(f"  - {airoom_target}")
 print(f"  - enabled ai_ menu handler in {menu_path}")
 print("  - configured iOS P/Invoke through __Internal")
+print("  - added IL2CPP/AOT-safe native callback thunks")
 print("  - added safe handling for a missing AI data pack")
