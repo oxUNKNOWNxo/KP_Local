@@ -1,7 +1,7 @@
 using UnityEngine;
 
 // Keeps KoishiPro2's camera-rendered UI/gameplay inside a centred 16:9 area on
-// extra-wide iPhones.  The unused left/right area is cleared to black, so the
+// extra-wide iPhones. The unused left/right area is cleared to black, so the
 // notch and home-indicator region never overlap the game surface.
 public sealed class IPhone16x9Viewport : MonoBehaviour
 {
@@ -15,7 +15,15 @@ public sealed class IPhone16x9Viewport : MonoBehaviour
     private int lastHeight;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
-    private static void Install()
+    private static void InstallFromUnityRuntime()
+    {
+        EnsureInstalled();
+    }
+
+    // Program.cs also calls this explicitly during normal KoishiPro2 startup.
+    // The explicit call is intentional: on iOS/IL2CPP we do not rely solely on
+    // RuntimeInitializeOnLoadMethod discovery/retention for this patch.
+    public static void EnsureInstalled()
     {
 #if UNITY_IOS && !UNITY_EDITOR
         if (instance != null)
@@ -26,6 +34,7 @@ public sealed class IPhone16x9Viewport : MonoBehaviour
         GameObject host = new GameObject("IPhone16x9Viewport");
         DontDestroyOnLoad(host);
         instance = host.AddComponent<IPhone16x9Viewport>();
+        Debug.Log("[IPhone16x9Viewport] Installed explicit 16:9 viewport controller.");
 #endif
     }
 
@@ -38,6 +47,7 @@ public sealed class IPhone16x9Viewport : MonoBehaviour
         }
 
         instance = this;
+        DontDestroyOnLoad(gameObject);
         CreateBlackBackgroundCamera();
         ApplyViewport(true);
     }
@@ -49,6 +59,11 @@ public sealed class IPhone16x9Viewport : MonoBehaviour
 
     private void CreateBlackBackgroundCamera()
     {
+        if (blackCamera != null)
+        {
+            return;
+        }
+
         blackCamera = gameObject.AddComponent<Camera>();
         blackCamera.clearFlags = CameraClearFlags.SolidColor;
         blackCamera.backgroundColor = Color.black;
@@ -111,7 +126,7 @@ public sealed class IPhone16x9Viewport : MonoBehaviour
                 continue;
             }
 
-            // KoishiPro2's gameplay/NGUI cameras are full-screen cameras.  Do
+            // KoishiPro2's gameplay/NGUI cameras are full-screen cameras. Do
             // not disturb deliberately smaller viewports such as previews.
             if (force || geometryChanged || Approximately(cam.rect, full) || Approximately(cam.rect, lastContentRect))
             {
