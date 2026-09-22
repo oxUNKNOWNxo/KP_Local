@@ -1,0 +1,66 @@
+name: Vendor KoishiPro2 legacy AI sources
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/vendor-legacy-ai.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  vendor:
+    if: github.actor == github.repository_owner && (github.event_name == 'workflow_dispatch' || github.event_name == 'push')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      SOURCE_REPO: https://code.moenext.com/hex/ygopro2.git
+      REMOVAL_COMMIT: 1cd5d12ad7b888b8774da7d67c8dba9898a108ee
+    steps:
+      - name: Checkout control repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Recover exact pre-removal AI sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/koishi-ai-history
+          mkdir /tmp/koishi-ai-history
+          git -C /tmp/koishi-ai-history init -q
+          git -C /tmp/koishi-ai-history remote add origin "$SOURCE_REPO"
+          git -C /tmp/koishi-ai-history config http.version HTTP/1.1
+          git -C /tmp/koishi-ai-history fetch --quiet --no-tags --depth=2 origin "$REMOVAL_COMMIT"
+          PRE_REMOVAL="$(git -C /tmp/koishi-ai-history rev-parse FETCH_HEAD^)"
+          test "$PRE_REMOVAL" = 'bd251b823ff2d35707b2de63de6f3ab237a98072'
+
+          mkdir -p patches/ai/legacy
+          git -C /tmp/koishi-ai-history show "$PRE_REMOVAL:Assets/SibylSystem/coreWrapper.cs" > patches/ai/legacy/coreWrapper.cs
+          git -C /tmp/koishi-ai-history show "$PRE_REMOVAL:Assets/SibylSystem/precy.cs" > patches/ai/legacy/precy.cs
+          git -C /tmp/koishi-ai-history show "$PRE_REMOVAL:Assets/SibylSystem/Room/AIRoom.cs" > patches/ai/legacy/AIRoom.cs
+          printf '%s\n' "$PRE_REMOVAL" > patches/ai/legacy/PRE_REMOVAL_COMMIT.txt
+
+          test -s patches/ai/legacy/coreWrapper.cs
+          test -s patches/ai/legacy/precy.cs
+          test -s patches/ai/legacy/AIRoom.cs
+          grep -q 'class smallYgopro' patches/ai/legacy/coreWrapper.cs
+          grep -q 'class PrecyOcg' patches/ai/legacy/precy.cs
+          grep -q 'public class AIRoom' patches/ai/legacy/AIRoom.cs
+
+      - name: Commit recovered sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add patches/ai/legacy
+          if git diff --cached --quiet; then
+            echo 'Legacy AI sources already vendored.'
+            exit 0
+          fi
+          git commit -m 'Vendor exact pre-removal KoishiPro2 AI wrappers'
+          git push origin HEAD:main
