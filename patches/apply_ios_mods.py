@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 from pathlib import Path
+import os
 import re
 import shutil
+import subprocess
 import sys
 
 root = Path(sys.argv[1] if len(sys.argv) > 1 else "source")
@@ -228,3 +230,22 @@ print(f"  - enabled ai_ menu handler in {menu_path}")
 print("  - configured iOS P/Invoke through __Internal")
 print("  - added IL2CPP/AOT-safe native callback thunks")
 print("  - added safe handling for a missing AI data pack")
+
+# The production iOS workflow calls this script as its single patch entry point.
+# Keep validation workflows independent, but make the real iOS build complete:
+# finalize managed AI integration, bundle the offline AI data, and build the
+# ARM64 static ocgcore plugin before Unity imports/exports the project.
+if os.environ.get("GITHUB_WORKFLOW") == "KoishiPro2 iOS cloud build":
+    print("Preparing production offline AI payload for iOS build...")
+    subprocess.run([sys.executable, str(patch_root / "finalize_offline_ai.py"), str(root)], check=True)
+    subprocess.run(["bash", str(patch_root / "prepare_ai_pack.sh"), str(root)], check=True)
+    subprocess.run(["bash", str(patch_root / "build_ai_core_ios.sh"), str(root)], check=True)
+
+    ai_pack = assets / "StreamingAssets" / "koishi-ai-pack.zip"
+    ai_core = assets / "Plugins" / "iOS" / "libocgcore.a"
+    if not ai_pack.is_file() or ai_pack.stat().st_size == 0:
+        raise SystemExit(f"Bundled AI pack was not created: {ai_pack}")
+    if not ai_core.is_file() or ai_core.stat().st_size == 0:
+        raise SystemExit(f"ARM64 iOS ocgcore library was not created: {ai_core}")
+    print(f"  - bundled AI data: {ai_pack}")
+    print(f"  - bundled ARM64 ocgcore: {ai_core}")
