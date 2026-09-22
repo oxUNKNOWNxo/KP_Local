@@ -68,42 +68,70 @@ precy = precy.replace(
 )
 precy_path.write_text(precy, encoding="utf-8")
 
-# Keep this runtime fallback until the serialized menu inspection identifies the
-# exact active prefab/ancestor path. It is harmless if the entry is already active.
+# The current upstream has already removed functional puzzle/single-player mode:
+# the single_ button only displays a removal message. Reuse that existing,
+# already-visible menu slot as the deterministic offline-AI entry rather than
+# depending on the historical ai_ object's hidden hierarchy.
 menu_path = assets / "SibylSystem" / "Menu" / "Menu.cs"
 menu = menu_path.read_text(encoding="utf-8-sig")
+single_event = '        UIHelper.registEvent(gameObject, "single_", onClickPizzle);'
+if single_event not in menu:
+    raise SystemExit("Could not locate single_ menu registration")
+menu = menu.replace(single_event, '        UIHelper.registEvent(gameObject, "single_", onClickAI);', 1)
+
 create_anchor = "        createWindow(Program.I().new_ui_menu);\n"
-if "EnableAiMenuEntry();" not in menu:
+if "ConfigureOfflineAiMenu();" not in menu:
     if create_anchor not in menu:
         raise SystemExit("Could not locate main menu createWindow call")
-    menu = menu.replace(create_anchor, create_anchor + "        EnableAiMenuEntry();\n", 1)
+    menu = menu.replace(create_anchor, create_anchor + "        ConfigureOfflineAiMenu();\n", 1)
 
 helper_anchor = "    private void CreateSuperPreMenuItem()\n"
-if "private void EnableAiMenuEntry()" not in menu:
+if "private void ConfigureOfflineAiMenu()" not in menu:
     if helper_anchor not in menu:
         raise SystemExit("Could not locate menu helper insertion point")
-    helper = '''    private void EnableAiMenuEntry()
+    helper = '''    private void ConfigureOfflineAiMenu()
     {
         Transform[] entries = gameObject.GetComponentsInChildren<Transform>(true);
-        int enabled = 0;
+        int aiEntries = 0;
+        int singleEntries = 0;
+
         for (int i = 0; i < entries.Length; i++)
         {
             Transform entry = entries[i];
-            if (entry != null && entry.name == "ai_")
+            if (entry == null)
             {
+                continue;
+            }
+
+            if (entry.name == "ai_")
+            {
+                // Keep the historical entry available where its hierarchy is
+                // compatible with the current menu.
+                for (Transform p = entry; p != null && p != gameObject.transform; p = p.parent)
+                {
+                    p.gameObject.SetActive(true);
+                }
                 entry.gameObject.SetActive(true);
-                enabled++;
+                aiEntries++;
+            }
+
+            if (entry.name == "single_")
+            {
+                for (Transform p = entry; p != null && p != gameObject.transform; p = p.parent)
+                {
+                    p.gameObject.SetActive(true);
+                }
+                entry.gameObject.SetActive(true);
+                UILabel[] labels = entry.gameObject.GetComponentsInChildren<UILabel>(true);
+                for (int j = 0; j < labels.Length; j++)
+                {
+                    labels[j].text = "AI対戦";
+                }
+                singleEntries++;
             }
         }
 
-        if (enabled == 0)
-        {
-            UnityEngine.Debug.LogWarning("[OfflineAI] ai_ menu entry was not found in the instantiated menu prefab.");
-        }
-        else
-        {
-            UnityEngine.Debug.Log("[OfflineAI] Enabled ai_ menu entry count: " + enabled);
-        }
+        UnityEngine.Debug.Log("[OfflineAI] menu ai_=" + aiEntries + ", single_=" + singleEntries);
     }
 
 '''
@@ -115,6 +143,7 @@ print(f"  - installed {bootstrap_target}")
 print(f"  - installed native iOS viewport plugin {native_viewport_target}")
 print("  - made UTF-8 native paths NUL-terminated and byte-safe")
 print("  - enabled first-use bundled AI data bootstrap")
-print("  - kept runtime ai_ menu visibility fallback")
+print("  - repurposed removed single-player menu slot as visible AI battle entry")
+print("  - kept historical ai_ entry as a secondary fallback")
 print("  - moved notch containment to the native Unity UIView")
 print("  - replaced obsolete non-ASCII filename warning")
