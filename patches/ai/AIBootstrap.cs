@@ -12,6 +12,7 @@ public static class AIBootstrap
         {
             Directory.CreateDirectory("ai");
             Directory.CreateDirectory("ai/ydk");
+            Directory.CreateDirectory("script");
 
             if (HasUsableAiData())
             {
@@ -27,7 +28,13 @@ public static class AIBootstrap
 
             byte[] data = File.ReadAllBytes(packPath);
             Program.I().ExtractZipFile(data, Directory.GetCurrentDirectory());
-            return HasUsableAiData();
+
+            bool usable = HasUsableAiData();
+            if (!usable)
+            {
+                Program.DEBUGLOG("Bundled AI pack extracted but required AI/card scripts are still missing.");
+            }
+            return usable;
         }
         catch (Exception e)
         {
@@ -38,12 +45,15 @@ public static class AIBootstrap
 
     private static bool HasUsableAiData()
     {
-        if (!Directory.Exists("ai") || !Directory.Exists("ai/ydk"))
+        if (!Directory.Exists("ai") || !Directory.Exists("ai/ydk") || !Directory.Exists("script"))
         {
             return false;
         }
 
-        return Directory.GetFiles("ai", "*.lua", SearchOption.TopDirectoryOnly).Length > 0
-            && Directory.GetFiles("ai/ydk", "*.ydk", SearchOption.TopDirectoryOnly).Length > 0;
+        return File.Exists("ai/ai.lua")
+            && Directory.GetFiles("ai/ydk", "*.ydk", SearchOption.TopDirectoryOnly).Length > 0
+            && File.Exists("script/constant.lua")
+            && File.Exists("script/utility.lua")
+            && Directory.GetFiles("script", "c*.lua", SearchOption.TopDirectoryOnly).Length > 1000;
     }
 }
