@@ -32,6 +32,23 @@ jobs:
           test "$(git -C source rev-parse HEAD)" = "$CORE_COMMIT"
           printf '%s\n' "$CORE_COMMIT" > probe/CORE_COMMIT.txt
 
+      - name: Apply iOS portability patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          CORE="$GITHUB_WORKSPACE/source/AI_core_vs2017solution/ocgcore"
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('source/AI_core_vs2017solution/ocgcore/ocgapi.h')
+          s = p.read_text(encoding='utf-8-sig')
+          old = '#define WIN32\n#include "common.h"\n#ifdef WIN32\n#include <windows.h>\n#define DECL_DLLEXPORT __declspec(dllexport)\n#else\n#define DECL_DLLEXPORT\n#endif'
+          new = '#include "common.h"\n#if defined(_WIN32) || defined(WIN32)\n#include <windows.h>\n#define DECL_DLLEXPORT __declspec(dllexport)\n#else\n#define DECL_DLLEXPORT __attribute__((visibility("default")))\n#endif'
+          if old not in s:
+              raise SystemExit('Expected Windows-only export block not found')
+          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+          PY
+          grep -nE 'windows.h|DECL_DLLEXPORT|define WIN32' "$CORE/ocgapi.h" | tee probe/portability-patch.txt
+
       - name: Build ocgcore static library for iOS arm64
         shell: bash
         run: |
@@ -49,7 +66,7 @@ jobs:
           find "$CORE" -maxdepth 1 -type f \( -name '*.cpp' -o -name '*.c' \) -print | sort > probe/sources.txt
           cat probe/sources.txt
 
-          COMMON=( -arch arm64 -isysroot "$SDKROOT" -miphoneos-version-min=13.0 -O2 -fPIC -I"$CORE" -I"$CORE/lua" -I"$CORE/sqlite3" )
+          COMMON=( -arch arm64 -isysroot "$SDKROOT" -miphoneos-version-min=13.0 -O2 -fPIC -fvisibility=hidden -I"$CORE" )
 
           while IFS= read -r src; do
             base="$(basename "$src")"
