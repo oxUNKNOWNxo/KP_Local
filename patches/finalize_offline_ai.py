@@ -11,13 +11,14 @@ if not assets.is_dir():
 patch_root = Path(__file__).resolve().parent
 bootstrap_source = patch_root / "ai" / "AIBootstrap.cs"
 bootstrap_target = assets / "SibylSystem" / "AIBootstrap.cs"
-viewport_source = patch_root / "ios" / "IPhone16x9Viewport.cs"
-viewport_target = assets / "SibylSystem" / "IPhone16x9Viewport.cs"
-for required in (bootstrap_source, viewport_source):
+native_viewport_source = patch_root / "ios" / "KoishiViewport.mm"
+native_viewport_target = assets / "Plugins" / "iOS" / "KoishiViewport.mm"
+for required in (bootstrap_source, native_viewport_source):
     if not required.is_file():
         raise SystemExit(f"Required patch source missing: {required}")
 shutil.copyfile(bootstrap_source, bootstrap_target)
-shutil.copyfile(viewport_source, viewport_target)
+native_viewport_target.parent.mkdir(parents=True, exist_ok=True)
+shutil.copyfile(native_viewport_source, native_viewport_target)
 
 core_path = assets / "SibylSystem" / "coreWrapper.cs"
 core = core_path.read_text(encoding="utf-8-sig")
@@ -67,9 +68,8 @@ precy = precy.replace(
 )
 precy_path.write_text(precy, encoding="utf-8")
 
-# The current menu prefabs still contain the historical ai_ entry, but it is
-# disabled.  Enable inactive children before event registration so the normal
-# UIHelper lookup can find the button and the restored handler becomes visible.
+# Keep this runtime fallback until the serialized menu inspection identifies the
+# exact active prefab/ancestor path. It is harmless if the entry is already active.
 menu_path = assets / "SibylSystem" / "Menu" / "Menu.cs"
 menu = menu_path.read_text(encoding="utf-8-sig")
 create_anchor = "        createWindow(Program.I().new_ui_menu);\n"
@@ -112,9 +112,9 @@ menu_path.write_text(menu, encoding="utf-8")
 
 print("Finalized offline AI integration:")
 print(f"  - installed {bootstrap_target}")
-print(f"  - installed {viewport_target}")
+print(f"  - installed native iOS viewport plugin {native_viewport_target}")
 print("  - made UTF-8 native paths NUL-terminated and byte-safe")
 print("  - enabled first-use bundled AI data bootstrap")
-print("  - forced inactive ai_ menu entries visible before event registration")
-print("  - installed centred 16:9 runtime viewport for extra-wide iPhones")
+print("  - kept runtime ai_ menu visibility fallback")
+print("  - moved notch containment to the native Unity UIView")
 print("  - replaced obsolete non-ASCII filename warning")
