@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from pathlib import Path
+import re
 import shutil
 import sys
 
@@ -18,6 +19,24 @@ for required in (bootstrap_source, viewport_source):
         raise SystemExit(f"Required patch source missing: {required}")
 shutil.copyfile(bootstrap_source, bootstrap_target)
 shutil.copyfile(viewport_source, viewport_target)
+
+# Do not rely only on RuntimeInitializeOnLoadMethod on IL2CPP/iOS. Program.cs is
+# already known to execute this startup path because it selects the bundled DB.
+# Call the viewport installer explicitly from the same path.
+program_path = assets / "SibylSystem" / "Program.cs"
+program = program_path.read_text(encoding="utf-8-sig")
+viewport_call = "IPhone16x9Viewport.EnsureInstalled();"
+if viewport_call not in program:
+    matches = list(re.finditer(
+        r"(?m)^(?P<indent>[ \t]*)UseBundledBasicData\(\);[ \t]*$",
+        program,
+    ))
+    if len(matches) != 1:
+        raise SystemExit(f"Expected one startup UseBundledBasicData call, found {len(matches)}")
+    m = matches[0]
+    line = m.group(0)
+    program = program[:m.start()] + line + "\n" + m.group("indent") + viewport_call + program[m.end():]
+program_path.write_text(program, encoding="utf-8")
 
 core_path = assets / "SibylSystem" / "coreWrapper.cs"
 core = core_path.read_text(encoding="utf-8-sig")
@@ -67,9 +86,9 @@ precy = precy.replace(
 )
 precy_path.write_text(precy, encoding="utf-8")
 
-# The current menu prefabs still contain the historical ai_ entry, but it is
-# disabled.  Enable inactive children before event registration so the normal
-# UIHelper lookup can find the button and the restored handler becomes visible.
+# The historical ai_ entry may be inactive. Search inactive descendants rather
+# than relying on UIHelper's active-only lookup, then enable the entry before
+# the restored event registration runs.
 menu_path = assets / "SibylSystem" / "Menu" / "Menu.cs"
 menu = menu_path.read_text(encoding="utf-8-sig")
 create_anchor = "        createWindow(Program.I().new_ui_menu);\n"
@@ -113,6 +132,7 @@ menu_path.write_text(menu, encoding="utf-8")
 print("Finalized offline AI integration:")
 print(f"  - installed {bootstrap_target}")
 print(f"  - installed {viewport_target}")
+print(f"  - inserted explicit iOS viewport startup call in {program_path}")
 print("  - made UTF-8 native paths NUL-terminated and byte-safe")
 print("  - enabled first-use bundled AI data bootstrap")
 print("  - forced inactive ai_ menu entries visible before event registration")
