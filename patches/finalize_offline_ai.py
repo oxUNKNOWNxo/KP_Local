@@ -85,261 +85,156 @@ precy = precy.replace(
 )
 precy_path.write_text(precy, encoding="utf-8")
 
-# Do not expose the historical hidden ai branch directly: on the current menu
-# its coordinates overlap another visible entry (My Card). Instead, clone the
-# already-visible single_ entry into the live menu layout, rename it ai_, put it
-# at the end of the same layout, then let the menu layout component reposition
-# its children. A geometry fallback places it in a free slot if there is no
-# Reposition-capable component.
+# Reuse the historical AI entry that is already present in the shipped menu.
+# The previous build proved that this object is renderable on-device, while
+# cloning single_ into the live layout could disappear entirely. Activate the
+# existing hidden AI branch, then move its outer menu group to the nearest free
+# slot so it cannot overlap My Card or another visible entry.
 menu_path = assets / "SibylSystem" / "Menu" / "Menu.cs"
 menu = menu_path.read_text(encoding="utf-8-sig")
-create_anchor = "        createWindow(Program.I().new_ui_menu);\n"
+create_anchor = "        createWindow(Program.I().new_ui_menu);\\n"
 if create_anchor not in menu:
     raise SystemExit("Could not locate Menu.initialize main-menu createWindow call")
 if "EnableAiMenuEntry();" not in menu:
-    menu = menu.replace(create_anchor, create_anchor + "        EnableAiMenuEntry();\n", 1)
+    menu = menu.replace(create_anchor, create_anchor + "        EnableAiMenuEntry();\\n", 1)
 
-helper_anchor = "    private void CreateSuperPreMenuItem()\n"
+helper_anchor = "    private void CreateSuperPreMenuItem()\\n"
 if "private void EnableAiMenuEntry()" not in menu:
     if helper_anchor not in menu:
         raise SystemExit("Could not locate menu helper insertion point")
     helper = r'''    private void EnableAiMenuEntry()
     {
-        Transform legacyAiEntry = null;
-        Transform singleEntry = null;
+        Transform aiEntry = null;
         Transform[] entries = gameObject.GetComponentsInChildren<Transform>(true);
 
         for (int i = 0; i < entries.Length; i++)
         {
             Transform entry = entries[i];
-            if (entry == null)
+            if (entry != null && entry.name == "ai_")
             {
-                continue;
+                aiEntry = entry;
+                break;
             }
-
-            if (entry.name == "ai_" && legacyAiEntry == null)
-            {
-                legacyAiEntry = entry;
-            }
-            else if (entry.name == "single_" && entry.gameObject.activeInHierarchy && singleEntry == null)
-            {
-                singleEntry = entry;
-            }
-        }
-
-        if (singleEntry == null)
-        {
-            for (int i = 0; i < entries.Length; i++)
-            {
-                Transform entry = entries[i];
-                if (entry != null && entry.name == "single_")
-                {
-                    singleEntry = entry;
-                    break;
-                }
-            }
-        }
-
-        Transform aiEntry = null;
-        bool cloned = false;
-
-        if (singleEntry != null && singleEntry.parent != null)
-        {
-            if (legacyAiEntry != null)
-            {
-                // Prevent event lookup from finding the old hidden/overlapping
-                // entry. Its parent remains untouched and can stay inactive.
-                legacyAiEntry.name = "ai_legacy_hidden";
-            }
-
-            GameObject clone = UnityEngine.Object.Instantiate(singleEntry.gameObject, singleEntry.parent, false);
-            clone.name = "ai_";
-            clone.transform.localPosition = singleEntry.localPosition;
-            clone.transform.localRotation = singleEntry.localRotation;
-            clone.transform.localScale = singleEntry.localScale;
-            clone.SetActive(true);
-            clone.transform.SetSiblingIndex(clone.transform.parent.childCount - 1);
-            SetAiMenuLabel(clone);
-
-            if (!TryRepositionMenuParent(clone.transform.parent))
-            {
-                PlaceAiMenuInFreeSlot(clone.transform, singleEntry);
-            }
-
-            aiEntry = clone.transform;
-            cloned = true;
-        }
-        else if (legacyAiEntry != null)
-        {
-            // Last-resort compatibility path for an unexpected prefab variant.
-            ActivateAiMenuHierarchy(legacyAiEntry);
-            PlaceAiMenuInFreeSlot(legacyAiEntry, null);
-            aiEntry = legacyAiEntry;
         }
 
         if (aiEntry == null)
         {
-            UnityEngine.Debug.LogWarning("[OfflineAI] No visible menu entry could be created for AI.");
+            UnityEngine.Debug.LogWarning("[OfflineAI] Existing ai_ menu entry was not found.");
             return;
         }
+
+        Transform movable = aiEntry;
+        if (aiEntry.parent != null && aiEntry.parent.parent == gameObject.transform)
+        {
+            // trans_menu.prefab stores ai_ inside an outer "ai" group. Move the
+            // whole group so its background/label/button remain aligned.
+            movable = aiEntry.parent;
+        }
+
+        ActivateAiMenuHierarchy(aiEntry);
+        movable.gameObject.SetActive(true);
+        MoveAiMenuToNearestFreeSlot(movable);
 
         if (aiEntry.parent != null)
         {
             UIHelper.registEvent(aiEntry.parent.gameObject, "ai_", onClickAI);
         }
         UIHelper.registEvent(gameObject, "ai_", onClickAI);
-        UnityEngine.Debug.Log("[OfflineAI] AI menu entry ready. cloned=" + cloned
-            + " position=" + aiEntry.localPosition
+
+        UnityEngine.Debug.Log("[OfflineAI] Existing AI menu entry enabled."
+            + " groupPosition=" + movable.localPosition
+            + " buttonPosition=" + aiEntry.localPosition
             + " activeInHierarchy=" + aiEntry.gameObject.activeInHierarchy);
     }
 
     private void ActivateAiMenuHierarchy(Transform entry)
     {
         Transform cursor = entry;
-        bool activatedHiddenBranch = false;
         int depth = 0;
-
         while (cursor != null && depth < 12)
         {
             if (!cursor.gameObject.activeSelf)
             {
                 cursor.gameObject.SetActive(true);
-                activatedHiddenBranch = true;
-            }
-            else if (activatedHiddenBranch && cursor != entry)
-            {
-                break;
             }
 
             if (cursor == gameObject.transform)
             {
                 break;
             }
+
             cursor = cursor.parent;
             depth++;
         }
         entry.gameObject.SetActive(true);
     }
 
-    private void PlaceAiMenuInFreeSlot(Transform entry, Transform reference)
+    private void MoveAiMenuToNearestFreeSlot(Transform movable)
     {
-        if (entry == null || entry.parent == null)
+        if (movable == null || movable.parent == null)
         {
             return;
         }
 
-        Transform parent = entry.parent;
-        float minY = float.MaxValue;
-        float maxX = float.MinValue;
-        float minX = float.MaxValue;
-        float maxY = float.MinValue;
-        int count = 0;
+        Transform parent = movable.parent;
+        Vector3 origin = movable.localPosition;
 
+        // The shipped trans_menu uses roughly 40-unit vertical spacing. Search
+        // both directions first so the AI item stays close to its intended
+        // location, then try a second column if every nearby row is occupied.
+        for (int step = 1; step <= 6; step++)
+        {
+            Vector3 up = origin + new Vector3(0f, 40f * step, 0f);
+            if (IsAiMenuSlotFree(parent, movable, up))
+            {
+                movable.localPosition = up;
+                return;
+            }
+
+            Vector3 down = origin + new Vector3(0f, -40f * step, 0f);
+            if (IsAiMenuSlotFree(parent, movable, down))
+            {
+                movable.localPosition = down;
+                return;
+            }
+        }
+
+        Vector3 right = origin + new Vector3(180f, 0f, 0f);
+        if (IsAiMenuSlotFree(parent, movable, right))
+        {
+            movable.localPosition = right;
+            return;
+        }
+
+        Vector3 left = origin + new Vector3(-180f, 0f, 0f);
+        if (IsAiMenuSlotFree(parent, movable, left))
+        {
+            movable.localPosition = left;
+            return;
+        }
+
+        // Deterministic last resort: keep the proven original AI object visible
+        // but offset it horizontally rather than allowing an exact overlap.
+        movable.localPosition = right;
+    }
+
+    private bool IsAiMenuSlotFree(Transform parent, Transform movable, Vector3 candidate)
+    {
         for (int i = 0; i < parent.childCount; i++)
         {
-            Transform child = parent.GetChild(i);
-            if (child == null || child == entry || !child.gameObject.activeSelf)
-            {
-                continue;
-            }
-            Vector3 p = child.localPosition;
-            minY = Mathf.Min(minY, p.y);
-            maxY = Mathf.Max(maxY, p.y);
-            minX = Mathf.Min(minX, p.x);
-            maxX = Mathf.Max(maxX, p.x);
-            count++;
-        }
-
-        Vector3 basePos = reference != null ? reference.localPosition : entry.localPosition;
-        if (count == 0)
-        {
-            entry.localPosition = basePos + new Vector3(0f, -80f, 0f);
-            return;
-        }
-
-        float xSpread = maxX - minX;
-        float ySpread = maxY - minY;
-        if (xSpread > ySpread * 1.25f)
-        {
-            entry.localPosition = new Vector3(maxX + 100f, basePos.y, basePos.z);
-        }
-        else
-        {
-            entry.localPosition = new Vector3(basePos.x, minY - 80f, basePos.z);
-        }
-    }
-
-    private void SetAiMenuLabel(GameObject root)
-    {
-        Component[] components = root.GetComponentsInChildren<Component>(true);
-        int changed = 0;
-        for (int i = 0; i < components.Length; i++)
-        {
-            Component component = components[i];
-            if (component == null)
+            Transform sibling = parent.GetChild(i);
+            if (sibling == null || sibling == movable || !sibling.gameObject.activeSelf)
             {
                 continue;
             }
 
-            System.Reflection.PropertyInfo property = component.GetType().GetProperty(
-                "text",
-                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public
-            );
-            if (property == null || !property.CanWrite || property.PropertyType != typeof(string))
+            Vector3 p = sibling.localPosition;
+            if (Mathf.Abs(p.x - candidate.x) < 70f && Mathf.Abs(p.y - candidate.y) < 22f)
             {
-                continue;
-            }
-
-            try
-            {
-                property.SetValue(component, "AI", null);
-                changed++;
-            }
-            catch
-            {
+                return false;
             }
         }
-        UnityEngine.Debug.Log("[OfflineAI] AI menu label components updated: " + changed);
-    }
-
-    private bool TryRepositionMenuParent(Transform parent)
-    {
-        if (parent == null)
-        {
-            return false;
-        }
-
-        Component[] components = parent.GetComponents<Component>();
-        for (int i = 0; i < components.Length; i++)
-        {
-            Component component = components[i];
-            if (component == null)
-            {
-                continue;
-            }
-
-            System.Reflection.MethodInfo reposition = component.GetType().GetMethod(
-                "Reposition",
-                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public,
-                null,
-                System.Type.EmptyTypes,
-                null
-            );
-            if (reposition == null)
-            {
-                continue;
-            }
-
-            try
-            {
-                reposition.Invoke(component, null);
-                return true;
-            }
-            catch
-            {
-            }
-        }
-        return false;
+        return true;
     }
 
 '''
