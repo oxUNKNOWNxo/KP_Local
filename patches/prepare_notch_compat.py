@@ -72,7 +72,13 @@ container_class = r'''
 
     if (!widePhone)
     {
-        content.frame = bounds;
+        CGRect targetFrame = bounds;
+        BOOL sizeChanged = !CGSizeEqualToSize(content.bounds.size, targetFrame.size);
+        content.frame = targetFrame;
+        [content setNeedsLayout];
+        [content layoutIfNeeded];
+        if (sizeChanged && [content respondsToSelector:@selector(boundsUpdated)])
+            [(id)content boundsUpdated];
         return;
     }
 
@@ -95,7 +101,19 @@ container_class = r'''
         frame.size.height = targetHeight;
     }
 
-    content.frame = CGRectIntegral(frame);
+    CGRect targetFrame = CGRectIntegral(frame);
+    BOOL sizeChanged = !CGSizeEqualToSize(content.bounds.size, targetFrame.size);
+    content.frame = targetFrame;
+    [content setNeedsLayout];
+    [content layoutIfNeeded];
+
+    // UnityView owns a separate render surface. Updating only UIView.frame can
+    // leave the Metal drawable at the old ultra-wide size, which horizontally
+    // compresses the picture and makes it look vertically stretched. Tell
+    // Unity that the view bounds changed so UnityReportResizeView and the
+    // CAMetalLayer drawable are resized to this exact 16:9 surface.
+    if (sizeChanged && [content respondsToSelector:@selector(boundsUpdated)])
+        [(id)content boundsUpdated];
 }
 @end
 
