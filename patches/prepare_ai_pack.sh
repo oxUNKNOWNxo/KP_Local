@@ -7,6 +7,27 @@ if [ "$#" -ne 1 ]; then
 fi
 
 SOURCE_ROOT="$(cd "$1" && pwd)"
+
+# finalize_offline_ai.py stores the injected C# helper in a Python raw string.
+# Normalize quote escapes only inside that generated helper before Unity sees it,
+# then assert the runtime AI menu code is syntactically shaped as expected.
+MENU_PATH="$SOURCE_ROOT/Assets/SibylSystem/Menu/Menu.cs"
+python3 - "$MENU_PATH" <<'PY'
+from pathlib import Path
+import sys
+p = Path(sys.argv[1])
+t = p.read_text(encoding='utf-8-sig')
+start = t.find('    private void EnableAiMenuEntry()')
+end = t.find('    private void CreateSuperPreMenuItem()', start)
+if start < 0 or end < 0:
+    raise SystemExit('AI menu helper block not found before pack preparation')
+block = t[start:end].replace('\\"', '"')
+t = t[:start] + block + t[end:]
+p.write_text(t, encoding='utf-8')
+if 'entry.name == "ai_"' not in block or 'clone.name = "ai_"' not in block:
+    raise SystemExit('AI menu helper quote normalization failed')
+PY
+
 AI_REPO='https://github.com/Snarkie/YGOProAIScript.git'
 AI_COMMIT='1f57db863fb9b5a46e5fe17b7285bde82032e6e4'
 CARD_SCRIPT_REPO='https://github.com/Fluorohydride/ygopro-scripts.git'
