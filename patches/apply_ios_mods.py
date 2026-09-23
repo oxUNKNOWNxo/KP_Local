@@ -51,9 +51,29 @@ startup_replacement = (
 text = text[: m.start()] + startup_replacement + text[m.end() :]
 if re.search(r"(?m)^[ \t]*RetryBasicDataUpdate\(\);[ \t]*$", text):
     raise SystemExit("Startup RetryBasicDataUpdate call is still present after patch")
+# A completed previous online sync must not leave the UI in the default
+# Checking/0% state. Without this, UseBundledBasicData() returns early and
+# the main menu permanently shows a bogus "checking card data... 0%" line.
+already_synced_old = """        if (_hasCompletedBasicDataSync)
+        {
+            return true;
+        }"""
+already_synced_new = """        if (_hasCompletedBasicDataSync)
+        {
+            BasicDataState = BasicDataUpdateState.Ready;
+            BasicDataCurrentFile = "";
+            BasicDataProgress = 1f;
+            _initialBasicDataSyncPending = false;
+            return true;
+        }"""
+if already_synced_old not in text:
+    raise SystemExit("Could not locate already-synced UseBundledBasicData branch")
+text = text.replace(already_synced_old, already_synced_new, 1)
+
 program_path.write_text(text, encoding="utf-8")
 print(f"Patched: {program_path}")
 print("  - disabled forced basic-data sync at startup")
+print("  - normalized already-synced basic-data state to Ready")
 print("  - left explicit/manual Resource Update behavior unchanged")
 
 # ---------------------------------------------------------------------------
@@ -170,6 +190,26 @@ menu_path = assets / "SibylSystem" / "Menu" / "Menu.cs"
 if not menu_path.is_file():
     raise SystemExit(f"Menu source not found: {menu_path}")
 menu_text = menu_path.read_text(encoding="utf-8-sig")
+
+# Avoid automatic network/file work every time the main menu is shown on iOS.
+# Manual Resource Update and Super-Pre update actions remain unchanged.
+auto_superpre_old = """        // 自动检查超先行卡更新
+        if (!_isCheckingUpdate && !isPreDownloading)
+        {
+            Program.I().StartCoroutine(CheckSuperPreUpdateCoroutine());
+        }"""
+auto_superpre_new = """        // KoishiPro2 iOS: do not perform an automatic network update check
+        // merely because the main menu became visible.
+#if !UNITY_IOS && !UNITY_IPHONE
+        if (!_isCheckingUpdate && !isPreDownloading)
+        {
+            Program.I().StartCoroutine(CheckSuperPreUpdateCoroutine());
+        }
+#endif"""
+if auto_superpre_old not in menu_text:
+    raise SystemExit("Could not locate automatic Super-Pre menu-show update check")
+menu_text = menu_text.replace(auto_superpre_old, auto_superpre_new, 1)
+
 if not re.search(r'(?m)^[ \t]*UIHelper\.registEvent\(gameObject,\s*"ai_",\s*onClickAI\);', menu_text):
     anchor_matches = list(re.finditer(
         r'(?m)^(?P<indent>[ \t]*)UIHelper\.registEvent\(gameObject,\s*"single_",\s*onClickPizzle\);[ \t]*$',
@@ -227,6 +267,7 @@ print(f"  - {core_target}")
 print(f"  - {precy_target}")
 print(f"  - {airoom_target}")
 print(f"  - enabled ai_ menu handler in {menu_path}")
+print("  - disabled automatic Super-Pre checks on iOS menu show")
 print("  - configured iOS P/Invoke through __Internal")
 print("  - added IL2CPP/AOT-safe native callback thunks")
 print("  - added safe handling for a missing AI data pack")
