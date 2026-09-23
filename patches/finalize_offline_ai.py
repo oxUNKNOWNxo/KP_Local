@@ -92,11 +92,16 @@ precy_path.write_text(precy, encoding="utf-8")
 # slot so it cannot overlap My Card or another visible entry.
 menu_path = assets / "SibylSystem" / "Menu" / "Menu.cs"
 menu = menu_path.read_text(encoding="utf-8-sig")
-create_anchor = "        createWindow(Program.I().new_ui_menu);\\n"
-if create_anchor not in menu:
+create_pattern = re.compile(
+    r"(?m)^(?P<indent>[ \\t]*)createWindow\\(Program\\.I\\(\\)\\.new_ui_menu\\);[ \\t]*$"
+)
+create_match = create_pattern.search(menu)
+if create_match is None:
     raise SystemExit("Could not locate Menu.initialize main-menu createWindow call")
 if "EnableAiMenuEntry();" not in menu:
-    menu = menu.replace(create_anchor, create_anchor + "        EnableAiMenuEntry();\\n", 1)
+    indent = create_match.group("indent")
+    insertion = create_match.group(0) + "\\n" + indent + "EnableAiMenuEntry();"
+    menu = menu[: create_match.start()] + insertion + menu[create_match.end() :]
 
 helper_anchor = "    private void CreateSuperPreMenuItem()\\n"
 if "private void EnableAiMenuEntry()" not in menu:
