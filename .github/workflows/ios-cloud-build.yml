@@ -71,8 +71,10 @@ jobs:
               raise SystemExit(f'AI finalizer preflight failed; missing {missing}')
           if 'clone.name' in finalizer or 'clone.name' in packer:
               raise SystemExit('Obsolete cloned AI menu logic remains in reviewed patches')
-          if 'layoutIfNeeded' not in notch or 'Koishi16x9ContainerView' not in notch:
-              raise SystemExit('Notch/aspect patch is missing UnityView layout-based surface resize logic')
+          if 'Koishi16x9ContainerView' not in notch or '[content setNeedsLayout];' not in notch:
+              raise SystemExit('Notch/aspect patch is missing deferred UnityView surface resize logic')
+          if '[content layoutIfNeeded];' in notch:
+              raise SystemExit('Unsafe nested UnityView layoutIfNeeded call remains in notch/aspect patch')
 
           print('Static patch preflight passed.')
           PY
