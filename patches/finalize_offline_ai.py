@@ -87,8 +87,8 @@ precy_path.write_text(precy, encoding="utf-8")
 
 # Reuse the historical AI entry already shipped in the menu prefab. Earlier
 # device testing proved that this exact object can render on iOS. Enable its
-# hidden hierarchy and move the complete outer AI group to a free menu slot,
-# avoiding the overlap seen when it was enabled at its original coordinates.
+# hidden hierarchy and move the complete outer AI group to a deterministic
+# second column so it cannot overlap the existing My Card entry.
 menu_path = assets / "SibylSystem" / "Menu" / "Menu.cs"
 menu = menu_path.read_text(encoding="utf-8-sig")
 
@@ -103,10 +103,14 @@ if "EnableAiMenuEntry();" not in menu:
     insertion = ai_register_match.group(0) + "\n" + indent + "EnableAiMenuEntry();"
     menu = menu[: ai_register_match.start()] + insertion + menu[ai_register_match.end() :]
 
-helper_anchor = "    private void CreateSuperPreMenuItem()\n"
+helper_anchor_pattern = re.compile(
+    r"(?m)^(?P<indent>[ \t]*)private void CreateSuperPreMenuItem\(\)[ \t]*$"
+)
+helper_anchor_match = helper_anchor_pattern.search(menu)
 if "private void EnableAiMenuEntry()" not in menu:
-    if helper_anchor not in menu:
+    if helper_anchor_match is None:
         raise SystemExit("Could not locate menu helper insertion point")
+    helper_indent = helper_anchor_match.group("indent")
     helper = r'''    private void EnableAiMenuEntry()
     {
         Transform aiEntry = null;
@@ -129,15 +133,19 @@ if "private void EnableAiMenuEntry()" not in menu:
         }
 
         Transform movable = aiEntry;
-        if (aiEntry.parent != null
-            && (aiEntry.parent.name == "ai" || aiEntry.parent.parent == gameObject.transform))
+        if (aiEntry.parent != null && aiEntry.parent.name == "ai")
         {
             movable = aiEntry.parent;
         }
 
         ActivateAiMenuHierarchy(aiEntry);
         movable.gameObject.SetActive(true);
-        MoveAiMenuToNearestFreeSlot(movable);
+
+        // The legacy AI group shares the first-column slot used by My Card on
+        // the current menu. Keep its vertical row and move the complete group
+        // to a fixed second column instead of guessing a free vertical slot.
+        Vector3 p = movable.localPosition;
+        movable.localPosition = new Vector3(p.x + 180f, p.y, p.z);
 
         if (aiEntry.parent != null)
         {
@@ -175,72 +183,12 @@ if "private void EnableAiMenuEntry()" not in menu:
         entry.gameObject.SetActive(true);
     }
 
-    private void MoveAiMenuToNearestFreeSlot(Transform movable)
-    {
-        if (movable == null || movable.parent == null)
-        {
-            return;
-        }
-
-        Transform parent = movable.parent;
-        Vector3 origin = movable.localPosition;
-
-        for (int step = 1; step <= 6; step++)
-        {
-            Vector3 up = origin + new Vector3(0f, 40f * step, 0f);
-            if (IsAiMenuSlotFree(parent, movable, up))
-            {
-                movable.localPosition = up;
-                return;
-            }
-
-            Vector3 down = origin + new Vector3(0f, -40f * step, 0f);
-            if (IsAiMenuSlotFree(parent, movable, down))
-            {
-                movable.localPosition = down;
-                return;
-            }
-        }
-
-        Vector3 right = origin + new Vector3(180f, 0f, 0f);
-        if (IsAiMenuSlotFree(parent, movable, right))
-        {
-            movable.localPosition = right;
-            return;
-        }
-
-        Vector3 left = origin + new Vector3(-180f, 0f, 0f);
-        if (IsAiMenuSlotFree(parent, movable, left))
-        {
-            movable.localPosition = left;
-            return;
-        }
-
-        movable.localPosition = right;
-    }
-
-    private bool IsAiMenuSlotFree(Transform parent, Transform movable, Vector3 candidate)
-    {
-        for (int i = 0; i < parent.childCount; i++)
-        {
-            Transform sibling = parent.GetChild(i);
-            if (sibling == null || sibling == movable || !sibling.gameObject.activeSelf)
-            {
-                continue;
-            }
-
-            Vector3 p = sibling.localPosition;
-            if (Mathf.Abs(p.x - candidate.x) < 70f && Mathf.Abs(p.y - candidate.y) < 22f)
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
 '''
-    menu = menu.replace(helper_anchor, helper + helper_anchor, 1)
+    # The Menu class uses four-space indentation at this insertion point.
+    # Keep the helper text deterministic and insert it immediately before the
+    # existing CreateSuperPreMenuItem method.
+    insertion_at = helper_anchor_match.start()
+    menu = menu[:insertion_at] + helper + menu[insertion_at:]
 
 menu_path.write_text(menu, encoding="utf-8")
 
@@ -251,5 +199,5 @@ print("  - retained explicit native 16:9 startup marker")
 print("  - made UTF-8 native paths NUL-terminated and byte-safe")
 print("  - enabled bundled AI/card-script bootstrap")
 print("  - re-enabled the existing AI menu hierarchy")
-print("  - moved the complete AI group to a free menu slot")
+print("  - moved the complete AI group to a fixed second column")
 print("  - replaced obsolete non-ASCII filename warning")
