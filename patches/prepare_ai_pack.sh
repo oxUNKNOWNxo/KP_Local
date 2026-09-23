@@ -28,13 +28,17 @@ required = (
     'entry.name == "ai_"',
     'aiEntry.parent.name == "ai"',
     'movable.localPosition = new Vector3(p.x + 180f, p.y, p.z);',
-    'UIHelper.registEvent(gameObject, "ai_", onClickAI);',
 )
 missing = [item for item in required if item not in block]
 if missing:
     raise SystemExit(f'AI menu helper validation failed; missing {missing}')
 if '\\"' in block:
     raise SystemExit('AI menu helper still contains escaped C# quotes')
+
+call = t.find('EnableAiMenuEntry();')
+register = t.find('UIHelper.registEvent(gameObject, "ai_", onClickAI);')
+if call < 0 or register < 0 or call > register:
+    raise SystemExit('AI menu activation must occur before the single ai_ event registration')
 PY
 
 AI_REPO='https://github.com/Snarkie/YGOProAIScript.git'
