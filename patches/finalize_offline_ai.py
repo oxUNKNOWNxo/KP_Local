@@ -100,7 +100,7 @@ if ai_register_match is None:
     raise SystemExit("Could not locate restored ai_ menu registration call")
 if "EnableAiMenuEntry();" not in menu:
     indent = ai_register_match.group("indent")
-    insertion = ai_register_match.group(0) + "\n" + indent + "EnableAiMenuEntry();"
+    insertion = indent + "EnableAiMenuEntry();\n" + ai_register_match.group(0)
     menu = menu[: ai_register_match.start()] + insertion + menu[ai_register_match.end() :]
 
 helper_anchor_pattern = re.compile(
@@ -146,12 +146,6 @@ if "private void EnableAiMenuEntry()" not in menu:
         // to a fixed second column instead of guessing a free vertical slot.
         Vector3 p = movable.localPosition;
         movable.localPosition = new Vector3(p.x + 180f, p.y, p.z);
-
-        if (aiEntry.parent != null)
-        {
-            UIHelper.registEvent(aiEntry.parent.gameObject, "ai_", onClickAI);
-        }
-        UIHelper.registEvent(gameObject, "ai_", onClickAI);
 
         UnityEngine.Debug.Log("[OfflineAI] Existing AI menu entry enabled."
             + " groupPosition=" + movable.localPosition
