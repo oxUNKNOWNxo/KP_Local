@@ -140,42 +140,75 @@ if "private void EnableAiMenuEntry()" not in menu:
         ActivateAiMenuHierarchy(aiEntry);
         movable.gameObject.SetActive(true);
 
-        // Keep the AI entry in the menu's existing vertical column. The menu
-        // uses roughly 40-unit row spacing; place AI one row above the current
-        // highest active sibling so it cannot overlap My Card and cannot run
-        // off the right edge as the previous +180 X offset did.
+        // Reflow only the actual menu-button column. The previous tolerance
+        // was wide enough to include unrelated objects such as version_, which
+        // pushed AI above the visible top edge. Keep every active menu item
+        // inside the column's existing top/bottom bounds and reduce spacing
+        // only as much as needed to make room for AI.
         Transform menuColumn = movable.parent;
         Vector3 p = movable.localPosition;
-        float highestY = p.y;
-        bool foundVisibleSibling = false;
 
         if (menuColumn != null)
         {
+            System.Collections.Generic.List<Transform> columnItems =
+                new System.Collections.Generic.List<Transform>();
+
+            float topY = p.y;
+            float bottomY = p.y;
+
             for (int i = 0; i < menuColumn.childCount; i++)
             {
                 Transform sibling = menuColumn.GetChild(i);
-                if (sibling == null || sibling == movable || !sibling.gameObject.activeSelf)
+                if (sibling == null || !sibling.gameObject.activeSelf)
                 {
                     continue;
                 }
 
                 Vector3 siblingPosition = sibling.localPosition;
-                if (Mathf.Abs(siblingPosition.x - p.x) > 70f)
+                if (Mathf.Abs(siblingPosition.x - p.x) > 12f)
                 {
                     continue;
                 }
 
-                if (!foundVisibleSibling || siblingPosition.y > highestY)
+                columnItems.Add(sibling);
+                topY = Mathf.Max(topY, siblingPosition.y);
+                bottomY = Mathf.Min(bottomY, siblingPosition.y);
+            }
+
+            if (!columnItems.Contains(movable))
+            {
+                columnItems.Add(movable);
+            }
+
+            if (columnItems.Count > 1 && topY > bottomY)
+            {
+                columnItems.Sort((a, b) =>
                 {
-                    highestY = siblingPosition.y;
-                    foundVisibleSibling = true;
+                    if (a == movable && b != movable
+                        && Mathf.Abs(a.localPosition.y - b.localPosition.y) < 0.1f)
+                    {
+                        return -1;
+                    }
+                    if (b == movable && a != movable
+                        && Mathf.Abs(a.localPosition.y - b.localPosition.y) < 0.1f)
+                    {
+                        return 1;
+                    }
+                    return b.localPosition.y.CompareTo(a.localPosition.y);
+                });
+
+                float rowSpacing = (topY - bottomY) / (columnItems.Count - 1);
+                for (int i = 0; i < columnItems.Count; i++)
+                {
+                    Transform item = columnItems[i];
+                    Vector3 itemPosition = item.localPosition;
+                    item.localPosition = new Vector3(
+                        itemPosition.x,
+                        topY - (rowSpacing * i),
+                        itemPosition.z
+                    );
                 }
             }
-        }
-
-        if (foundVisibleSibling)
-        {
-            movable.localPosition = new Vector3(p.x, highestY + 40f, p.z);
         }
 
         UnityEngine.Debug.Log("[OfflineAI] Existing AI menu entry enabled."
@@ -224,5 +257,5 @@ print("  - retained explicit native 16:9 startup marker")
 print("  - made UTF-8 native paths NUL-terminated and byte-safe")
 print("  - enabled bundled AI/card-script bootstrap")
 print("  - re-enabled the existing AI menu hierarchy")
-print("  - moved the complete AI group one row above the active menu column")
+print("  - reflowed the active menu column within its existing vertical bounds")
 print("  - replaced obsolete non-ASCII filename warning")
