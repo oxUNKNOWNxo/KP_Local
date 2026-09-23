@@ -50,26 +50,37 @@ jobs:
             bash -n "$script"
           done < <(find control/patches -type f -name '*.sh' -print | sort)
 
+      - name: Restore fixed KoishiPro2 source snapshot
+        id: source-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: source
+          key: koishipro2-source-${{ env.SOURCE_COMMIT }}-v1
+
       - name: Fetch exact KoishiPro2 source
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf source
-          mkdir source
-          git -C source init -q
-          git -C source remote add origin "$SOURCE_REPO"
-          git -C source config http.version HTTP/1.1
-          fetched=0
-          for attempt in 1 2 3 4 5; do
-            echo "Fetch attempt $attempt/5"
-            if git -C source fetch --quiet --no-tags --depth=1 origin "$SOURCE_COMMIT"; then
-              fetched=1
-              break
-            fi
-            [ "$attempt" -eq 5 ] || sleep 5
-          done
-          test "$fetched" -eq 1
-          git -C source checkout --quiet --detach FETCH_HEAD
+          if [ -d source/.git ] && [ "$(git -C source rev-parse HEAD 2>/dev/null || true)" = "$SOURCE_COMMIT" ]; then
+            echo "Using cached KoishiPro2 source snapshot."
+          else
+            rm -rf source
+            mkdir source
+            git -C source init -q
+            git -C source remote add origin "$SOURCE_REPO"
+            git -C source config http.version HTTP/1.1
+            fetched=0
+            for attempt in 1 2 3 4 5; do
+              echo "Fetch attempt $attempt/5"
+              if git -C source fetch --quiet --no-tags --depth=1 origin "$SOURCE_COMMIT"; then
+                fetched=1
+                break
+              fi
+              [ "$attempt" -eq 5 ] || sleep 5
+            done
+            test "$fetched" -eq 1
+            git -C source checkout --quiet --detach FETCH_HEAD
+          fi
           test "$(git -C source rev-parse HEAD)" = "$SOURCE_COMMIT"
 
       - name: Apply DB and offline AI restoration patches
