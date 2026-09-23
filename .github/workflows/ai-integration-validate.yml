@@ -33,6 +33,15 @@ jobs:
         with:
           path: control
 
+      - name: Static patch preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q control/patches
+          while IFS= read -r script; do
+            bash -n "$script"
+          done < <(find control/patches -type f -name '*.sh' -print | sort)
+
       - name: Fetch exact KoishiPro2 source
         shell: bash
         run: |
