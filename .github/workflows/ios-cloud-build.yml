@@ -69,10 +69,8 @@ jobs:
           missing = [item for item in required_finalizer if item not in finalizer]
           if missing:
               raise SystemExit(f'AI finalizer preflight failed; missing {missing}')
-          if 'clone.name = "ai_"' in finalizer or 'clone.name = \\"ai_\\"' in finalizer:
-              raise SystemExit('Obsolete cloned AI menu logic remains in finalizer')
-          if 'clone.name = "ai_"' in packer:
-              raise SystemExit('Obsolete cloned AI menu assertion remains in packer')
+          if 'clone.name' in finalizer or 'clone.name' in packer:
+              raise SystemExit('Obsolete cloned AI menu logic remains in reviewed patches')
           if 'layoutIfNeeded' not in notch or 'Koishi16x9ContainerView' not in notch:
               raise SystemExit('Notch/aspect patch is missing UnityView layout-based surface resize logic')
 
