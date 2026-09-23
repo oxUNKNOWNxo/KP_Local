@@ -64,26 +64,22 @@ jobs:
           required_finalizer = (
               'private void EnableAiMenuEntry()',
               'aiEntry.parent.name == "ai"',
-              'new Vector3(p.x, highestY + 40f, p.z)',
-              'Mathf.Abs(siblingPosition.x - p.x) > 70f',
+              'System.Collections.Generic.List<Transform> columnItems',
+              'Mathf.Abs(siblingPosition.x - p.x) > 12f',
+              'float rowSpacing = (topY - bottomY) / (columnItems.Count - 1);',
           )
           missing = [item for item in required_finalizer if item not in finalizer]
           if missing:
               raise SystemExit(f'AI finalizer preflight failed; missing {missing}')
           if 'clone.name' in finalizer or 'clone.name' in packer:
               raise SystemExit('Obsolete cloned AI menu logic remains in reviewed patches')
+          viewport = Path('control/patches/ios/IPhone16x9Viewport.cs').read_text(encoding='utf-8')
           if 'Koishi16x9ContainerView' not in notch:
               raise SystemExit('Notch/aspect patch is missing the native 16:9 container')
-          if '#import <dispatch/dispatch.h>' not in notch:
-              raise SystemExit('Explicit GCD import is missing from notch/aspect patch')
-          if '- (void)scheduleUnitySurfaceRefresh:(UIView*)content' not in notch:
-              raise SystemExit('Deferred Unity surface refresh helper is missing')
-          if 'dispatch_async(dispatch_get_main_queue(), ^{' not in notch:
-              raise SystemExit('Unity surface refresh is not deferred to the main queue')
-          if notch.count('[content layoutIfNeeded];') != 1:
-              raise SystemExit('Expected exactly one deferred UnityView layoutIfNeeded call')
-          if notch.count('[self scheduleUnitySurfaceRefresh:content];') != 2:
-              raise SystemExit('Expected both layout paths to schedule Unity surface refresh')
+          if 'scheduleUnitySurfaceRefresh' in notch or '[content layoutIfNeeded];' in notch:
+              raise SystemExit('Obsolete native UnityView surface refresh logic remains')
+          if 'Screen.SetResolution' not in viewport or '16f / 9f' not in viewport:
+              raise SystemExit('Managed 16:9 render-resolution correction is missing')
 
           print('Static patch preflight passed.')
           PY
@@ -206,8 +202,9 @@ jobs:
           grep -q 'ai_' "$MENU"
           grep -Eq 'SetActive\(true\)|activeSelf|activeInHierarchy' "$MENU"
           grep -q 'EnableAiMenuEntry();' "$MENU"
-          grep -q 'movable.localPosition = new Vector3(p.x, highestY + 40f, p.z);' "$MENU"
-          grep -q 'Mathf.Abs(siblingPosition.x - p.x) > 70f' "$MENU"
+          grep -q 'System.Collections.Generic.List<Transform> columnItems' "$MENU"
+          grep -q 'Mathf.Abs(siblingPosition.x - p.x) > 12f' "$MENU"
+          grep -q 'float rowSpacing = (topY - bottomY) / (columnItems.Count - 1);' "$MENU"
           python3 - "$MENU" <<'PY'
           from pathlib import Path
           import sys
@@ -223,6 +220,8 @@ jobs:
           ! grep -q 'clone.name' "$MENU"
           grep -q 'IPhone16x9Viewport' "$VIEWPORT"
           grep -q 'Native centred 16:9 iOS container enabled' "$VIEWPORT"
+          grep -q 'Screen.SetResolution' "$VIEWPORT"
+          grep -q '16f / 9f' "$VIEWPORT"
           grep -q 'AIBootstrap.EnsureInstalled' "$AIROOM"
           echo 'Patched managed source validation passed.'
 
@@ -500,21 +499,12 @@ jobs:
           import sys
 
           text = Path(sys.argv[1]).read_text(encoding='utf-8')
-          required = (
-              '#import <dispatch/dispatch.h>',
-              'Koishi16x9ContainerView',
-              '- (void)scheduleUnitySurfaceRefresh:(UIView*)content',
-              'dispatch_async(dispatch_get_main_queue(), ^{',
-          )
-          missing = [item for item in required if item not in text]
-          if missing:
-              raise SystemExit(f'Generated native 16:9 patch is incomplete: {missing}')
-          if text.count('[content layoutIfNeeded];') != 1:
-              raise SystemExit('Generated native patch must contain exactly one deferred UnityView layoutIfNeeded call')
-          if text.count('[self scheduleUnitySurfaceRefresh:content];') != 2:
-              raise SystemExit('Generated native patch must schedule Unity surface refresh from both layout paths')
+          if 'Koishi16x9ContainerView' not in text:
+              raise SystemExit('Generated native 16:9 container is missing')
+          if 'scheduleUnitySurfaceRefresh' in text or '[content layoutIfNeeded];' in text:
+              raise SystemExit('Obsolete native UnityView surface refresh logic reached Xcode output')
           PY
-          echo 'Native 16:9 layout patch verified with deferred UnityView refresh.'
+          echo 'Native 16:9 view framing verified without forced UnityView relayout.'
           echo '--- launch configuration after compatibility patch ---'
           plutil -p source/output/Info.plist | grep -E 'UILaunch|UIRequiresFullScreen' || true
           echo '--- exported native AI plugin ---'
