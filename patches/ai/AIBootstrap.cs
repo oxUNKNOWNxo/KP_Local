@@ -5,7 +5,7 @@ using UnityEngine;
 public static class AIBootstrap
 {
     private const string BundledPackName = "koishi-ai-pack.zip";
-    private const string PackMarker = "ai/KOISHIPRO2-AI-PACK-V2.txt";
+    private const string PackMarker = "ai/KOISHIPRO2-AI-PACK-V3.txt";
 
     public static bool EnsureInstalled()
     {
@@ -15,22 +15,32 @@ public static class AIBootstrap
             Directory.CreateDirectory("ai/ydk");
             Directory.CreateDirectory("script");
 
-            if (HasUsableAiData())
+            // V3 keeps bundled script sets separate from the user's live script
+            // folder.  Existing/custom scripts always win; bundled files only
+            // fill gaps and are never allowed to overwrite them.
+            if (!File.Exists(PackMarker)
+                || !Directory.Exists("script_current")
+                || !Directory.Exists("script_legacy"))
             {
-                return true;
+                string packPath = Path.Combine(Application.streamingAssetsPath, BundledPackName);
+                if (!File.Exists(packPath))
+                {
+                    Program.DEBUGLOG("Bundled AI pack not found: " + packPath);
+                    return false;
+                }
+
+                byte[] data = File.ReadAllBytes(packPath);
+                Program.I().ExtractZipFile(data, Directory.GetCurrentDirectory());
             }
 
-            string packPath = Path.Combine(Application.streamingAssetsPath, BundledPackName);
-            if (!File.Exists(packPath))
-            {
-                Program.DEBUGLOG("Bundled AI pack not found: " + packPath);
-                return false;
-            }
-
-            byte[] data = File.ReadAllBytes(packPath);
-            Program.I().ExtractZipFile(data, Directory.GetCurrentDirectory());
+            int currentAdded = CopyMissingScripts("script_current", "script");
+            int legacyAdded = CopyMissingScripts("script_legacy", "script");
             bool ok = HasUsableAiData();
-            Program.DEBUGLOG("[OfflineAI] bundled AI/runtime script pack installed: " + ok);
+            Program.DEBUGLOG(
+                "[OfflineAI] runtime scripts ready=" + ok
+                + " currentAdded=" + currentAdded
+                + " legacyAdded=" + legacyAdded
+            );
             return ok;
         }
         catch (Exception e)
@@ -40,6 +50,30 @@ public static class AIBootstrap
         }
     }
 
+    private static int CopyMissingScripts(string sourceDir, string destinationDir)
+    {
+        if (!Directory.Exists(sourceDir))
+        {
+            return 0;
+        }
+
+        int copied = 0;
+        string[] files = Directory.GetFiles(sourceDir, "*.lua", SearchOption.TopDirectoryOnly);
+        for (int i = 0; i < files.Length; i++)
+        {
+            string source = files[i];
+            string destination = Path.Combine(destinationDir, Path.GetFileName(source));
+            if (File.Exists(destination))
+            {
+                continue;
+            }
+
+            File.Copy(source, destination, false);
+            copied++;
+        }
+        return copied;
+    }
+
     private static bool HasUsableAiData()
     {
         if (!Directory.Exists("ai") || !Directory.Exists("ai/ydk") || !Directory.Exists("script"))
@@ -47,10 +81,6 @@ public static class AIBootstrap
             return false;
         }
 
-        // V2 deliberately requires the legacy card-script runtime as well as
-        // the AI Lua itself.  Older test builds installed only ai/*, which let
-        // the room open but caused the restored ocgcore to spam script errors
-        // as soon as a duel started.
         return File.Exists(PackMarker)
             && File.Exists("ai/ai.lua")
             && Directory.GetFiles("ai/ydk", "*.ydk", SearchOption.TopDirectoryOnly).Length > 0
