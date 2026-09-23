@@ -140,11 +140,43 @@ if "private void EnableAiMenuEntry()" not in menu:
         ActivateAiMenuHierarchy(aiEntry);
         movable.gameObject.SetActive(true);
 
-        // The legacy AI group shares the first-column slot used by My Card on
-        // the current menu. Keep its vertical row and move the complete group
-        // to a fixed second column instead of guessing a free vertical slot.
+        // Keep the AI entry in the menu's existing vertical column. The menu
+        // uses roughly 40-unit row spacing; place AI one row above the current
+        // highest active sibling so it cannot overlap My Card and cannot run
+        // off the right edge as the previous +180 X offset did.
+        Transform menuColumn = movable.parent;
         Vector3 p = movable.localPosition;
-        movable.localPosition = new Vector3(p.x + 180f, p.y, p.z);
+        float highestY = p.y;
+        bool foundVisibleSibling = false;
+
+        if (menuColumn != null)
+        {
+            for (int i = 0; i < menuColumn.childCount; i++)
+            {
+                Transform sibling = menuColumn.GetChild(i);
+                if (sibling == null || sibling == movable || !sibling.gameObject.activeSelf)
+                {
+                    continue;
+                }
+
+                Vector3 siblingPosition = sibling.localPosition;
+                if (Mathf.Abs(siblingPosition.x - p.x) > 70f)
+                {
+                    continue;
+                }
+
+                if (!foundVisibleSibling || siblingPosition.y > highestY)
+                {
+                    highestY = siblingPosition.y;
+                    foundVisibleSibling = true;
+                }
+            }
+        }
+
+        if (foundVisibleSibling)
+        {
+            movable.localPosition = new Vector3(p.x, highestY + 40f, p.z);
+        }
 
         UnityEngine.Debug.Log("[OfflineAI] Existing AI menu entry enabled."
             + " groupPosition=" + movable.localPosition
@@ -192,5 +224,5 @@ print("  - retained explicit native 16:9 startup marker")
 print("  - made UTF-8 native paths NUL-terminated and byte-safe")
 print("  - enabled bundled AI/card-script bootstrap")
 print("  - re-enabled the existing AI menu hierarchy")
-print("  - moved the complete AI group to a fixed second column")
+print("  - moved the complete AI group one row above the active menu column")
 print("  - replaced obsolete non-ASCII filename warning")
