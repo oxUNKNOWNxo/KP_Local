@@ -140,11 +140,11 @@ if "private void EnableAiMenuEntry()" not in menu:
         ActivateAiMenuHierarchy(aiEntry);
         movable.gameObject.SetActive(true);
 
-        // Reflow only the actual menu-button column. The previous tolerance
-        // was wide enough to include unrelated objects such as version_, which
-        // pushed AI above the visible top edge. Keep every active menu item
-        // inside the column's existing top/bottom bounds and reduce spacing
-        // only as much as needed to make room for AI.
+        // Reflow only the actual menu-button column. Derive the usable bounds
+        // from the already-visible menu items, NOT from the hidden AI group's
+        // original position. The original AI object can live above the visible
+        // menu in the prefab; including that Y value made the new first row
+        // remain off-screen on device.
         Transform menuColumn = movable.parent;
         Vector3 p = movable.localPosition;
 
@@ -153,13 +153,14 @@ if "private void EnableAiMenuEntry()" not in menu:
             System.Collections.Generic.List<Transform> columnItems =
                 new System.Collections.Generic.List<Transform>();
 
-            float topY = p.y;
-            float bottomY = p.y;
+            float topY = 0f;
+            float bottomY = 0f;
+            bool foundExistingBounds = false;
 
             for (int i = 0; i < menuColumn.childCount; i++)
             {
                 Transform sibling = menuColumn.GetChild(i);
-                if (sibling == null || !sibling.gameObject.activeSelf)
+                if (sibling == null || sibling == movable || !sibling.gameObject.activeSelf)
                 {
                     continue;
                 }
@@ -171,43 +172,47 @@ if "private void EnableAiMenuEntry()" not in menu:
                 }
 
                 columnItems.Add(sibling);
-                topY = Mathf.Max(topY, siblingPosition.y);
-                bottomY = Mathf.Min(bottomY, siblingPosition.y);
-            }
-
-            if (!columnItems.Contains(movable))
-            {
-                columnItems.Add(movable);
-            }
-
-            if (columnItems.Count > 1 && topY > bottomY)
-            {
-                columnItems.Sort((a, b) =>
+                if (!foundExistingBounds)
                 {
-                    if (a == movable && b != movable
-                        && Mathf.Abs(a.localPosition.y - b.localPosition.y) < 0.1f)
-                    {
-                        return -1;
-                    }
-                    if (b == movable && a != movable
-                        && Mathf.Abs(a.localPosition.y - b.localPosition.y) < 0.1f)
-                    {
-                        return 1;
-                    }
-                    return b.localPosition.y.CompareTo(a.localPosition.y);
-                });
-
-                float rowSpacing = (topY - bottomY) / (columnItems.Count - 1);
-                for (int i = 0; i < columnItems.Count; i++)
-                {
-                    Transform item = columnItems[i];
-                    Vector3 itemPosition = item.localPosition;
-                    item.localPosition = new Vector3(
-                        itemPosition.x,
-                        topY - (rowSpacing * i),
-                        itemPosition.z
-                    );
+                    topY = siblingPosition.y;
+                    bottomY = siblingPosition.y;
+                    foundExistingBounds = true;
                 }
+                else
+                {
+                    topY = Mathf.Max(topY, siblingPosition.y);
+                    bottomY = Mathf.Min(bottomY, siblingPosition.y);
+                }
+            }
+
+            if (foundExistingBounds)
+            {
+                // AI becomes the new first row while all rows remain inside the
+                // exact top/bottom range that was already visible before AI was
+                // enabled. Existing items keep their relative vertical order.
+                columnItems.Sort((a, b) =>
+                    b.localPosition.y.CompareTo(a.localPosition.y));
+                columnItems.Insert(0, movable);
+
+                if (columnItems.Count > 1 && topY > bottomY)
+                {
+                    float rowSpacing = (topY - bottomY) / (columnItems.Count - 1);
+                    for (int i = 0; i < columnItems.Count; i++)
+                    {
+                        Transform item = columnItems[i];
+                        Vector3 itemPosition = item.localPosition;
+                        item.localPosition = new Vector3(
+                            itemPosition.x,
+                            topY - (rowSpacing * i),
+                            itemPosition.z
+                        );
+                    }
+                }
+            }
+            else
+            {
+                UnityEngine.Debug.LogWarning(
+                    "[OfflineAI] Could not derive visible menu bounds; AI position left unchanged.");
             }
         }
 
@@ -257,5 +262,5 @@ print("  - retained explicit native 16:9 startup marker")
 print("  - made UTF-8 native paths NUL-terminated and byte-safe")
 print("  - enabled bundled AI/card-script bootstrap")
 print("  - re-enabled the existing AI menu hierarchy")
-print("  - reflowed the active menu column within its existing vertical bounds")
+print("  - reflowed AI from visible sibling bounds without using its hidden prefab Y")
 print("  - replaced obsolete non-ASCII filename warning")
