@@ -25,24 +25,19 @@ jobs:
       SOURCE_COMMIT: c1850e1120df6a5885692eadacad8ad114a3cf11
 
     steps:
-      - name: Fetch exact KoishiPro2 source revision
+      - name: Restore fixed KoishiPro2 source snapshot
+        id: source-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: source
+          key: koishipro2-source-${{ env.SOURCE_COMMIT }}-v1
+
+      - name: Verify fixed source snapshot
         shell: bash
         run: |
           set -euo pipefail
-          mkdir source
-          git -C source init -q
-          git -C source remote add origin "$SOURCE_REPO"
-          git -C source config http.version HTTP/1.1
-          fetched=0
-          for attempt in 1 2 3 4 5; do
-            if git -C source fetch --quiet --no-tags --depth=1 origin "$SOURCE_COMMIT"; then
-              fetched=1
-              break
-            fi
-            [ "$attempt" -eq 5 ] || sleep 5
-          done
-          test "$fetched" -eq 1
-          git -C source checkout --quiet --detach FETCH_HEAD
+          test '${{ steps.source-cache.outputs.cache-hit }}' = 'true'
+          test -d source/.git
           test "$(git -C source rev-parse HEAD)" = "$SOURCE_COMMIT"
 
       - name: Inspect CDB sync and menu transition paths
