@@ -483,6 +483,15 @@ jobs:
             /usr/libexec/PlistBuddy -c 'Set :LSSupportsOpeningDocumentsInPlace true' Info.plist
           cd "$GITHUB_WORKSPACE"
           python3 control/patches/prepare_notch_compat.py source/output
+          VIEW_FILE=$(find source/output -name 'UnityAppController+ViewHandling.mm' -print -quit)
+          test -n "$VIEW_FILE"
+          grep -q 'Koishi16x9ContainerView' "$VIEW_FILE"
+          grep -q '\[content setNeedsLayout\];' "$VIEW_FILE"
+          if grep -q '\[content layoutIfNeeded\];' "$VIEW_FILE"; then
+            echo 'Unsafe nested UnityView layoutIfNeeded call reached generated Xcode source.'
+            exit 1
+          fi
+          echo 'Native 16:9 layout patch verified without nested UnityView layout.'
           echo '--- launch configuration after compatibility patch ---'
           plutil -p source/output/Info.plist | grep -E 'UILaunch|UIRequiresFullScreen' || true
           echo '--- exported native AI plugin ---'
