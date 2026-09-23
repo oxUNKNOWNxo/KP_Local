@@ -194,6 +194,10 @@ jobs:
           test -s "$AIROOM"
           grep -q 'ai_' "$MENU"
           grep -Eq 'SetActive\(true\)|activeSelf|activeInHierarchy' "$MENU"
+          grep -q 'EnableAiMenuEntry();' "$MENU"
+          grep -q 'movable.localPosition = new Vector3(p.x + 180f, p.y, p.z);' "$MENU"
+          test "$(grep -Ec 'UIHelper\.registEvent\(gameObject,[[:space:]]*"ai_",[[:space:]]*onClickAI\);' "$MENU")" -eq 1
+          ! grep -q 'clone.name' "$MENU"
           grep -q 'IPhone16x9Viewport' "$VIEWPORT"
           grep -q 'Native centred 16:9 iOS container enabled' "$VIEWPORT"
           grep -q 'AIBootstrap.EnsureInstalled' "$AIROOM"
