@@ -1,8 +1,8 @@
 using UnityEngine;
 
-// Keeps KoishiPro2's camera-rendered UI/gameplay inside a centred 16:9 area on
-// extra-wide iPhones. The unused left/right area is cleared to black, so the
-// notch and home-indicator region never overlap the game surface.
+// Runtime fallback for extra-wide iPhones plus a small menu-layout repair.
+// The primary notch fix is applied in generated native iOS UI code; camera.rect
+// remains here only as a secondary containment path.
 public sealed class IPhone16x9Viewport : MonoBehaviour
 {
     private const float TargetAspect = 16f / 9f;
@@ -13,6 +13,7 @@ public sealed class IPhone16x9Viewport : MonoBehaviour
     private Rect lastContentRect = new Rect(0f, 0f, 1f, 1f);
     private int lastWidth;
     private int lastHeight;
+    private bool aiMenuPositionFixed;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void InstallFromUnityRuntime()
@@ -20,9 +21,6 @@ public sealed class IPhone16x9Viewport : MonoBehaviour
         EnsureInstalled();
     }
 
-    // Program.cs also calls this explicitly during normal KoishiPro2 startup.
-    // The explicit call is intentional: on iOS/IL2CPP we do not rely solely on
-    // RuntimeInitializeOnLoadMethod discovery/retention for this patch.
     public static void EnsureInstalled()
     {
 #if UNITY_IOS && !UNITY_EDITOR
@@ -34,7 +32,7 @@ public sealed class IPhone16x9Viewport : MonoBehaviour
         GameObject host = new GameObject("IPhone16x9Viewport");
         DontDestroyOnLoad(host);
         instance = host.AddComponent<IPhone16x9Viewport>();
-        Debug.Log("[IPhone16x9Viewport] Installed explicit 16:9 viewport controller.");
+        Debug.Log("[IPhone16x9Viewport] Installed runtime layout controller.");
 #endif
     }
 
@@ -55,6 +53,44 @@ public sealed class IPhone16x9Viewport : MonoBehaviour
     private void LateUpdate()
     {
         ApplyViewport(false);
+        FixAiMenuLayout();
+    }
+
+    private void FixAiMenuLayout()
+    {
+        if (aiMenuPositionFixed)
+        {
+            return;
+        }
+
+        GameObject ai = GameObject.Find("ai_");
+        GameObject myCard = GameObject.Find("mycard_");
+        if (ai == null || myCard == null)
+        {
+            return;
+        }
+
+        Transform aiTransform = ai.transform;
+        Transform myCardTransform = myCard.transform;
+        const float gap = 80f;
+
+        if (aiTransform.parent == myCardTransform.parent)
+        {
+            aiTransform.localPosition = myCardTransform.localPosition + new Vector3(0f, -gap, 0f);
+        }
+        else if (aiTransform.parent != null)
+        {
+            Vector3 world = myCardTransform.TransformPoint(Vector3.zero);
+            Vector3 local = aiTransform.parent.InverseTransformPoint(world);
+            aiTransform.localPosition = local + new Vector3(0f, -gap, 0f);
+        }
+        else
+        {
+            aiTransform.position = myCardTransform.position + new Vector3(0f, -gap, 0f);
+        }
+
+        aiMenuPositionFixed = true;
+        Debug.Log("[OfflineAI] Positioned AI menu below My Card.");
     }
 
     private void CreateBlackBackgroundCamera()
@@ -126,8 +162,6 @@ public sealed class IPhone16x9Viewport : MonoBehaviour
                 continue;
             }
 
-            // KoishiPro2's gameplay/NGUI cameras are full-screen cameras. Do
-            // not disturb deliberately smaller viewports such as previews.
             if (force || geometryChanged || Approximately(cam.rect, full) || Approximately(cam.rect, lastContentRect))
             {
                 if (Approximately(cam.rect, full) || Approximately(cam.rect, lastContentRect))
