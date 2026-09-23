@@ -99,6 +99,7 @@ container_class = r'''
 }
 @end
 
+'''
 
 if "@interface Koishi16x9ContainerView" not in text:
     implementation_marker = "@implementation UnityAppController"
