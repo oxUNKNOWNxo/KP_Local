@@ -37,6 +37,40 @@ jobs:
         with:
           path: control
 
+      - name: Static patch preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q control/patches
+          while IFS= read -r script; do
+            bash -n "$script"
+          done < <(find control/patches -type f -name '*.sh' -print | sort)
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          finalizer = Path('control/patches/finalize_offline_ai.py').read_text(encoding='utf-8')
+          packer = Path('control/patches/prepare_ai_pack.sh').read_text(encoding='utf-8')
+          notch = Path('control/patches/prepare_notch_compat.py').read_text(encoding='utf-8')
+
+          required_finalizer = (
+              'private void EnableAiMenuEntry()',
+              'aiEntry.parent.name == "ai"',
+              'new Vector3(p.x + 180f, p.y, p.z)',
+          )
+          missing = [item for item in required_finalizer if item not in finalizer]
+          if missing:
+              raise SystemExit(f'AI finalizer preflight failed; missing {missing}')
+          if 'clone.name = "ai_"' in finalizer or 'clone.name = \\"ai_\\"' in finalizer:
+              raise SystemExit('Obsolete cloned AI menu logic remains in finalizer')
+          if 'clone.name = "ai_"' in packer:
+              raise SystemExit('Obsolete cloned AI menu assertion remains in packer')
+          if 'boundsUpdated' not in notch or 'Koishi16x9ContainerView' not in notch:
+              raise SystemExit('Notch/aspect patch is missing native surface resize logic')
+
+          print('Static patch preflight passed.')
+          PY
+
       - name: Show runner environment
         shell: bash
         run: |
@@ -176,7 +210,7 @@ jobs:
           grep -q 'ai_' "$MENU"
           grep -Eq 'SetActive\(true\)|activeSelf|activeInHierarchy' "$MENU"
           grep -q 'IPhone16x9Viewport' "$VIEWPORT"
-          grep -Eq 'Camera|rect|pixelRect' "$VIEWPORT"
+          grep -q 'Native centred 16:9 iOS container enabled' "$VIEWPORT"
           grep -q 'AIBootstrap.EnsureInstalled' "$AIROOM"
           echo 'Patched managed source validation passed.'
 
