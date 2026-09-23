@@ -65,8 +65,8 @@ jobs:
               raise SystemExit('Obsolete cloned AI menu logic remains in finalizer')
           if 'clone.name = "ai_"' in packer:
               raise SystemExit('Obsolete cloned AI menu assertion remains in packer')
-          if 'boundsUpdated' not in notch or 'Koishi16x9ContainerView' not in notch:
-              raise SystemExit('Notch/aspect patch is missing native surface resize logic')
+          if 'layoutIfNeeded' not in notch or 'Koishi16x9ContainerView' not in notch:
+              raise SystemExit('Notch/aspect patch is missing UnityView layout-based surface resize logic')
 
           print('Static patch preflight passed.')
           PY
