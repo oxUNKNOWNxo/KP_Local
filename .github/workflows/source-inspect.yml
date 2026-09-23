@@ -57,11 +57,25 @@ jobs:
 
           {
             echo '=== CDB / DB / basic-data sync candidates ==='
-            grep -RniE --include='*.cs' 'cards\.cdb|BasicData|ReloadGameDatabases|DownloadAndProcessFile|database|\.cdb|online.?sync' inspection/decompiled 2>/dev/null || true
+            grep -RniE --include='*.cs' 'cards\.cdb|BasicData|RetryBasicDataUpdate|UpdateClientCoroutine|ReloadGameDatabases|DownloadAndProcessFile|database|\.cdb|online.?sync|正在|0%' inspection/decompiled 2>/dev/null || true
+            echo
+            echo '=== Menu transition / click latency candidates ==='
+            grep -RniE --include='*.cs' 'shiftToServant|onClickAI|onClickPizzle|onClickDeck|onClickReplay|onClick|WaitForSeconds|StartCoroutine|WWW|UnityWebRequest' inspection/decompiled/SibylSystem 2>/dev/null || true
             echo
             echo '=== Safe area / notch / screen candidates ==='
             grep -RniE --include='*.cs' 'Screen\.safeArea|safeArea|cutouts|notch|GetLeftScreenOffset|fixScreenProblems|fixALLcameras|SetResolution|Screen\.width|Screen\.height' inspection/decompiled 2>/dev/null || true
           } > inspection/search-report.txt
+
+          PROGRAM=$(find inspection/decompiled -path '*/SibylSystem/Program.cs' -print -quit)
+          MENU=$(find inspection/decompiled -path '*/SibylSystem/Menu/Menu.cs' -print -quit)
+          test -n "$PROGRAM"
+          test -n "$MENU"
+          cp "$PROGRAM" inspection/Program.cs
+          cp "$MENU" inspection/Menu.cs
+          echo '--- Program sync excerpts ---'
+          grep -nE -C 18 'BasicData|RetryBasicDataUpdate|UpdateClientCoroutine|cards\.cdb|正在|progress' inspection/Program.cs || true
+          echo '--- Menu transition excerpts ---'
+          grep -nE -C 14 'shiftToServant|onClickAI|onClickPizzle|onClickDeck|onClickReplay' inspection/Menu.cs || true
 
           printf '%s\n' "$SOURCE_COMMIT" > inspection/SOURCE_COMMIT.txt
           zip -qry KoishiPro2-source-inspection.zip inspection
