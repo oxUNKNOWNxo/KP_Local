@@ -5,6 +5,7 @@ using UnityEngine;
 public static class AIBootstrap
 {
     private const string BundledPackName = "koishi-ai-pack.zip";
+    private const string PackMarker = "ai/KOISHIPRO2-AI-PACK-V2.txt";
 
     public static bool EnsureInstalled()
     {
@@ -12,6 +13,7 @@ public static class AIBootstrap
         {
             Directory.CreateDirectory("ai");
             Directory.CreateDirectory("ai/ydk");
+            Directory.CreateDirectory("script");
 
             if (HasUsableAiData())
             {
@@ -27,7 +29,9 @@ public static class AIBootstrap
 
             byte[] data = File.ReadAllBytes(packPath);
             Program.I().ExtractZipFile(data, Directory.GetCurrentDirectory());
-            return HasUsableAiData();
+            bool ok = HasUsableAiData();
+            Program.DEBUGLOG("[OfflineAI] bundled AI/runtime script pack installed: " + ok);
+            return ok;
         }
         catch (Exception e)
         {
@@ -38,12 +42,20 @@ public static class AIBootstrap
 
     private static bool HasUsableAiData()
     {
-        if (!Directory.Exists("ai") || !Directory.Exists("ai/ydk"))
+        if (!Directory.Exists("ai") || !Directory.Exists("ai/ydk") || !Directory.Exists("script"))
         {
             return false;
         }
 
-        return Directory.GetFiles("ai", "*.lua", SearchOption.TopDirectoryOnly).Length > 0
-            && Directory.GetFiles("ai/ydk", "*.ydk", SearchOption.TopDirectoryOnly).Length > 0;
+        // V2 deliberately requires the legacy card-script runtime as well as
+        // the AI Lua itself.  Older test builds installed only ai/*, which let
+        // the room open but caused the restored ocgcore to spam script errors
+        // as soon as a duel started.
+        return File.Exists(PackMarker)
+            && File.Exists("ai/ai.lua")
+            && Directory.GetFiles("ai/ydk", "*.ydk", SearchOption.TopDirectoryOnly).Length > 0
+            && File.Exists("script/constant.lua")
+            && File.Exists("script/utility.lua")
+            && Directory.GetFiles("script", "c*.lua", SearchOption.TopDirectoryOnly).Length > 1000;
     }
 }
