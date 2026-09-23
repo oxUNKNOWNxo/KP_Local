@@ -8,24 +8,33 @@ fi
 
 SOURCE_ROOT="$(cd "$1" && pwd)"
 
-# finalize_offline_ai.py stores the injected C# helper in a Python raw string.
-# Normalize quote escapes only inside that generated helper before Unity sees it,
-# then assert the runtime AI menu code is syntactically shaped as expected.
+# Validate the generated AI menu helper before packaging data. The helper is
+# emitted by finalize_offline_ai.py with ordinary C# quotes, so no post-hoc
+# source rewriting is needed here.
 MENU_PATH="$SOURCE_ROOT/Assets/SibylSystem/Menu/Menu.cs"
 python3 - "$MENU_PATH" <<'PY'
 from pathlib import Path
 import sys
+
 p = Path(sys.argv[1])
 t = p.read_text(encoding='utf-8-sig')
 start = t.find('    private void EnableAiMenuEntry()')
 end = t.find('    private void CreateSuperPreMenuItem()', start)
 if start < 0 or end < 0:
     raise SystemExit('AI menu helper block not found before pack preparation')
-block = t[start:end].replace('\\"', '"')
-t = t[:start] + block + t[end:]
-p.write_text(t, encoding='utf-8')
-if 'entry.name == "ai_"' not in block or 'clone.name = "ai_"' not in block:
-    raise SystemExit('AI menu helper quote normalization failed')
+
+block = t[start:end]
+required = (
+    'entry.name == "ai_"',
+    'aiEntry.parent.name == "ai"',
+    'movable.localPosition = new Vector3(p.x + 180f, p.y, p.z);',
+    'UIHelper.registEvent(gameObject, "ai_", onClickAI);',
+)
+missing = [item for item in required if item not in block]
+if missing:
+    raise SystemExit(f'AI menu helper validation failed; missing {missing}')
+if '\\"' in block:
+    raise SystemExit('AI menu helper still contains escaped C# quotes')
 PY
 
 AI_REPO='https://github.com/Snarkie/YGOProAIScript.git'
