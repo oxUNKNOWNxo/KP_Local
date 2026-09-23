@@ -142,7 +142,8 @@ jobs:
               raise SystemExit(f'Expected exactly one active ai_ event registration; found {len(active)}')
           PY
           grep -q 'EnableAiMenuEntry();' "$MENU"
-          grep -q 'movable.localPosition = new Vector3(p.x + 180f, p.y, p.z);' "$MENU"
+          grep -q 'movable.localPosition = new Vector3(p.x, highestY + 40f, p.z);' "$MENU"
+          grep -q 'Mathf.Abs(siblingPosition.x - p.x) > 70f' "$MENU"
           ! grep -q 'clone.name' "$MENU"
           grep -q 'shiftToServant(Program.I().aiRoom)' "$MENU"
           grep -q 'UseBundledBasicData();' "$PROGRAM"
