@@ -130,6 +130,10 @@ jobs:
           grep -q 'AIデータが見つかりません' "$AIROOM"
           grep -q 'koishi-ai-pack.zip' "$BOOTSTRAP"
           grep -Eq 'UIHelper\.registEvent\(gameObject,[[:space:]]*"ai_",[[:space:]]*onClickAI\);' "$MENU"
+          test "$(grep -Ec 'UIHelper\.registEvent\(gameObject,[[:space:]]*"ai_",[[:space:]]*onClickAI\);' "$MENU")" -eq 1
+          grep -q 'EnableAiMenuEntry();' "$MENU"
+          grep -q 'movable.localPosition = new Vector3(p.x + 180f, p.y, p.z);' "$MENU"
+          ! grep -q 'clone.name' "$MENU"
           grep -q 'shiftToServant(Program.I().aiRoom)' "$MENU"
           grep -q 'UseBundledBasicData();' "$PROGRAM"
           ! grep -Eq '^[[:space:]]*RetryBasicDataUpdate\(\);[[:space:]]*$' "$PROGRAM"
