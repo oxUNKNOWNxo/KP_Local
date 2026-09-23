@@ -5,7 +5,7 @@ using UnityEngine;
 public static class AIBootstrap
 {
     private const string BundledPackName = "koishi-ai-pack.zip";
-    private const string PackMarker = "ai/KOISHIPRO2-AI-PACK-V3.txt";
+    private const string PackMarker = "ai/KOISHIPRO2-AI-PACK-V4.txt";
 
     public static bool EnsureInstalled()
     {
@@ -15,13 +15,23 @@ public static class AIBootstrap
             Directory.CreateDirectory("ai/ydk");
             Directory.CreateDirectory("script");
 
-            // V3 keeps bundled script sets separate from the user's live script
-            // folder.  Existing/custom scripts always win; bundled files only
-            // fill gaps and are never allowed to overwrite them.
+            // V4 ships a complete snapshot of the current official card scripts.
+            // script_current is authoritative for the bundled official files;
+            // the historical set is used only when the current snapshot does not
+            // contain a file required by the restored Percy/ocgcore runtime.
             if (!File.Exists(PackMarker)
                 || !Directory.Exists("script_current")
                 || !Directory.Exists("script_legacy"))
             {
+                if (Directory.Exists("script_current"))
+                {
+                    Directory.Delete("script_current", true);
+                }
+                if (Directory.Exists("script_legacy"))
+                {
+                    Directory.Delete("script_legacy", true);
+                }
+
                 string packPath = Path.Combine(Application.streamingAssetsPath, BundledPackName);
                 if (!File.Exists(packPath))
                 {
@@ -33,12 +43,12 @@ public static class AIBootstrap
                 Program.I().ExtractZipFile(data, Directory.GetCurrentDirectory());
             }
 
-            int currentAdded = CopyMissingScripts("script_current", "script");
-            int legacyAdded = CopyMissingScripts("script_legacy", "script");
+            int currentCopied = CopyScripts("script_current", "script", true);
+            int legacyAdded = CopyScripts("script_legacy", "script", false);
             bool ok = HasUsableAiData();
             Program.DEBUGLOG(
                 "[OfflineAI] runtime scripts ready=" + ok
-                + " currentAdded=" + currentAdded
+                + " currentCopied=" + currentCopied
                 + " legacyAdded=" + legacyAdded
             );
             return ok;
@@ -50,7 +60,7 @@ public static class AIBootstrap
         }
     }
 
-    private static int CopyMissingScripts(string sourceDir, string destinationDir)
+    private static int CopyScripts(string sourceDir, string destinationDir, bool overwrite)
     {
         if (!Directory.Exists(sourceDir))
         {
@@ -58,17 +68,25 @@ public static class AIBootstrap
         }
 
         int copied = 0;
-        string[] files = Directory.GetFiles(sourceDir, "*.lua", SearchOption.TopDirectoryOnly);
+        string sourcePrefix = Path.GetFullPath(sourceDir).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        string[] files = Directory.GetFiles(sourceDir, "*.lua", SearchOption.AllDirectories);
         for (int i = 0; i < files.Length; i++)
         {
-            string source = files[i];
-            string destination = Path.Combine(destinationDir, Path.GetFileName(source));
-            if (File.Exists(destination))
+            string source = Path.GetFullPath(files[i]);
+            string relative = source.Substring(sourcePrefix.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            string destination = Path.Combine(destinationDir, relative);
+            string parent = Path.GetDirectoryName(destination);
+            if (!String.IsNullOrEmpty(parent))
+            {
+                Directory.CreateDirectory(parent);
+            }
+
+            if (!overwrite && File.Exists(destination))
             {
                 continue;
             }
 
-            File.Copy(source, destination, false);
+            File.Copy(source, destination, overwrite);
             copied++;
         }
         return copied;
@@ -86,6 +104,6 @@ public static class AIBootstrap
             && Directory.GetFiles("ai/ydk", "*.ydk", SearchOption.TopDirectoryOnly).Length > 0
             && File.Exists("script/constant.lua")
             && File.Exists("script/utility.lua")
-            && Directory.GetFiles("script", "c*.lua", SearchOption.TopDirectoryOnly).Length > 1000;
+            && Directory.GetFiles("script", "c*.lua", SearchOption.AllDirectories).Length > 1000;
     }
 }
