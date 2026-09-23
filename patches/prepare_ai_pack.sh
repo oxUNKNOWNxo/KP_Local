@@ -36,7 +36,10 @@ if '\\"' in block:
     raise SystemExit('AI menu helper still contains escaped C# quotes')
 
 call = t.find('EnableAiMenuEntry();')
-register = t.find('UIHelper.registEvent(gameObject, "ai_", onClickAI);')
+registration_line = 'UIHelper.registEvent(gameObject, "ai_", onClickAI);'
+register = t.find(registration_line)
+if t.count(registration_line) != 1:
+    raise SystemExit(f'Expected exactly one ai_ event registration; found {t.count(registration_line)}')
 if call < 0 or register < 0 or call > register:
     raise SystemExit('AI menu activation must occur before the single ai_ event registration')
 PY
