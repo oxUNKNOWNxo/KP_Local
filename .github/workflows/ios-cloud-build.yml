@@ -164,7 +164,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          find control/patches -type f -print0 | sort -z | xargs -0 shasum -a 256 > "$RUNNER_TEMP/patch-files.sha256"
+          (
+            cd control
+            git ls-files -z patches | sort -z | xargs -0 shasum -a 256
+          ) > "$RUNNER_TEMP/patch-files.sha256"
           PATCH_HASH=$(shasum -a 256 "$RUNNER_TEMP/patch-files.sha256" | awk '{print $1}')
           test -n "$PATCH_HASH"
           echo "hash=$PATCH_HASH" >> "$GITHUB_OUTPUT"
