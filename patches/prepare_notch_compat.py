@@ -75,10 +75,13 @@ container_class = r'''
         CGRect targetFrame = bounds;
         BOOL sizeChanged = !CGSizeEqualToSize(content.bounds.size, targetFrame.size);
         content.frame = targetFrame;
-        [content setNeedsLayout];
-        [content layoutIfNeeded];
-        if (sizeChanged && [content respondsToSelector:@selector(boundsUpdated)])
-            [(id)content boundsUpdated];
+        if (sizeChanged)
+        {
+            // UnityView.layoutSubviews marks the rendering surface for
+            // recreation and reports the new logical render size to Unity.
+            [content setNeedsLayout];
+            [content layoutIfNeeded];
+        }
         return;
     }
 
@@ -104,16 +107,15 @@ container_class = r'''
     CGRect targetFrame = CGRectIntegral(frame);
     BOOL sizeChanged = !CGSizeEqualToSize(content.bounds.size, targetFrame.size);
     content.frame = targetFrame;
-    [content setNeedsLayout];
-    [content layoutIfNeeded];
-
-    // UnityView owns a separate render surface. Updating only UIView.frame can
-    // leave the Metal drawable at the old ultra-wide size, which horizontally
-    // compresses the picture and makes it look vertically stretched. Tell
-    // Unity that the view bounds changed so UnityReportResizeView and the
-    // CAMetalLayer drawable are resized to this exact 16:9 surface.
-    if (sizeChanged && [content respondsToSelector:@selector(boundsUpdated)])
-        [(id)content boundsUpdated];
+    if (sizeChanged)
+    {
+        // Updating only UIView.frame can leave Unity's render surface at the
+        // old ultra-wide dimensions until UnityView gets a layout pass.
+        // Force that child layout now: UnityView.layoutSubviews sets its
+        // recreate-surface flag and reports the new 16:9 size to Unity.
+        [content setNeedsLayout];
+        [content layoutIfNeeded];
+    }
 }
 @end
 
