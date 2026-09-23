@@ -110,7 +110,6 @@ helper_anchor_match = helper_anchor_pattern.search(menu)
 if "private void EnableAiMenuEntry()" not in menu:
     if helper_anchor_match is None:
         raise SystemExit("Could not locate menu helper insertion point")
-    helper_indent = helper_anchor_match.group("indent")
     helper = r'''    private void EnableAiMenuEntry()
     {
         Transform aiEntry = null;
