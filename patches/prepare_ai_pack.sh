@@ -10,6 +10,7 @@ SOURCE_ROOT="$(cd "$1" && pwd)"
 AI_REPO='https://github.com/Snarkie/YGOProAIScript.git'
 AI_COMMIT='1f57db863fb9b5a46e5fe17b7285bde82032e6e4'
 CARD_SCRIPT_REPO='https://github.com/Fluorohydride/ygopro-scripts.git'
+# Verified as the repository HEAD on 2026-09-23.
 CURRENT_CARD_SCRIPT_COMMIT='f9855151403763b707f888a7240495c05c9071c6'
 LEGACY_CARD_SCRIPT_COMMIT='afbac0d80b7cca2770c071a6fd3f83e1718fad66'
 WORK="${RUNNER_TEMP:-/tmp}/koishipro2-ai-pack"
@@ -38,7 +39,7 @@ for spec in "current:$CURRENT_CARD_SCRIPT_COMMIT" "legacy:$LEGACY_CARD_SCRIPT_CO
   test -f "$dir/constant.lua"
   test -f "$dir/utility.lua"
   test -f "$dir/LICENSE"
-  count=$(find "$dir" -maxdepth 1 -type f -name 'c*.lua' | wc -l | tr -d ' ')
+  count=$(find "$dir" -type f -name 'c*.lua' | wc -l | tr -d ' ')
   if [ "$count" -lt 1000 ]; then
     echo "Unexpectedly small $kind card-script set: $count" >&2
     exit 1
@@ -94,23 +95,23 @@ with zipfile.ZipFile(out_zip, 'w', compression=zipfile.ZIP_DEFLATED, compresslev
     for name, data in decks.items():
         z.writestr(f'ai/ydk/{name}', data)
 
-    # Do not extract these straight into script/. AIBootstrap merges them at
-    # runtime without overwriting any file already present on the device.
-    for path in sorted(current_root.glob('*.lua')):
-        z.write(path, f'script_current/{path.name}')
-    for path in sorted(legacy_root.glob('*.lua')):
-        z.write(path, f'script_legacy/{path.name}')
+    # Package every Lua file in the current official repository, preserving
+    # subdirectories. AIBootstrap copies this snapshot into live script/ first.
+    for path in sorted(current_root.rglob('*.lua')):
+        z.write(path, f'script_current/{path.relative_to(current_root).as_posix()}')
+    for path in sorted(legacy_root.rglob('*.lua')):
+        z.write(path, f'script_legacy/{path.relative_to(legacy_root).as_posix()}')
 
     z.write(ai_license, 'ai/Snarkie-YGOProAIScript-LICENSE.md')
     z.write(current_root / 'LICENSE', 'script_current/Fluorohydride-ygopro-scripts-LICENSE')
     z.write(legacy_root / 'LICENSE', 'script_legacy/Fluorohydride-ygopro-scripts-LICENSE')
     z.writestr(
-        'ai/KOISHIPRO2-AI-PACK-V3.txt',
-        'Bundled offline AI runtime pack v3\n'
+        'ai/KOISHIPRO2-AI-PACK-V4.txt',
+        'Bundled offline AI runtime pack v4\n'
         'AI scripts: Snarkie/YGOProAIScript @ 1f57db863fb9b5a46e5fe17b7285bde82032e6e4\n'
         'Current card scripts: Fluorohydride/ygopro-scripts @ f9855151403763b707f888a7240495c05c9071c6\n'
         'Legacy fallback scripts: Fluorohydride/ygopro-scripts @ afbac0d80b7cca2770c071a6fd3f83e1718fad66\n'
-        'Runtime precedence: existing/custom script/ > current bundle > legacy fallback\n'
+        'Runtime precedence: current official snapshot > legacy missing-file fallback\n'
     )
 
 with zipfile.ZipFile(out_zip, 'r') as z:
@@ -121,7 +122,7 @@ with zipfile.ZipFile(out_zip, 'r') as z:
         'ai/decks/Shaddoll.lua',
         'ai/ydk/Blackwing.ydk',
         'ai/ydk/Shaddoll.ydk',
-        'ai/KOISHIPRO2-AI-PACK-V3.txt',
+        'ai/KOISHIPRO2-AI-PACK-V4.txt',
         'script_current/constant.lua',
         'script_current/utility.lua',
         'script_legacy/constant.lua',
@@ -130,8 +131,8 @@ with zipfile.ZipFile(out_zip, 'r') as z:
     missing = sorted(required.difference(names))
     if missing:
         raise SystemExit(f'AI pack validation failed; missing {missing}')
-    current_count = sum(1 for n in names if n.startswith('script_current/c') and n.endswith('.lua'))
-    legacy_count = sum(1 for n in names if n.startswith('script_legacy/c') and n.endswith('.lua'))
+    current_count = sum(1 for n in names if n.startswith('script_current/') and Path(n).name.startswith('c') and n.endswith('.lua'))
+    legacy_count = sum(1 for n in names if n.startswith('script_legacy/') and Path(n).name.startswith('c') and n.endswith('.lua'))
     if current_count < 1000 or legacy_count < 1000:
         raise SystemExit(f'AI pack script counts too small: current={current_count} legacy={legacy_count}')
     print(f'AI pack entries: {len(names)}')
