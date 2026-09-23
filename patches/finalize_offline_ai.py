@@ -124,7 +124,8 @@ if "private void EnableAiMenuEntry()" not in menu:
         }
 
         Transform movable = aiEntry;
-        if (aiEntry.parent != null && aiEntry.parent.parent == gameObject.transform)
+        if (aiEntry.parent != null
+            && (aiEntry.parent.name == "ai" || aiEntry.parent.parent == gameObject.transform))
         {
             // trans_menu.prefab stores ai_ inside an outer "ai" group. Move the
             // whole group so its background/label/button remain aligned.
