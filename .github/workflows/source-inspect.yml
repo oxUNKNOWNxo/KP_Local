@@ -55,6 +55,20 @@ jobs:
           echo '=== Menu: transition/click references ==='
           grep -nE -C 18 'shiftToServant|onClickAI|onClickPizzle|onClickDeck|onClickReplay|StartCoroutine|WaitForSeconds|WWW|UnityWebRequest' "$MENU" || true
 
+          echo '=== Program shiftToServant implementation ==='
+          grep -n -A 180 -B 25 'void shiftToServant' "$PROGRAM" || true
+
+          echo '=== Menu show/status/update-check implementation ==='
+          sed -n '130,270p' "$MENU"
+
+          echo '=== Servant/window show-hide implementations ==='
+          for FILE in source/Assets/SibylSystem/Servant.cs source/Assets/SibylSystem/WindowServant.cs source/Assets/SibylSystem/WindowServantSP.cs; do
+            if [ -f "$FILE" ]; then
+              echo "--- $FILE ---"
+              grep -nE -A 80 -B 20 'public virtual void show|public override void show|void show\(|public virtual void hide|public override void hide|void hide\(' "$FILE" || true
+            fi
+          done
+
           echo '=== Project-wide Chinese progress/update references ==='
           grep -RniE -C 4 --include='*.cs' '正在|更新中|下载|0%|progress|DownloadAndProcessFile|UpdateClientCoroutine' source/Assets/SibylSystem 2>/dev/null | head -1200 || true
 
