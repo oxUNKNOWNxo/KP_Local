@@ -10,6 +10,24 @@ TARGET_ROOT="$(cd "$1" && pwd)"
 CORE_REPO='https://github.com/Heavenswind/YGOProUnity_V2.git'
 CORE_COMMIT='c00c90cff77f5e3c65d217597481a065404ed94b'
 WORK="${RUNNER_TEMP:-/tmp}/koishipro2-ai-core"
+CACHE_DIR="${HOME}/.cache/koishipro2-ai-core/$CORE_COMMIT"
+OUT_DIR="$TARGET_ROOT/Assets/Plugins/iOS"
+
+mkdir -p "$OUT_DIR"
+if [ -s "$CACHE_DIR/libocgcore.a" ] && [ -s "$CACHE_DIR/ocgcore-LICENSE.txt" ]; then
+  echo "Using cached iOS AI core: $CACHE_DIR"
+  cp "$CACHE_DIR/libocgcore.a" "$OUT_DIR/libocgcore.a"
+  cp "$CACHE_DIR/ocgcore-LICENSE.txt" "$OUT_DIR/ocgcore-LICENSE.txt"
+  SYMBOLS="${RUNNER_TEMP:-/tmp}/koishipro2-ai-core-cached-symbols.txt"
+  xcrun nm -gU "$OUT_DIR/libocgcore.a" | grep -E '(_create_duel|_process|_set_response|_query_|_set_chat_handler|_preload_script|_set_ai_id|_get_ai_going_first_second)' | tee "$SYMBOLS"
+  for symbol in _create_duel _set_chat_handler _preload_script _set_ai_id _get_ai_going_first_second; do
+    grep -q "$symbol" "$SYMBOLS"
+  done
+  file "$OUT_DIR/libocgcore.a"
+  ls -lh "$OUT_DIR/libocgcore.a"
+  exit 0
+fi
+
 rm -rf "$WORK"
 mkdir -p "$WORK/src" "$WORK/obj"
 
@@ -59,7 +77,6 @@ while IFS= read -r src; do
   esac
 done < "$WORK/sources.txt"
 
-OUT_DIR="$TARGET_ROOT/Assets/Plugins/iOS"
 mkdir -p "$OUT_DIR"
 "$AR" rcs "$OUT_DIR/libocgcore.a" "$WORK"/obj/*.o
 
@@ -70,6 +87,10 @@ for symbol in _create_duel _set_chat_handler _preload_script _set_ai_id _get_ai_
 done
 
 cp "$CORE/LICENSE" "$OUT_DIR/ocgcore-LICENSE.txt"
+mkdir -p "$CACHE_DIR"
+cp "$OUT_DIR/libocgcore.a" "$CACHE_DIR/libocgcore.a"
+cp "$OUT_DIR/ocgcore-LICENSE.txt" "$CACHE_DIR/ocgcore-LICENSE.txt"
 file "$OUT_DIR/libocgcore.a"
 ls -lh "$OUT_DIR/libocgcore.a"
 echo "AI core source: $CORE_REPO@$CORE_COMMIT"
+echo "Cached iOS AI core at: $CACHE_DIR"
