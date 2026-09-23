@@ -49,6 +49,8 @@ if old not in text:
     raise SystemExit("Could not locate Unity root-view assignment")
 
 container_class = r'''
+#import <dispatch/dispatch.h>
+
 @interface Koishi16x9ContainerView : UIView
 @end
 
