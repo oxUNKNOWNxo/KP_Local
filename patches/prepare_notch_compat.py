@@ -49,8 +49,6 @@ if old not in text:
     raise SystemExit("Could not locate Unity root-view assignment")
 
 container_class = r'''
-#import <dispatch/dispatch.h>
-
 @interface Koishi16x9ContainerView : UIView
 @end
 
@@ -74,13 +72,7 @@ container_class = r'''
 
     if (!widePhone)
     {
-        CGRect targetFrame = bounds;
-        BOOL sizeChanged = !CGSizeEqualToSize(content.bounds.size, targetFrame.size);
-        content.frame = targetFrame;
-        if (sizeChanged)
-        {
-            [self scheduleUnitySurfaceRefresh:content];
-        }
+        content.frame = bounds;
         return;
     }
 
@@ -103,32 +95,10 @@ container_class = r'''
         frame.size.height = targetHeight;
     }
 
-    CGRect targetFrame = CGRectIntegral(frame);
-    BOOL sizeChanged = !CGSizeEqualToSize(content.bounds.size, targetFrame.size);
-    content.frame = targetFrame;
-    if (sizeChanged)
-    {
-        [self scheduleUnitySurfaceRefresh:content];
-    }
-}
-
-- (void)scheduleUnitySurfaceRefresh:(UIView*)content
-{
-    if (content == nil)
-        return;
-
-    // Changing UnityView.frame updates its UIKit bounds immediately, but Unity's
-    // render surface is refreshed from UnityView.layoutSubviews. Defer that
-    // child layout until this parent layout pass has fully returned; forcing it
-    // synchronously here caused a real-device startup freeze.
-    [content setNeedsLayout];
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [content layoutIfNeeded];
-    });
+    content.frame = CGRectIntegral(frame);
 }
 @end
 
-'''
 
 if "@interface Koishi16x9ContainerView" not in text:
     implementation_marker = "@implementation UnityAppController"
