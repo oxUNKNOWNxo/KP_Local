@@ -27,10 +27,10 @@ plist["UILaunchScreen"] = {}
 with plist_path.open("wb") as f:
     plistlib.dump(plist, f, fmt=plistlib.FMT_XML, sort_keys=False)
 
-# Primary iPhone X/notch fix: do not let Unity's root view fill the whole
-# physical screen on extra-wide iPhones.  Wrap it in a black full-screen
-# container and center the Unity rendering view at 16:9.  This works below the
-# Unity camera/UI layer, so NGUI cannot stretch back into the notch area.
+# Primary iPhone X/notch fix. The old Camera.rect approach changed Unity's
+# rendering but not the native view/touch surface, so NGUI still occupied the
+# notch area. Instead, make the actual Unity view a child of a black container
+# whose layoutSubviews always centres it at 16:9 on extra-wide iPhones.
 view_candidates = [
     root / "Classes" / "UI" / "UnityAppController+ViewHandling.mm",
     root / "Classes" / "UnityAppController+ViewHandling.mm",
@@ -48,57 +48,87 @@ old = "    _rootController.view = _rootView = _unityView;"
 if old not in text:
     raise SystemExit("Could not locate Unity root-view assignment")
 
-replacement = r'''    // KoishiPro2: keep the actual Unity view inside a centred 16:9 area on
-    // extra-wide iPhones. The full-screen container stays black.
-    CGRect koishiBounds = [UIScreen mainScreen].bounds;
-    CGFloat koishiW = CGRectGetWidth(koishiBounds);
-    CGFloat koishiH = CGRectGetHeight(koishiBounds);
-    CGFloat koishiLong = MAX(koishiW, koishiH);
-    CGFloat koishiShort = MIN(koishiW, koishiH);
-    BOOL koishiWidePhone = (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPhone)
-        && koishiShort > 0.0
-        && (koishiLong / koishiShort) >= 1.95;
+container_class = r'''
+@interface Koishi16x9ContainerView : UIView
+@end
 
-    if (koishiWidePhone)
+@implementation Koishi16x9ContainerView
+- (void)layoutSubviews
+{
+    [super layoutSubviews];
+
+    UIView* content = self.subviews.firstObject;
+    if (content == nil)
+        return;
+
+    CGRect bounds = self.bounds;
+    CGFloat width = CGRectGetWidth(bounds);
+    CGFloat height = CGRectGetHeight(bounds);
+    CGFloat longSide = MAX(width, height);
+    CGFloat shortSide = MIN(width, height);
+    BOOL widePhone = (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPhone)
+        && shortSide > 0.0
+        && (longSide / shortSide) >= 1.95;
+
+    if (!widePhone)
     {
-        UIView* koishiContainer = [[UIView alloc] initWithFrame: koishiBounds];
-        koishiContainer.backgroundColor = [UIColor blackColor];
-        koishiContainer.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+        content.frame = bounds;
+        return;
+    }
 
-        CGRect koishiFrame = koishiBounds;
-        const CGFloat koishiAspect = 16.0 / 9.0;
-        if (koishiW >= koishiH)
-        {
-            CGFloat targetW = koishiH * koishiAspect;
-            koishiFrame.origin.x = (koishiW - targetW) * 0.5;
-            koishiFrame.origin.y = 0.0;
-            koishiFrame.size.width = targetW;
-            koishiFrame.size.height = koishiH;
-        }
-        else
-        {
-            CGFloat targetH = koishiW * koishiAspect;
-            koishiFrame.origin.x = 0.0;
-            koishiFrame.origin.y = (koishiH - targetH) * 0.5;
-            koishiFrame.size.width = koishiW;
-            koishiFrame.size.height = targetH;
-        }
-
-        _unityView.autoresizingMask = UIViewAutoresizingNone;
-        _unityView.frame = koishiFrame;
-        [koishiContainer addSubview: _unityView];
-        _rootView = koishiContainer;
-        _rootController.view = koishiContainer;
-        _window.backgroundColor = [UIColor blackColor];
+    const CGFloat targetAspect = 16.0 / 9.0;
+    CGRect frame = bounds;
+    if (width >= height)
+    {
+        CGFloat targetWidth = height * targetAspect;
+        frame.origin.x = (width - targetWidth) * 0.5;
+        frame.origin.y = 0.0;
+        frame.size.width = targetWidth;
+        frame.size.height = height;
     }
     else
     {
-        _rootController.view = _rootView = _unityView;
-    }'''
+        CGFloat targetHeight = width * targetAspect;
+        frame.origin.x = 0.0;
+        frame.origin.y = (height - targetHeight) * 0.5;
+        frame.size.width = width;
+        frame.size.height = targetHeight;
+    }
 
-if "koishiWidePhone" not in text:
+    content.frame = CGRectIntegral(frame);
+}
+@end
+
+'''
+
+if "@interface Koishi16x9ContainerView" not in text:
+    implementation_marker = "@implementation UnityAppController"
+    index = text.find(implementation_marker)
+    if index < 0:
+        raise SystemExit("Could not locate UnityAppController implementation marker")
+    text = text[:index] + container_class + text[index:]
+
+replacement = r'''    // KoishiPro2: the physical screen remains a black container while the
+    // Unity view itself is kept at centred 16:9. Because the container owns
+    // layoutSubviews this is reapplied after any orientation/layout update.
+    Koishi16x9ContainerView* koishiContainer = [[Koishi16x9ContainerView alloc] initWithFrame: _window.bounds];
+    koishiContainer.backgroundColor = [UIColor blackColor];
+    koishiContainer.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+
+    _unityView.autoresizingMask = UIViewAutoresizingNone;
+    [koishiContainer addSubview: _unityView];
+    _rootView = koishiContainer;
+    _rootController.view = koishiContainer;
+    _window.backgroundColor = [UIColor blackColor];
+    [koishiContainer setNeedsLayout];
+    [koishiContainer layoutIfNeeded];'''
+
+if "Koishi16x9ContainerView* koishiContainer" not in text:
     text = text.replace(old, replacement, 1)
-    view_path.write_text(text, encoding="utf-8")
+
+if "@interface Koishi16x9ContainerView" not in text or "Koishi16x9ContainerView* koishiContainer" not in text:
+    raise SystemExit("Native centred 16:9 patch was not installed")
+view_path.write_text(text, encoding="utf-8")
 
 # Keep deterministic legacy launch images as build-time fallback resources.
 catalogs = sorted(root.rglob("*.xcassets"))
@@ -149,4 +179,4 @@ for filename, width, height, meta in images:
 (launch_set / "Contents.json").write_text(json.dumps(contents, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 print(f"Prepared fallback launch assets: {launch_set}")
-print(f"Patched native Unity root view for centred 16:9: {view_path}")
+print(f"Patched native Unity root view with persistent centred 16:9 container: {view_path}")
