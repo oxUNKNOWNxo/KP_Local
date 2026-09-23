@@ -92,16 +92,170 @@ precy_path.write_text(precy, encoding="utf-8")
 # slot so it cannot overlap My Card or another visible entry.
 menu_path = assets / "SibylSystem" / "Menu" / "Menu.cs"
 menu = menu_path.read_text(encoding="utf-8-sig")
-create_pattern = re.compile(
-    r"(?m)^(?P<indent>[ \\t]*)createWindow\\(Program\\.I\\(\\)\\.new_ui_menu\\);[ \\t]*$"
+ai_register_pattern = re.compile(
+    r'(?m)^(?P<indent>[ \\t]*)UIHelper\\.registEvent\\(gameObject,\\s*"ai_",\\s*onClickAI\\);[ \\t]*
+helper_anchor = "    private void CreateSuperPreMenuItem()\\n"
+if "private void EnableAiMenuEntry()" not in menu:
+    if helper_anchor not in menu:
+        raise SystemExit("Could not locate menu helper insertion point")
+    helper = r'''    private void EnableAiMenuEntry()
+    {
+        Transform aiEntry = null;
+        Transform[] entries = gameObject.GetComponentsInChildren<Transform>(true);
+
+        for (int i = 0; i < entries.Length; i++)
+        {
+            Transform entry = entries[i];
+            if (entry != null && entry.name == "ai_")
+            {
+                aiEntry = entry;
+                break;
+            }
+        }
+
+        if (aiEntry == null)
+        {
+            UnityEngine.Debug.LogWarning("[OfflineAI] Existing ai_ menu entry was not found.");
+            return;
+        }
+
+        Transform movable = aiEntry;
+        if (aiEntry.parent != null
+            && (aiEntry.parent.name == "ai" || aiEntry.parent.parent == gameObject.transform))
+        {
+            // trans_menu.prefab stores ai_ inside an outer "ai" group. Move the
+            // whole group so its background/label/button remain aligned.
+            movable = aiEntry.parent;
+        }
+
+        ActivateAiMenuHierarchy(aiEntry);
+        movable.gameObject.SetActive(true);
+        MoveAiMenuToNearestFreeSlot(movable);
+
+        if (aiEntry.parent != null)
+        {
+            UIHelper.registEvent(aiEntry.parent.gameObject, "ai_", onClickAI);
+        }
+        UIHelper.registEvent(gameObject, "ai_", onClickAI);
+
+        UnityEngine.Debug.Log("[OfflineAI] Existing AI menu entry enabled."
+            + " groupPosition=" + movable.localPosition
+            + " buttonPosition=" + aiEntry.localPosition
+            + " activeInHierarchy=" + aiEntry.gameObject.activeInHierarchy);
+    }
+
+    private void ActivateAiMenuHierarchy(Transform entry)
+    {
+        Transform cursor = entry;
+        int depth = 0;
+        while (cursor != null && depth < 12)
+        {
+            if (!cursor.gameObject.activeSelf)
+            {
+                cursor.gameObject.SetActive(true);
+            }
+
+            if (cursor == gameObject.transform)
+            {
+                break;
+            }
+
+            cursor = cursor.parent;
+            depth++;
+        }
+        entry.gameObject.SetActive(true);
+    }
+
+    private void MoveAiMenuToNearestFreeSlot(Transform movable)
+    {
+        if (movable == null || movable.parent == null)
+        {
+            return;
+        }
+
+        Transform parent = movable.parent;
+        Vector3 origin = movable.localPosition;
+
+        // The shipped trans_menu uses roughly 40-unit vertical spacing. Search
+        // both directions first so the AI item stays close to its intended
+        // location, then try a second column if every nearby row is occupied.
+        for (int step = 1; step <= 6; step++)
+        {
+            Vector3 up = origin + new Vector3(0f, 40f * step, 0f);
+            if (IsAiMenuSlotFree(parent, movable, up))
+            {
+                movable.localPosition = up;
+                return;
+            }
+
+            Vector3 down = origin + new Vector3(0f, -40f * step, 0f);
+            if (IsAiMenuSlotFree(parent, movable, down))
+            {
+                movable.localPosition = down;
+                return;
+            }
+        }
+
+        Vector3 right = origin + new Vector3(180f, 0f, 0f);
+        if (IsAiMenuSlotFree(parent, movable, right))
+        {
+            movable.localPosition = right;
+            return;
+        }
+
+        Vector3 left = origin + new Vector3(-180f, 0f, 0f);
+        if (IsAiMenuSlotFree(parent, movable, left))
+        {
+            movable.localPosition = left;
+            return;
+        }
+
+        // Deterministic last resort: keep the proven original AI object visible
+        // but offset it horizontally rather than allowing an exact overlap.
+        movable.localPosition = right;
+    }
+
+    private bool IsAiMenuSlotFree(Transform parent, Transform movable, Vector3 candidate)
+    {
+        for (int i = 0; i < parent.childCount; i++)
+        {
+            Transform sibling = parent.GetChild(i);
+            if (sibling == null || sibling == movable || !sibling.gameObject.activeSelf)
+            {
+                continue;
+            }
+
+            Vector3 p = sibling.localPosition;
+            if (Mathf.Abs(p.x - candidate.x) < 70f && Mathf.Abs(p.y - candidate.y) < 22f)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+'''
+    menu = menu.replace(helper_anchor, helper + helper_anchor, 1)
+menu_path.write_text(menu, encoding="utf-8")
+
+print("Finalized offline AI integration:")
+print(f"  - installed {bootstrap_target}")
+print(f"  - installed {viewport_target}")
+print("  - retained explicit native 16:9 startup marker")
+print("  - made UTF-8 native paths NUL-terminated and byte-safe")
+print("  - enabled bundled AI/card-script bootstrap")
+print("  - cloned AI into the visible menu layout instead of exposing the overlapping legacy slot")
+print("  - added layout reposition/free-slot fallback for the AI menu entry")
+print("  - replaced obsolete non-ASCII filename warning")
+
 )
-create_match = create_pattern.search(menu)
-if create_match is None:
-    raise SystemExit("Could not locate Menu.initialize main-menu createWindow call")
+ai_register_match = ai_register_pattern.search(menu)
+if ai_register_match is None:
+    raise SystemExit("Could not locate restored ai_ menu registration call")
 if "EnableAiMenuEntry();" not in menu:
-    indent = create_match.group("indent")
-    insertion = create_match.group(0) + "\\n" + indent + "EnableAiMenuEntry();"
-    menu = menu[: create_match.start()] + insertion + menu[create_match.end() :]
+    indent = ai_register_match.group("indent")
+    insertion = ai_register_match.group(0) + "\\n" + indent + "EnableAiMenuEntry();"
+    menu = menu[: ai_register_match.start()] + insertion + menu[ai_register_match.end() :]
 
 helper_anchor = "    private void CreateSuperPreMenuItem()\\n"
 if "private void EnableAiMenuEntry()" not in menu:
