@@ -74,6 +74,8 @@ jobs:
               raise SystemExit('Obsolete cloned AI menu logic remains in reviewed patches')
           if 'Koishi16x9ContainerView' not in notch:
               raise SystemExit('Notch/aspect patch is missing the native 16:9 container')
+          if '#import <dispatch/dispatch.h>' not in notch:
+              raise SystemExit('Explicit GCD import is missing from notch/aspect patch')
           if '- (void)scheduleUnitySurfaceRefresh:(UIView*)content' not in notch:
               raise SystemExit('Deferred Unity surface refresh helper is missing')
           if 'dispatch_async(dispatch_get_main_queue(), ^{' not in notch:
@@ -499,6 +501,7 @@ jobs:
 
           text = Path(sys.argv[1]).read_text(encoding='utf-8')
           required = (
+              '#import <dispatch/dispatch.h>',
               'Koishi16x9ContainerView',
               '- (void)scheduleUnitySurfaceRefresh:(UIView*)content',
               'dispatch_async(dispatch_get_main_queue(), ^{',
