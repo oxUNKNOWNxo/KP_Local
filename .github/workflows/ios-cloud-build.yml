@@ -196,7 +196,345 @@ jobs:
           grep -Eq 'SetActive\(true\)|activeSelf|activeInHierarchy' "$MENU"
           grep -q 'EnableAiMenuEntry();' "$MENU"
           grep -q 'movable.localPosition = new Vector3(p.x + 180f, p.y, p.z);' "$MENU"
-          test "$(grep -Ec 'UIHelper\.registEvent\(gameObject,[[:space:]]*"ai_",[[:space:]]*onClickAI\);' "$MENU")" -eq 1
+          test "$(grep -Ec '^[[:space:]]*UIHelper\.registEvent\(gameObject,[[:space:]]*"ai_",[[:space:]]*onClickAI\);[[:space:]]* "$MENU")" -eq 1
+          ! grep -q 'clone.name' "$MENU"
+          grep -q 'IPhone16x9Viewport' "$VIEWPORT"
+          grep -q 'Native centred 16:9 iOS container enabled' "$VIEWPORT"
+          grep -q 'AIBootstrap.EnsureInstalled' "$AIROOM"
+          echo 'Patched managed source validation passed.'
+
+      - name: Verify offline AI payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          PACK='source/Assets/StreamingAssets/koishi-ai-pack.zip'
+          CORE='source/Assets/Plugins/iOS/libocgcore.a'
+          test -s "$PACK"
+          test -s "$CORE"
+          unzip -l "$PACK" | grep -q 'ai/ai.lua'
+          unzip -l "$PACK" | grep -q 'ai/decks/Blackwing.lua'
+          unzip -l "$PACK" | grep -q 'ai/ydk/Blackwing.ydk'
+          xcrun nm -gU "$CORE" > "$RUNNER_TEMP/ios-ai-core-symbols.txt"
+          for symbol in _create_duel _end_duel _process _preload_script _set_ai_id _set_chat_handler _start_duel; do
+            grep -q "$symbol" "$RUNNER_TEMP/ios-ai-core-symbols.txt"
+          done
+          file "$CORE"
+          ls -lh "$PACK" "$CORE"
+          echo 'Offline AI payload validation passed before Unity build.'
+
+      - name: Install Unity CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL https://unity.com/install.sh | UNITY_CLI_CHANNEL=beta UNITY_CLI_HOME="$UNITY_CLI_HOME" bash >/dev/null
+          test -x "$UNITY_CLI_HOME/bin/unity"
+
+      - name: Sign in to Unity account
+        shell: bash
+        run: |
+          set -euo pipefail
+          UNITY="$UNITY_CLI_HOME/bin/unity"
+          echo 'Open the one-time Unity Sign-in URL printed below and complete sign-in.'
+          echo 'Do not share account credentials in the Actions log.'
+          "$UNITY" auth login --no-color
+
+      - name: Activate Unity Personal
+        shell: bash
+        run: |
+          set -euo pipefail
+          UNITY="$UNITY_CLI_HOME/bin/unity"
+          "$UNITY" license activate --personal --accept-eula --format json >/dev/null
+          echo 'Unity Personal activation completed.'
+
+      - name: Install Unity Editor and iOS Build Support
+        shell: bash
+        run: |
+          set -euo pipefail
+          UNITY="$UNITY_CLI_HOME/bin/unity"
+          "$UNITY" install "$UNITY_VERSION" \
+            --changeset "$UNITY_CHANGESET" \
+            --module ios \
+            --architecture x86_64 \
+            --no-color >/dev/null
+          echo "Unity $UNITY_VERSION x86_64 with iOS support installed."
+
+      - name: Restore Unity Library cache
+        id: library-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: source/Library
+          key: koishipro2-library-${{ runner.os }}-${{ runner.arch }}-${{ env.UNITY_VERSION }}-ios-${{ env.SOURCE_COMMIT }}-${{ steps.patch-fingerprint.outputs.hash }}-${{ env.UNITY_CACHE_SCHEMA }}
+          restore-keys: |
+            koishipro2-library-${{ runner.os }}-${{ runner.arch }}-${{ env.UNITY_VERSION }}-ios-${{ env.SOURCE_COMMIT }}-
+
+      - name: Report Unity cache decision
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "cache-hit=${{ steps.library-cache.outputs.cache-hit }}"
+          echo "cache-key=koishipro2-library-${{ runner.os }}-${{ runner.arch }}-${{ env.UNITY_VERSION }}-ios-${{ env.SOURCE_COMMIT }}-${{ steps.patch-fingerprint.outputs.hash }}-${{ env.UNITY_CACHE_SCHEMA }}"
+
+      - name: Locate Unity Editor
+        id: editor
+        shell: bash
+        run: |
+          set -euo pipefail
+          EDITOR="/Applications/Unity/Hub/Editor/$UNITY_VERSION/Unity.app/Contents/MacOS/Unity"
+          if [ ! -x "$EDITOR" ]; then
+            EDITOR=$(find /Applications "$HOME" -type f -path "*/$UNITY_VERSION/Unity.app/Contents/MacOS/Unity" -print -quit 2>/dev/null || true)
+          fi
+          test -n "$EDITOR"
+          test -x "$EDITOR"
+          file "$EDITOR"
+          echo "path=$EDITOR" >> "$GITHUB_OUTPUT"
+          echo 'Unity Editor located.'
+
+      - name: Import and compile Unity project for iOS
+        id: unity-import
+        timeout-minutes: 75
+        shell: bash
+        run: |
+          set -euo pipefail
+          EDITOR='${{ steps.editor.outputs.path }}'
+          LOG="$RUNNER_TEMP/unity-import.log"
+
+          safe_tail() {
+            tail -80 "$LOG" 2>/dev/null | sed -E '/[Ll]icen[sc]e|serial|machine.?id|access.?token|refresh.?token|oauth|services\.api\.unity\.com\/app-linking|Sign-in URL/d' || true
+          }
+
+          "$EDITOR" \
+            -batchmode \
+            -nographics \
+            -silent-crashes \
+            -accept-apiupdate \
+            -buildTarget iOS \
+            -projectPath "$GITHUB_WORKSPACE/source" \
+            -logFile "$LOG" \
+            -quit &
+          UNITY_PID=$!
+
+          (
+            while kill -0 "$UNITY_PID" 2>/dev/null; do
+              sleep 300
+              if kill -0 "$UNITY_PID" 2>/dev/null; then
+                echo '--- Unity iOS import progress (redacted tail) ---'
+                safe_tail
+              fi
+            done
+          ) &
+          MONITOR_PID=$!
+
+          set +e
+          wait "$UNITY_PID"
+          STATUS=$?
+          set -e
+          kill "$MONITOR_PID" 2>/dev/null || true
+          wait "$MONITOR_PID" 2>/dev/null || true
+
+          if [ "$STATUS" -ne 0 ]; then
+            echo "Unity iOS import failed with exit code $STATUS."
+            safe_tail
+            exit "$STATUS"
+          fi
+
+          echo 'Unity iOS-target import completed.'
+
+      - name: Save Unity Library cache
+        if: steps.unity-import.outcome == 'success' && steps.library-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: source/Library
+          key: koishipro2-library-${{ runner.os }}-${{ runner.arch }}-${{ env.UNITY_VERSION }}-ios-${{ env.SOURCE_COMMIT }}-${{ steps.patch-fingerprint.outputs.hash }}-${{ env.UNITY_CACHE_SCHEMA }}
+
+      - name: Export Unity iOS Xcode project
+        timeout-minutes: 75
+        shell: bash
+        run: |
+          set -euo pipefail
+          EDITOR='${{ steps.editor.outputs.path }}'
+          LOG="$RUNNER_TEMP/unity-build.log"
+          STALL_FLAG="$RUNNER_TEMP/unity-export-stalled"
+          rm -f "$STALL_FLAG"
+
+          safe_tail() {
+            tail -120 "$LOG" 2>/dev/null | sed -E '/[Ll]icen[sc]e|serial|machine.?id|access.?token|refresh.?token|oauth|services\.api\.unity\.com\/app-linking|Sign-in URL/d' || true
+          }
+
+          show_processes() {
+            echo '--- Unity-related processes ---'
+            ps -axo pid,ppid,%cpu,%mem,etime,command | grep -E 'Unity|JobProcess|ShaderCompiler|il2cpp|bee_backend' | grep -v grep | head -80 || true
+            echo '--- output size ---'
+            du -sh "$GITHUB_WORKSPACE/source/output" 2>/dev/null || true
+          }
+
+          "$EDITOR" \
+            -batchmode \
+            -silent-crashes \
+            -accept-apiupdate \
+            -buildTarget iOS \
+            -projectPath "$GITHUB_WORKSPACE/source" \
+            -logFile "$LOG" \
+            -executeMethod BuildHelper.Build \
+            -quit &
+          UNITY_PID=$!
+
+          (
+            last_size=-1
+            unchanged=0
+            tick=0
+            while kill -0 "$UNITY_PID" 2>/dev/null; do
+              sleep 60
+              kill -0 "$UNITY_PID" 2>/dev/null || break
+              size=$(wc -c < "$LOG" 2>/dev/null || echo 0)
+              if [ "$size" = "$last_size" ]; then
+                unchanged=$((unchanged + 1))
+              else
+                unchanged=0
+                last_size="$size"
+              fi
+              tick=$((tick + 1))
+
+              if [ $((tick % 5)) -eq 0 ]; then
+                echo "--- Unity iOS export progress: ${tick}m (redacted tail) ---"
+                safe_tail
+                show_processes
+              fi
+
+              if [ "$unchanged" -ge 10 ]; then
+                if tail -160 "$LOG" 2>/dev/null | grep -Eq 'Builtin Sky manager started|Starting cubemap convolution|GfxDevice renderer is null'; then
+                  echo 'Detected a 10-minute Unity log stall around SkyManager/cubemap processing.'
+                  safe_tail
+                  show_processes
+                  touch "$STALL_FLAG"
+                  kill -TERM "$UNITY_PID" 2>/dev/null || true
+                  sleep 10
+                  kill -KILL "$UNITY_PID" 2>/dev/null || true
+                  break
+                fi
+              fi
+            done
+          ) &
+          MONITOR_PID=$!
+
+          set +e
+          wait "$UNITY_PID"
+          STATUS=$?
+          set -e
+          kill "$MONITOR_PID" 2>/dev/null || true
+          wait "$MONITOR_PID" 2>/dev/null || true
+
+          if [ -f "$STALL_FLAG" ]; then
+            echo 'Unity export was terminated after a confirmed SkyManager/cubemap log stall.'
+            exit 124
+          fi
+
+          if [ "$STATUS" -ne 0 ]; then
+            echo "Unity iOS export failed with exit code $STATUS."
+            safe_tail
+            show_processes
+            exit "$STATUS"
+          fi
+
+          test -d "$GITHUB_WORKSPACE/source/output/Unity-iPhone.xcodeproj"
+          echo 'Unity iOS export completed.'
+
+      - name: Verify patched code reached IL2CPP output
+        shell: bash
+        run: |
+          set -euo pipefail
+          NATIVE_DIR='source/output/Classes/Native'
+          test -d "$NATIVE_DIR"
+          grep -R -l --include='*.cpp' --include='*.h' 'IPhone16x9Viewport' "$NATIVE_DIR" > "$RUNNER_TEMP/viewport-il2cpp.txt" || true
+          grep -R -l --include='*.cpp' --include='*.h' 'AIBootstrap' "$NATIVE_DIR" > "$RUNNER_TEMP/ai-bootstrap-il2cpp.txt" || true
+          grep -R -l --include='*.cpp' --include='*.h' -E 'onClickAI|ai_' "$NATIVE_DIR" > "$RUNNER_TEMP/ai-menu-il2cpp.txt" || true
+          test -s "$RUNNER_TEMP/viewport-il2cpp.txt" || { echo 'IPhone16x9Viewport did not reach IL2CPP output.'; exit 1; }
+          test -s "$RUNNER_TEMP/ai-bootstrap-il2cpp.txt" || { echo 'AIBootstrap did not reach IL2CPP output.'; exit 1; }
+          test -s "$RUNNER_TEMP/ai-menu-il2cpp.txt" || { echo 'AI menu handler did not reach IL2CPP output.'; exit 1; }
+          echo '--- viewport IL2CPP files ---'
+          cat "$RUNNER_TEMP/viewport-il2cpp.txt"
+          echo '--- AI bootstrap IL2CPP files ---'
+          cat "$RUNNER_TEMP/ai-bootstrap-il2cpp.txt"
+          echo '--- AI menu IL2CPP files ---'
+          cat "$RUNNER_TEMP/ai-menu-il2cpp.txt"
+          echo 'Verified patched runtime code in IL2CPP output.'
+
+      - name: Prepare generated Xcode project
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd source/output
+          sed -i '' 's/ENABLE_BITCODE = YES;/ENABLE_BITCODE = NO;/g' Unity-iPhone.xcodeproj/project.pbxproj || true
+          /usr/libexec/PlistBuddy -c 'Add :UIFileSharingEnabled bool true' Info.plist 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c 'Set :UIFileSharingEnabled true' Info.plist
+          /usr/libexec/PlistBuddy -c 'Add :LSSupportsOpeningDocumentsInPlace bool true' Info.plist 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c 'Set :LSSupportsOpeningDocumentsInPlace true' Info.plist
+          cd "$GITHUB_WORKSPACE"
+          python3 control/patches/prepare_notch_compat.py source/output
+          echo '--- launch configuration after compatibility patch ---'
+          plutil -p source/output/Info.plist | grep -E 'UILaunch|UIRequiresFullScreen' || true
+          echo '--- exported native AI plugin ---'
+          find source/output -name 'libocgcore.a' -print
+          grep -n 'libocgcore.a' source/output/Unity-iPhone.xcodeproj/project.pbxproj | head -20
+
+      - name: Build unsigned iOS app with Xcode
+        timeout-minutes: 60
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd source/output
+          xcodebuild \
+            -quiet \
+            -project Unity-iPhone.xcodeproj \
+            -scheme Unity-iPhone \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY='' \
+            DEVELOPMENT_TEAM='' \
+            ENABLE_BITCODE=NO \
+            ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME=LaunchImage \
+            build
+
+      - name: Package TrollStore IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP=$(find "$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos" -maxdepth 1 -type d -name '*.app' -print -quit)
+          test -n "$APP"
+
+          echo '--- final app launch configuration ---'
+          plutil -p "$APP/Info.plist" | grep -E 'UILaunch|UIRequiresFullScreen' || true
+          if /usr/libexec/PlistBuddy -c 'Print :UILaunchStoryboardName' "$APP/Info.plist" >/dev/null 2>&1; then
+            echo 'Unexpected iPhone base launch storyboard remains; refusing to package.'
+            exit 1
+          fi
+          if /usr/libexec/PlistBuddy -c 'Print :UILaunchStoryboardName~iphone' "$APP/Info.plist" >/dev/null 2>&1; then
+            echo 'Unexpected iPhone-specific launch storyboard remains; refusing to package.'
+            exit 1
+          fi
+
+          rm -rf ipa
+          mkdir -p ipa/Payload
+          cp -R "$APP" ipa/Payload/
+          cd ipa
+          /usr/bin/zip -qry ../KoishiPro2-unsigned.ipa Payload
+          cd ..
+          shasum -a 256 KoishiPro2-unsigned.ipa > KoishiPro2-unsigned.ipa.sha256
+          ls -lh KoishiPro2-unsigned.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: KoishiPro2-iOS-cloud-build
+          path: |
+            KoishiPro2-unsigned.ipa
+            KoishiPro2-unsigned.ipa.sha256
+          if-no-files-found: error
+          retention-days: 1
+ "$MENU")" -eq 1
           ! grep -q 'clone.name' "$MENU"
           grep -q 'IPhone16x9Viewport' "$VIEWPORT"
           grep -q 'Native centred 16:9 iOS container enabled' "$VIEWPORT"
