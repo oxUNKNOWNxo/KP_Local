@@ -27,6 +27,7 @@ jobs:
       UNITY_CHANGESET: 0da89fac8e79
       SOURCE_REPO: https://code.moenext.com/hex/ygopro2.git
       SOURCE_COMMIT: c1850e1120df6a5885692eadacad8ad114a3cf11
+      AI_CORE_COMMIT: c00c90cff77f5e3c65d217597481a065404ed94b
       UNITY_CLI_HOME: /tmp/unity-cli
       UNITY_CACHE_SCHEMA: v4
 
@@ -68,34 +69,53 @@ jobs:
           "$UNITY" license activate --personal --accept-eula --format json >/dev/null
           echo 'Unity Personal activation completed.'
 
+      - name: Restore fixed KoishiPro2 source snapshot
+        id: source-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: source
+          key: koishipro2-source-${{ env.SOURCE_COMMIT }}-v1
+
       - name: Fetch exact KoishiPro2 source revision
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf source
-          mkdir source
-          git -C source init -q
-          git -C source remote add origin "$SOURCE_REPO"
-          git -C source config http.version HTTP/1.1
-          git -C source config protocol.version 2
+          if [ -d source/.git ] && [ "$(git -C source rev-parse HEAD 2>/dev/null || true)" = "$SOURCE_COMMIT" ]; then
+            echo "Using cached KoishiPro2 source snapshot."
+          else
+            rm -rf source
+            mkdir source
+            git -C source init -q
+            git -C source remote add origin "$SOURCE_REPO"
+            git -C source config http.version HTTP/1.1
+            git -C source config protocol.version 2
 
-          fetched=0
-          for attempt in 1 2 3 4 5; do
-            echo "Fetch attempt $attempt/5"
-            if git -C source fetch --quiet --no-tags --depth=1 origin "$SOURCE_COMMIT"; then
-              fetched=1
-              break
-            fi
-            if [ "$attempt" -lt 5 ]; then
-              sleep 5
-            fi
-          done
+            fetched=0
+            for attempt in 1 2 3 4 5; do
+              echo "Fetch attempt $attempt/5"
+              if git -C source fetch --quiet --no-tags --depth=1 origin "$SOURCE_COMMIT"; then
+                fetched=1
+                break
+              fi
+              if [ "$attempt" -lt 5 ]; then
+                sleep 5
+              fi
+            done
 
-          test "$fetched" -eq 1
-          git -C source checkout --quiet --detach FETCH_HEAD
+            test "$fetched" -eq 1
+            git -C source checkout --quiet --detach FETCH_HEAD
+          fi
+
           test "$(git -C source rev-parse HEAD)" = "$SOURCE_COMMIT"
           echo "Source revision verified: $SOURCE_COMMIT"
           cat source/ProjectSettings/ProjectVersion.txt
+
+      - name: Save fixed KoishiPro2 source snapshot
+        if: steps.source-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: source
+          key: koishipro2-source-${{ env.SOURCE_COMMIT }}-v1
 
       - name: Compute patch fingerprint
         id: patch-fingerprint
@@ -108,11 +128,25 @@ jobs:
           echo "hash=$PATCH_HASH" >> "$GITHUB_OUTPUT"
           echo "Patch fingerprint: $PATCH_HASH"
 
+      - name: Restore prebuilt iOS AI core
+        id: ai-core-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/koishipro2-ai-core
+          key: koishipro2-ai-core-${{ runner.os }}-${{ runner.arch }}-${{ env.AI_CORE_COMMIT }}-v1
+
       - name: Apply KoishiPro2 iOS modifications
         shell: bash
         run: |
           set -euo pipefail
           python3 control/patches/apply_ios_mods.py source
+
+      - name: Save prebuilt iOS AI core
+        if: steps.ai-core-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/koishipro2-ai-core
+          key: koishipro2-ai-core-${{ runner.os }}-${{ runner.arch }}-${{ env.AI_CORE_COMMIT }}-v1
 
       - name: Verify forced DB sync removal
         shell: bash
@@ -183,6 +217,8 @@ jobs:
         with:
           path: source/Library
           key: koishipro2-library-${{ runner.os }}-${{ runner.arch }}-${{ env.UNITY_VERSION }}-ios-${{ env.SOURCE_COMMIT }}-${{ steps.patch-fingerprint.outputs.hash }}-${{ env.UNITY_CACHE_SCHEMA }}
+          restore-keys: |
+            koishipro2-library-${{ runner.os }}-${{ runner.arch }}-${{ env.UNITY_VERSION }}-ios-${{ env.SOURCE_COMMIT }}-
 
       - name: Report Unity cache decision
         shell: bash
