@@ -64,17 +64,24 @@ jobs:
           required_finalizer = (
               'private void EnableAiMenuEntry()',
               'aiEntry.parent.name == "ai"',
-              'new Vector3(p.x + 180f, p.y, p.z)',
+              'new Vector3(p.x, highestY + 40f, p.z)',
+              'Mathf.Abs(siblingPosition.x - p.x) > 70f',
           )
           missing = [item for item in required_finalizer if item not in finalizer]
           if missing:
               raise SystemExit(f'AI finalizer preflight failed; missing {missing}')
           if 'clone.name' in finalizer or 'clone.name' in packer:
               raise SystemExit('Obsolete cloned AI menu logic remains in reviewed patches')
-          if 'Koishi16x9ContainerView' not in notch or '[content setNeedsLayout];' not in notch:
-              raise SystemExit('Notch/aspect patch is missing deferred UnityView surface resize logic')
-          if '[content layoutIfNeeded];' in notch:
-              raise SystemExit('Unsafe nested UnityView layoutIfNeeded call remains in notch/aspect patch')
+          if 'Koishi16x9ContainerView' not in notch:
+              raise SystemExit('Notch/aspect patch is missing the native 16:9 container')
+          if '- (void)scheduleUnitySurfaceRefresh:(UIView*)content' not in notch:
+              raise SystemExit('Deferred Unity surface refresh helper is missing')
+          if 'dispatch_async(dispatch_get_main_queue(), ^{' not in notch:
+              raise SystemExit('Unity surface refresh is not deferred to the main queue')
+          if notch.count('[content layoutIfNeeded];') != 1:
+              raise SystemExit('Expected exactly one deferred UnityView layoutIfNeeded call')
+          if notch.count('[self scheduleUnitySurfaceRefresh:content];') != 2:
+              raise SystemExit('Expected both layout paths to schedule Unity surface refresh')
 
           print('Static patch preflight passed.')
           PY
@@ -197,7 +204,8 @@ jobs:
           grep -q 'ai_' "$MENU"
           grep -Eq 'SetActive\(true\)|activeSelf|activeInHierarchy' "$MENU"
           grep -q 'EnableAiMenuEntry();' "$MENU"
-          grep -q 'movable.localPosition = new Vector3(p.x + 180f, p.y, p.z);' "$MENU"
+          grep -q 'movable.localPosition = new Vector3(p.x, highestY + 40f, p.z);' "$MENU"
+          grep -q 'Mathf.Abs(siblingPosition.x - p.x) > 70f' "$MENU"
           python3 - "$MENU" <<'PY'
           from pathlib import Path
           import sys
@@ -485,13 +493,25 @@ jobs:
           python3 control/patches/prepare_notch_compat.py source/output
           VIEW_FILE=$(find source/output -name 'UnityAppController+ViewHandling.mm' -print -quit)
           test -n "$VIEW_FILE"
-          grep -q 'Koishi16x9ContainerView' "$VIEW_FILE"
-          grep -q '\[content setNeedsLayout\];' "$VIEW_FILE"
-          if grep -q '\[content layoutIfNeeded\];' "$VIEW_FILE"; then
-            echo 'Unsafe nested UnityView layoutIfNeeded call reached generated Xcode source.'
-            exit 1
-          fi
-          echo 'Native 16:9 layout patch verified without nested UnityView layout.'
+          python3 - "$VIEW_FILE" <<'PY'
+          from pathlib import Path
+          import sys
+
+          text = Path(sys.argv[1]).read_text(encoding='utf-8')
+          required = (
+              'Koishi16x9ContainerView',
+              '- (void)scheduleUnitySurfaceRefresh:(UIView*)content',
+              'dispatch_async(dispatch_get_main_queue(), ^{',
+          )
+          missing = [item for item in required if item not in text]
+          if missing:
+              raise SystemExit(f'Generated native 16:9 patch is incomplete: {missing}')
+          if text.count('[content layoutIfNeeded];') != 1:
+              raise SystemExit('Generated native patch must contain exactly one deferred UnityView layoutIfNeeded call')
+          if text.count('[self scheduleUnitySurfaceRefresh:content];') != 2:
+              raise SystemExit('Generated native patch must schedule Unity surface refresh from both layout paths')
+          PY
+          echo 'Native 16:9 layout patch verified with deferred UnityView refresh.'
           echo '--- launch configuration after compatibility patch ---'
           plutil -p source/output/Info.plist | grep -E 'UILaunch|UIRequiresFullScreen' || true
           echo '--- exported native AI plugin ---'
