@@ -66,6 +66,8 @@ jobs:
               'aiEntry.parent.name == "ai"',
               'System.Collections.Generic.List<Transform> columnItems',
               'Mathf.Abs(siblingPosition.x - p.x) > 12f',
+              'bool foundExistingBounds = false;',
+              'columnItems.Insert(0, movable);',
               'float rowSpacing = (topY - bottomY) / (columnItems.Count - 1);',
           )
           missing = [item for item in required_finalizer if item not in finalizer]
@@ -78,8 +80,12 @@ jobs:
               raise SystemExit('Notch/aspect patch is missing the native 16:9 container')
           if 'scheduleUnitySurfaceRefresh' in notch or '[content layoutIfNeeded];' in notch:
               raise SystemExit('Obsolete native UnityView surface refresh logic remains')
-          if 'Screen.SetResolution' not in viewport or '16f / 9f' not in viewport:
-              raise SystemExit('Managed 16:9 render-resolution correction is missing')
+          if 'Screen.SetResolution' in viewport:
+              raise SystemExit('Runtime Screen.SetResolution must not be used on iOS')
+          if 'Legacy 16:9 iPhone compatibility framing enabled.' not in viewport:
+              raise SystemExit('Managed compatibility marker is missing')
+          if 'plist["UILaunchScreen"]' in notch:
+              raise SystemExit('Modern UILaunchScreen opt-in must remain disabled')
 
           print('Static patch preflight passed.')
           PY
@@ -204,6 +210,8 @@ jobs:
           grep -q 'EnableAiMenuEntry();' "$MENU"
           grep -q 'System.Collections.Generic.List<Transform> columnItems' "$MENU"
           grep -q 'Mathf.Abs(siblingPosition.x - p.x) > 12f' "$MENU"
+          grep -q 'bool foundExistingBounds = false;' "$MENU"
+          grep -q 'columnItems.Insert(0, movable);' "$MENU"
           grep -q 'float rowSpacing = (topY - bottomY) / (columnItems.Count - 1);' "$MENU"
           python3 - "$MENU" <<'PY'
           from pathlib import Path
@@ -219,9 +227,11 @@ jobs:
           PY
           ! grep -q 'clone.name' "$MENU"
           grep -q 'IPhone16x9Viewport' "$VIEWPORT"
-          grep -q 'Native centred 16:9 iOS container enabled' "$VIEWPORT"
-          grep -q 'Screen.SetResolution' "$VIEWPORT"
-          grep -q '16f / 9f' "$VIEWPORT"
+          grep -q 'Legacy 16:9 iPhone compatibility framing enabled' "$VIEWPORT"
+          if grep -q 'Screen.SetResolution' "$VIEWPORT"; then
+            echo 'Runtime Screen.SetResolution remains in the managed viewport helper.'
+            exit 1
+          fi
           grep -q 'AIBootstrap.EnsureInstalled' "$AIROOM"
           echo 'Patched managed source validation passed.'
 
@@ -503,8 +513,16 @@ jobs:
               raise SystemExit('Generated native 16:9 container is missing')
           if 'scheduleUnitySurfaceRefresh' in text or '[content layoutIfNeeded];' in text:
               raise SystemExit('Obsolete native UnityView surface refresh logic reached Xcode output')
+          if '[koishiContainer layoutIfNeeded];' in text:
+              raise SystemExit('Synchronous container layout must not run during startup')
           PY
-          echo 'Native 16:9 view framing verified without forced UnityView relayout.'
+          for key in UILaunchStoryboardName UILaunchScreens UILaunchScreen UILaunchStoryboards; do
+            if /usr/libexec/PlistBuddy -c "Print :$key" source/output/Info.plist >/dev/null 2>&1; then
+              echo "Unexpected modern launch declaration remains: $key"
+              exit 1
+            fi
+          done
+          echo 'Legacy launch-image compatibility mode verified; native 16:9 fallback has no forced relayout.'
           echo '--- launch configuration after compatibility patch ---'
           plutil -p source/output/Info.plist | grep -E 'UILaunch|UIRequiresFullScreen' || true
           echo '--- exported native AI plugin ---'
@@ -550,6 +568,12 @@ jobs:
             echo 'Unexpected iPhone-specific launch storyboard remains; refusing to package.'
             exit 1
           fi
+          for key in UILaunchScreen UILaunchScreens UILaunchStoryboards; do
+            if /usr/libexec/PlistBuddy -c "Print :$key" "$APP/Info.plist" >/dev/null 2>&1; then
+              echo "Unexpected modern launch declaration remains in final app: $key"
+              exit 1
+            fi
+          done
 
           rm -rf ipa
           mkdir -p ipa/Payload
