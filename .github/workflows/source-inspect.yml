@@ -12,79 +12,67 @@ permissions:
   contents: read
 
 concurrency:
-  group: koishipro2-source-inspection-cache-arm
+  group: koishipro2-source-inspection
   cancel-in-progress: true
 
 jobs:
   inspect:
     if: github.actor == github.repository_owner && (github.event_name == 'workflow_dispatch' || github.event_name == 'push')
-    runs-on: macos-15
-    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
+      SOURCE_REPO: https://code.moenext.com/hex/ygopro2.git
       SOURCE_COMMIT: c1850e1120df6a5885692eadacad8ad114a3cf11
+
     steps:
-      - name: Restore successful Unity Library cache
-        id: library-cache
-        uses: actions/cache/restore@v4
-        with:
-          path: source/Library
-          key: koishipro2-library-macOS-X64-2021.3.45f1-ios-c1850e1120df6a5885692eadacad8ad114a3cf11-v3
-
-      - name: Locate compiled game assembly
+      - name: Fetch exact KoishiPro2 source revision
         shell: bash
         run: |
           set -euo pipefail
-          test '${{ steps.library-cache.outputs.cache-hit }}' = 'true'
-          DLL='source/Library/ScriptAssemblies/Assembly-CSharp.dll'
-          test -f "$DLL"
-          ls -lh "$DLL"
-          file "$DLL"
+          mkdir source
+          git -C source init -q
+          git -C source remote add origin "$SOURCE_REPO"
+          git -C source config http.version HTTP/1.1
+          fetched=0
+          for attempt in 1 2 3 4 5; do
+            if git -C source fetch --quiet --no-tags --depth=1 origin "$SOURCE_COMMIT"; then
+              fetched=1
+              break
+            fi
+            [ "$attempt" -eq 5 ] || sleep 5
+          done
+          test "$fetched" -eq 1
+          git -C source checkout --quiet --detach FETCH_HEAD
+          test "$(git -C source rev-parse HEAD)" = "$SOURCE_COMMIT"
 
-      - name: Set up .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '8.0.x'
-
-      - name: Decompile Assembly-CSharp
+      - name: Inspect CDB sync and menu transition paths
         shell: bash
         run: |
           set -euo pipefail
-          dotnet tool install --global ilspycmd
-          export PATH="$PATH:$HOME/.dotnet/tools"
-          mkdir -p inspection/decompiled
-          ilspycmd -p -o inspection/decompiled source/Library/ScriptAssemblies/Assembly-CSharp.dll
-          cp source/Library/ScriptAssemblies/Assembly-CSharp.dll inspection/Assembly-CSharp.dll
+          PROGRAM='source/Assets/SibylSystem/Program.cs'
+          MENU='source/Assets/SibylSystem/Menu/Menu.cs'
+          test -s "$PROGRAM"
+          test -s "$MENU"
 
-          {
-            echo '=== CDB / DB / basic-data sync candidates ==='
-            grep -RniE --include='*.cs' 'cards\.cdb|BasicData|RetryBasicDataUpdate|UpdateClientCoroutine|ReloadGameDatabases|DownloadAndProcessFile|database|\.cdb|online.?sync|正在|0%' inspection/decompiled 2>/dev/null || true
-            echo
-            echo '=== Menu transition / click latency candidates ==='
-            grep -RniE --include='*.cs' 'shiftToServant|onClickAI|onClickPizzle|onClickDeck|onClickReplay|onClick|WaitForSeconds|StartCoroutine|WWW|UnityWebRequest' inspection/decompiled/SibylSystem 2>/dev/null || true
-            echo
-            echo '=== Safe area / notch / screen candidates ==='
-            grep -RniE --include='*.cs' 'Screen\.safeArea|safeArea|cutouts|notch|GetLeftScreenOffset|fixScreenProblems|fixALLcameras|SetResolution|Screen\.width|Screen\.height' inspection/decompiled 2>/dev/null || true
-          } > inspection/search-report.txt
+          echo '=== Program: basic-data/CDB/update references ==='
+          grep -nE -C 22 'cards\.cdb|BasicData|RetryBasicDataUpdate|UpdateClientCoroutine|ReloadGameDatabases|DownloadAndProcessFile|正在|progress|download|update' "$PROGRAM" || true
 
-          PROGRAM=$(find inspection/decompiled -path '*/SibylSystem/Program.cs' -print -quit)
-          MENU=$(find inspection/decompiled -path '*/SibylSystem/Menu/Menu.cs' -print -quit)
-          test -n "$PROGRAM"
-          test -n "$MENU"
+          echo '=== Menu: transition/click references ==='
+          grep -nE -C 18 'shiftToServant|onClickAI|onClickPizzle|onClickDeck|onClickReplay|StartCoroutine|WaitForSeconds|WWW|UnityWebRequest' "$MENU" || true
+
+          echo '=== Project-wide Chinese progress/update references ==='
+          grep -RniE -C 4 --include='*.cs' '正在|更新中|下载|0%|progress|DownloadAndProcessFile|UpdateClientCoroutine' source/Assets/SibylSystem 2>/dev/null | head -1200 || true
+
+          mkdir -p inspection
           cp "$PROGRAM" inspection/Program.cs
           cp "$MENU" inspection/Menu.cs
-          echo '--- Program sync excerpts ---'
-          grep -nE -C 18 'BasicData|RetryBasicDataUpdate|UpdateClientCoroutine|cards\.cdb|正在|progress' inspection/Program.cs || true
-          echo '--- Menu transition excerpts ---'
-          grep -nE -C 14 'shiftToServant|onClickAI|onClickPizzle|onClickDeck|onClickReplay' inspection/Menu.cs || true
-
+          grep -RniE --include='*.cs' '正在|更新中|下载|0%|progress|DownloadAndProcessFile|UpdateClientCoroutine' source/Assets/SibylSystem 2>/dev/null > inspection/update-search.txt || true
           printf '%s\n' "$SOURCE_COMMIT" > inspection/SOURCE_COMMIT.txt
-          zip -qry KoishiPro2-source-inspection.zip inspection
-          ls -lh KoishiPro2-source-inspection.zip inspection/search-report.txt
 
-      - name: Upload source inspection package
+      - name: Upload inspection snapshot
         uses: actions/upload-artifact@v4
         with:
           name: KoishiPro2-source-inspection
-          path: KoishiPro2-source-inspection.zip
+          path: inspection
           if-no-files-found: error
           retention-days: 1
