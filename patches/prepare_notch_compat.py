@@ -15,22 +15,30 @@ if not plist_path.is_file():
 with plist_path.open("rb") as f:
     plist = plistlib.load(f)
 
+# Deliberately avoid all modern launch-screen declarations on iPhone. On
+# iPhone X-class devices a modern launch screen opts the app into the tall
+# native display size. KoishiPro2's UI was authored for 16:9, so keep only the
+# legacy LaunchImage asset set created below. With no iPhone X-sized launch
+# image, iOS can place the app in the older 16:9 compatibility viewport.
 for key in (
     "UILaunchStoryboardName",
     "UILaunchStoryboardName~iphone",
     "UILaunchStoryboardName~ipod",
+    "UILaunchStoryboards",
+    "UILaunchScreen",
     "UILaunchScreens",
+    "UILaunchScreenDefinitions",
+    "UIURLToLaunchScreenAssociations",
 ):
     plist.pop(key, None)
-plist["UILaunchScreen"] = {}
 
 with plist_path.open("wb") as f:
     plistlib.dump(plist, f, fmt=plistlib.FMT_XML, sort_keys=False)
 
-# Primary iPhone X/notch fix. The old Camera.rect approach changed Unity's
-# rendering but not the native view/touch surface, so NGUI still occupied the
-# notch area. Instead, make the actual Unity view a child of a black container
-# whose layoutSubviews always centres it at 16:9 on extra-wide iPhones.
+# Defensive fallback. If iOS still exposes a tall native window, make the
+# actual Unity view a child of a black container whose layoutSubviews centres
+# it at 16:9. In legacy compatibility mode the window is already 16:9, so this
+# becomes a no-op.
 view_candidates = [
     root / "Classes" / "UI" / "UnityAppController+ViewHandling.mm",
     root / "Classes" / "UnityAppController+ViewHandling.mm",
@@ -108,9 +116,9 @@ if "@interface Koishi16x9ContainerView" not in text:
         raise SystemExit("Could not locate UnityAppController implementation marker")
     text = text[:index] + container_class + text[index:]
 
-replacement = r'''    // KoishiPro2: the physical screen remains a black container while the
-    // Unity view itself is kept at centred 16:9. Because the container owns
-    // layoutSubviews this is reapplied after any orientation/layout update.
+replacement = r'''    // KoishiPro2: keep the physical screen as a black container and constrain
+    // Unity to centred 16:9 only when iOS still reports a tall phone viewport.
+    // Do not force synchronous Unity surface relayout during startup.
     Koishi16x9ContainerView* koishiContainer = [[Koishi16x9ContainerView alloc] initWithFrame: _window.bounds];
     koishiContainer.backgroundColor = [UIColor blackColor];
     koishiContainer.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
@@ -120,8 +128,7 @@ replacement = r'''    // KoishiPro2: the physical screen remains a black contain
     _rootView = koishiContainer;
     _rootController.view = koishiContainer;
     _window.backgroundColor = [UIColor blackColor];
-    [koishiContainer setNeedsLayout];
-    [koishiContainer layoutIfNeeded];'''
+    [koishiContainer setNeedsLayout];'''
 
 if "Koishi16x9ContainerView* koishiContainer" not in text:
     text = text.replace(old, replacement, 1)
@@ -130,7 +137,9 @@ if "@interface Koishi16x9ContainerView" not in text or "Koishi16x9ContainerView*
     raise SystemExit("Native centred 16:9 patch was not installed")
 view_path.write_text(text, encoding="utf-8")
 
-# Keep deterministic legacy launch images as build-time fallback resources.
+# Legacy launch images intentionally stop at the 16:9 iPhone 6/7/8 Plus class.
+# Do not add an iPhone X launch image: its absence is what allows the desired
+# compatibility viewport on the user's iPhone X.
 catalogs = sorted(root.rglob("*.xcassets"))
 if not catalogs:
     raise SystemExit("No Xcode asset catalog (*.xcassets) found")
@@ -161,6 +170,7 @@ def write_black_png(path: Path, width: int, height: int) -> None:
     data = zlib.compress(raw, 9)
     path.write_bytes(signature + png_chunk(b"IHDR", ihdr) + png_chunk(b"IDAT", data) + png_chunk(b"IEND", b""))
 
+
 images = [
     ("Default@2x.png", 640, 960, {"orientation":"portrait","idiom":"iphone","extent":"full-screen","minimum-system-version":"7.0","scale":"2x"}),
     ("Default-568h@2x.png", 640, 1136, {"orientation":"portrait","idiom":"iphone","extent":"full-screen","subtype":"retina4","minimum-system-version":"7.0","scale":"2x"}),
@@ -178,5 +188,6 @@ for filename, width, height, meta in images:
 
 (launch_set / "Contents.json").write_text(json.dumps(contents, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
-print(f"Prepared fallback launch assets: {launch_set}")
-print(f"Patched native Unity root view with persistent centred 16:9 container: {view_path}")
+print(f"Prepared legacy 16:9 launch assets: {launch_set}")
+print(f"Removed modern launch-screen declarations from: {plist_path}")
+print(f"Patched native Unity root view with defensive centred 16:9 container: {view_path}")
