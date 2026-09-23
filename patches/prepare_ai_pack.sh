@@ -27,7 +27,8 @@ block = t[start:end]
 required = (
     'entry.name == "ai_"',
     'aiEntry.parent.name == "ai"',
-    'movable.localPosition = new Vector3(p.x + 180f, p.y, p.z);',
+    'movable.localPosition = new Vector3(p.x, highestY + 40f, p.z);',
+    'Mathf.Abs(siblingPosition.x - p.x) > 70f',
 )
 missing = [item for item in required if item not in block]
 if missing:
