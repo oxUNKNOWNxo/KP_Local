@@ -196,7 +196,18 @@ jobs:
           grep -Eq 'SetActive\(true\)|activeSelf|activeInHierarchy' "$MENU"
           grep -q 'EnableAiMenuEntry();' "$MENU"
           grep -q 'movable.localPosition = new Vector3(p.x + 180f, p.y, p.z);' "$MENU"
-          test "$(grep -Ec '^[[:space:]]*UIHelper\.registEvent\(gameObject,[[:space:]]*"ai_",[[:space:]]*onClickAI\);[[:space:]]* "$MENU")" -eq 1
+          python3 - "$MENU" <<'PY'
+          from pathlib import Path
+          import sys
+
+          lines = Path(sys.argv[1]).read_text(encoding='utf-8-sig').splitlines()
+          active = [
+              line for line in lines
+              if line.strip() == 'UIHelper.registEvent(gameObject, "ai_", onClickAI);'
+          ]
+          if len(active) != 1:
+              raise SystemExit(f'Expected exactly one active ai_ event registration; found {len(active)}')
+          PY
           ! grep -q 'clone.name' "$MENU"
           grep -q 'IPhone16x9Viewport' "$VIEWPORT"
           grep -q 'Native centred 16:9 iOS container enabled' "$VIEWPORT"
