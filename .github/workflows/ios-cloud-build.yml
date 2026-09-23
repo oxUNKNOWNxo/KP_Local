@@ -87,30 +87,6 @@ jobs:
           sw_vers
           system_profiler SPDisplaysDataType 2>/dev/null | sed -n '1,80p' || true
 
-      - name: Install Unity CLI
-        shell: bash
-        run: |
-          set -euo pipefail
-          curl -fsSL https://unity.com/install.sh | UNITY_CLI_CHANNEL=beta UNITY_CLI_HOME="$UNITY_CLI_HOME" bash >/dev/null
-          test -x "$UNITY_CLI_HOME/bin/unity"
-
-      - name: Sign in to Unity account
-        shell: bash
-        run: |
-          set -euo pipefail
-          UNITY="$UNITY_CLI_HOME/bin/unity"
-          echo 'Open the one-time Unity Sign-in URL printed below and complete sign-in.'
-          echo 'Do not share account credentials in the Actions log.'
-          "$UNITY" auth login --no-color
-
-      - name: Activate Unity Personal
-        shell: bash
-        run: |
-          set -euo pipefail
-          UNITY="$UNITY_CLI_HOME/bin/unity"
-          "$UNITY" license activate --personal --accept-eula --format json >/dev/null
-          echo 'Unity Personal activation completed.'
-
       - name: Restore fixed KoishiPro2 source snapshot
         id: source-cache
         uses: actions/cache/restore@v4
@@ -243,6 +219,30 @@ jobs:
           file "$CORE"
           ls -lh "$PACK" "$CORE"
           echo 'Offline AI payload validation passed before Unity build.'
+
+      - name: Install Unity CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL https://unity.com/install.sh | UNITY_CLI_CHANNEL=beta UNITY_CLI_HOME="$UNITY_CLI_HOME" bash >/dev/null
+          test -x "$UNITY_CLI_HOME/bin/unity"
+
+      - name: Sign in to Unity account
+        shell: bash
+        run: |
+          set -euo pipefail
+          UNITY="$UNITY_CLI_HOME/bin/unity"
+          echo 'Open the one-time Unity Sign-in URL printed below and complete sign-in.'
+          echo 'Do not share account credentials in the Actions log.'
+          "$UNITY" auth login --no-color
+
+      - name: Activate Unity Personal
+        shell: bash
+        run: |
+          set -euo pipefail
+          UNITY="$UNITY_CLI_HOME/bin/unity"
+          "$UNITY" license activate --personal --accept-eula --format json >/dev/null
+          echo 'Unity Personal activation completed.'
 
       - name: Install Unity Editor and iOS Build Support
         shell: bash
