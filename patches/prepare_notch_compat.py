@@ -12,12 +12,6 @@ plist_path = root / "Info.plist"
 if not plist_path.is_file():
     raise SystemExit(f"Info.plist not found: {plist_path}")
 
-# Keep iOS in its normal modern full-screen launch mode.  The previous attempt
-# intentionally omitted modern launch metadata to trigger old iPhone
-# compatibility mode, but iOS 16 on iPhone X did not letterbox KoishiPro2 and
-# the launch transition felt slower.  UILaunchScreen is Apple's storyboard-free
-# modern launch-screen key.  Runtime 16:9 containment is now handled inside
-# Unity by IPhone16x9Viewport instead of relying on iOS compatibility behavior.
 with plist_path.open("rb") as f:
     plist = plistlib.load(f)
 
@@ -33,10 +27,80 @@ plist["UILaunchScreen"] = {}
 with plist_path.open("wb") as f:
     plistlib.dump(plist, f, fmt=plistlib.FMT_XML, sort_keys=False)
 
-# The Xcode command line still names LaunchImage for compatibility with the
-# existing Unity project.  Keep a tiny, deterministic pre-notch launch-image set
-# as a fallback build resource; UILaunchScreen is what modern iOS uses at run
-# time, so these images no longer control iPhone X display mode.
+# Primary iPhone X/notch fix: do not let Unity's root view fill the whole
+# physical screen on extra-wide iPhones.  Wrap it in a black full-screen
+# container and center the Unity rendering view at 16:9.  This works below the
+# Unity camera/UI layer, so NGUI cannot stretch back into the notch area.
+view_candidates = [
+    root / "Classes" / "UI" / "UnityAppController+ViewHandling.mm",
+    root / "Classes" / "UnityAppController+ViewHandling.mm",
+]
+view_path = next((p for p in view_candidates if p.is_file()), None)
+if view_path is None:
+    found = list(root.rglob("UnityAppController+ViewHandling.mm"))
+    if len(found) == 1:
+        view_path = found[0]
+if view_path is None:
+    raise SystemExit("UnityAppController+ViewHandling.mm not found")
+
+text = view_path.read_text(encoding="utf-8")
+old = "    _rootController.view = _rootView = _unityView;"
+if old not in text:
+    raise SystemExit("Could not locate Unity root-view assignment")
+
+replacement = r'''    // KoishiPro2: keep the actual Unity view inside a centred 16:9 area on
+    // extra-wide iPhones. The full-screen container stays black.
+    CGRect koishiBounds = [UIScreen mainScreen].bounds;
+    CGFloat koishiW = CGRectGetWidth(koishiBounds);
+    CGFloat koishiH = CGRectGetHeight(koishiBounds);
+    CGFloat koishiLong = MAX(koishiW, koishiH);
+    CGFloat koishiShort = MIN(koishiW, koishiH);
+    BOOL koishiWidePhone = (UI_USER_INTERFACE_IDIOM() == UIUserInterfaceIdiomPhone)
+        && koishiShort > 0.0
+        && (koishiLong / koishiShort) >= 1.95;
+
+    if (koishiWidePhone)
+    {
+        UIView* koishiContainer = [[UIView alloc] initWithFrame: koishiBounds];
+        koishiContainer.backgroundColor = [UIColor blackColor];
+        koishiContainer.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+
+        CGRect koishiFrame = koishiBounds;
+        const CGFloat koishiAspect = 16.0 / 9.0;
+        if (koishiW >= koishiH)
+        {
+            CGFloat targetW = koishiH * koishiAspect;
+            koishiFrame.origin.x = (koishiW - targetW) * 0.5;
+            koishiFrame.origin.y = 0.0;
+            koishiFrame.size.width = targetW;
+            koishiFrame.size.height = koishiH;
+        }
+        else
+        {
+            CGFloat targetH = koishiW * koishiAspect;
+            koishiFrame.origin.x = 0.0;
+            koishiFrame.origin.y = (koishiH - targetH) * 0.5;
+            koishiFrame.size.width = koishiW;
+            koishiFrame.size.height = targetH;
+        }
+
+        _unityView.autoresizingMask = UIViewAutoresizingNone;
+        _unityView.frame = koishiFrame;
+        [koishiContainer addSubview: _unityView];
+        _rootView = koishiContainer;
+        _rootController.view = koishiContainer;
+        _window.backgroundColor = [UIColor blackColor];
+    }
+    else
+    {
+        _rootController.view = _rootView = _unityView;
+    }'''
+
+if "koishiWidePhone" not in text:
+    text = text.replace(old, replacement, 1)
+    view_path.write_text(text, encoding="utf-8")
+
+# Keep deterministic legacy launch images as build-time fallback resources.
 catalogs = sorted(root.rglob("*.xcassets"))
 if not catalogs:
     raise SystemExit("No Xcode asset catalog (*.xcassets) found")
@@ -56,12 +120,7 @@ launch_set.mkdir(parents=True)
 
 
 def png_chunk(kind: bytes, data: bytes) -> bytes:
-    return (
-        struct.pack(">I", len(data))
-        + kind
-        + data
-        + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
-    )
+    return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
 
 
 def write_black_png(path: Path, width: int, height: int) -> None:
@@ -70,87 +129,24 @@ def write_black_png(path: Path, width: int, height: int) -> None:
     row = b"\x00" + (b"\x00\x00\x00\xff" * width)
     raw = row * height
     data = zlib.compress(raw, 9)
-    path.write_bytes(
-        signature
-        + png_chunk(b"IHDR", ihdr)
-        + png_chunk(b"IDAT", data)
-        + png_chunk(b"IEND", b"")
-    )
-
+    path.write_bytes(signature + png_chunk(b"IHDR", ihdr) + png_chunk(b"IDAT", data) + png_chunk(b"IEND", b""))
 
 images = [
-    {
-        "filename": "Default@2x.png",
-        "size": (640, 960),
-        "meta": {
-            "orientation": "portrait",
-            "idiom": "iphone",
-            "extent": "full-screen",
-            "minimum-system-version": "7.0",
-            "scale": "2x",
-        },
-    },
-    {
-        "filename": "Default-568h@2x.png",
-        "size": (640, 1136),
-        "meta": {
-            "orientation": "portrait",
-            "idiom": "iphone",
-            "extent": "full-screen",
-            "subtype": "retina4",
-            "minimum-system-version": "7.0",
-            "scale": "2x",
-        },
-    },
-    {
-        "filename": "Default-667h@2x.png",
-        "size": (750, 1334),
-        "meta": {
-            "orientation": "portrait",
-            "idiom": "iphone",
-            "extent": "full-screen",
-            "subtype": "667h",
-            "minimum-system-version": "8.0",
-            "scale": "2x",
-        },
-    },
-    {
-        "filename": "Default-736h@3x.png",
-        "size": (1242, 2208),
-        "meta": {
-            "orientation": "portrait",
-            "idiom": "iphone",
-            "extent": "full-screen",
-            "subtype": "736h",
-            "minimum-system-version": "8.0",
-            "scale": "3x",
-        },
-    },
-    {
-        "filename": "Default-736h-Landscape@3x.png",
-        "size": (2208, 1242),
-        "meta": {
-            "orientation": "landscape",
-            "idiom": "iphone",
-            "extent": "full-screen",
-            "subtype": "736h",
-            "minimum-system-version": "8.0",
-            "scale": "3x",
-        },
-    },
+    ("Default@2x.png", 640, 960, {"orientation":"portrait","idiom":"iphone","extent":"full-screen","minimum-system-version":"7.0","scale":"2x"}),
+    ("Default-568h@2x.png", 640, 1136, {"orientation":"portrait","idiom":"iphone","extent":"full-screen","subtype":"retina4","minimum-system-version":"7.0","scale":"2x"}),
+    ("Default-667h@2x.png", 750, 1334, {"orientation":"portrait","idiom":"iphone","extent":"full-screen","subtype":"667h","minimum-system-version":"8.0","scale":"2x"}),
+    ("Default-736h@3x.png", 1242, 2208, {"orientation":"portrait","idiom":"iphone","extent":"full-screen","subtype":"736h","minimum-system-version":"8.0","scale":"3x"}),
+    ("Default-736h-Landscape@3x.png", 2208, 1242, {"orientation":"landscape","idiom":"iphone","extent":"full-screen","subtype":"736h","minimum-system-version":"8.0","scale":"3x"}),
 ]
 
 contents = {"images": [], "info": {"version": 1, "author": "xcode"}}
-for item in images:
-    write_black_png(launch_set / item["filename"], *item["size"])
-    entry = dict(item["meta"])
-    entry["filename"] = item["filename"]
+for filename, width, height, meta in images:
+    write_black_png(launch_set / filename, width, height)
+    entry = dict(meta)
+    entry["filename"] = filename
     contents["images"].append(entry)
 
-(launch_set / "Contents.json").write_text(
-    json.dumps(contents, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-)
+(launch_set / "Contents.json").write_text(json.dumps(contents, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 print(f"Prepared fallback launch assets: {launch_set}")
-print("Configured modern storyboard-free UILaunchScreen for iPhone")
-print("Runtime notch containment is handled by IPhone16x9Viewport")
+print(f"Patched native Unity root view for centred 16:9: {view_path}")
