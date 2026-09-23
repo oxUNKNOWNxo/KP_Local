@@ -77,10 +77,10 @@ container_class = r'''
         content.frame = targetFrame;
         if (sizeChanged)
         {
-            // UnityView.layoutSubviews marks the rendering surface for
-            // recreation and reports the new logical render size to Unity.
+            // Do not force a nested layout pass from the container's own
+            // layoutSubviews. Mark UnityView dirty and let UIKit run its
+            // layoutSubviews on the next normal update cycle.
             [content setNeedsLayout];
-            [content layoutIfNeeded];
         }
         return;
     }
@@ -109,12 +109,12 @@ container_class = r'''
     content.frame = targetFrame;
     if (sizeChanged)
     {
-        // Updating only UIView.frame can leave Unity's render surface at the
-        // old ultra-wide dimensions until UnityView gets a layout pass.
-        // Force that child layout now: UnityView.layoutSubviews sets its
-        // recreate-surface flag and reports the new 16:9 size to Unity.
+        // Updating only UIView.frame left the Unity render surface at the old
+        // ultra-wide dimensions in the previous device test. setNeedsLayout
+        // schedules UnityView.layoutSubviews without re-entering layout from
+        // inside this parent layoutSubviews call. UnityView then recreates its
+        // surface and reports the new 16:9 size during the normal UIKit cycle.
         [content setNeedsLayout];
-        [content layoutIfNeeded];
     }
 }
 @end
