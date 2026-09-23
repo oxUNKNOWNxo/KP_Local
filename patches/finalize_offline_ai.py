@@ -20,9 +20,8 @@ for required in (bootstrap_source, viewport_source):
 shutil.copyfile(bootstrap_source, bootstrap_target)
 shutil.copyfile(viewport_source, viewport_target)
 
-# Install the viewport from KoishiPro2's normal startup path as well as the
-# RuntimeInitializeOnLoadMethod path. This avoids depending on IL2CPP runtime
-# initialization alone on iOS.
+# Keep an explicit startup marker for the iOS viewport integration. The actual
+# containment is performed below Unity, in the generated native iOS view.
 program_path = assets / "SibylSystem" / "Program.cs"
 program = program_path.read_text(encoding="utf-8-sig")
 if "IPhone16x9Viewport.EnsureInstalled();" not in program:
@@ -86,11 +85,12 @@ precy = precy.replace(
 )
 precy_path.write_text(precy, encoding="utf-8")
 
-# The current prefabs already contain ai_. In trans_menu, ai_ is active but an
-# ancestor group named ai is inactive. Enable that hidden branch and wire the
-# restored handler. Only the first createWindow(new_ui_menu) is Menu.initialize;
-# a later call in the same source file belongs to another class/context, so it
-# must not receive a call to this private Menu helper.
+# Do not expose the historical hidden ai branch directly: on the current menu
+# its coordinates overlap another visible entry (My Card). Instead, clone the
+# already-visible single_ entry into the live menu layout, rename it ai_, put it
+# at the end of the same layout, then let the menu layout component reposition
+# its children. A geometry fallback places it in a free slot if there is no
+# Reposition-capable component.
 menu_path = assets / "SibylSystem" / "Menu" / "Menu.cs"
 menu = menu_path.read_text(encoding="utf-8-sig")
 create_anchor = "        createWindow(Program.I().new_ui_menu);\n"
@@ -103,12 +103,12 @@ helper_anchor = "    private void CreateSuperPreMenuItem()\n"
 if "private void EnableAiMenuEntry()" not in menu:
     if helper_anchor not in menu:
         raise SystemExit("Could not locate menu helper insertion point")
-    helper = '''    private void EnableAiMenuEntry()
+    helper = r'''    private void EnableAiMenuEntry()
     {
-        Transform aiEntry = null;
+        Transform legacyAiEntry = null;
         Transform singleEntry = null;
-
         Transform[] entries = gameObject.GetComponentsInChildren<Transform>(true);
+
         for (int i = 0; i < entries.Length; i++)
         {
             Transform entry = entries[i];
@@ -116,68 +116,81 @@ if "private void EnableAiMenuEntry()" not in menu:
             {
                 continue;
             }
-            if (entry.name == "ai_" && aiEntry == null)
+
+            if (entry.name == "ai_" && legacyAiEntry == null)
             {
-                aiEntry = entry;
+                legacyAiEntry = entry;
             }
-            else if (entry.name == "single_" && singleEntry == null)
+            else if (entry.name == "single_" && entry.gameObject.activeInHierarchy && singleEntry == null)
             {
                 singleEntry = entry;
             }
         }
 
-        if (aiEntry == null)
-        {
-            GameObject activeAi = GameObject.Find("ai_");
-            if (activeAi != null)
-            {
-                aiEntry = activeAi.transform;
-            }
-        }
         if (singleEntry == null)
         {
-            GameObject activeSingle = GameObject.Find("single_");
-            if (activeSingle != null)
+            for (int i = 0; i < entries.Length; i++)
             {
-                singleEntry = activeSingle.transform;
+                Transform entry = entries[i];
+                if (entry != null && entry.name == "single_")
+                {
+                    singleEntry = entry;
+                    break;
+                }
             }
         }
 
+        Transform aiEntry = null;
         bool cloned = false;
-        if (aiEntry == null && singleEntry != null && singleEntry.parent != null)
+
+        if (singleEntry != null && singleEntry.parent != null)
         {
+            if (legacyAiEntry != null)
+            {
+                // Prevent event lookup from finding the old hidden/overlapping
+                // entry. Its parent remains untouched and can stay inactive.
+                legacyAiEntry.name = "ai_legacy_hidden";
+            }
+
             GameObject clone = UnityEngine.Object.Instantiate(singleEntry.gameObject, singleEntry.parent, false);
             clone.name = "ai_";
             clone.transform.localPosition = singleEntry.localPosition;
             clone.transform.localRotation = singleEntry.localRotation;
             clone.transform.localScale = singleEntry.localScale;
-            clone.transform.SetSiblingIndex(singleEntry.GetSiblingIndex() + 1);
             clone.SetActive(true);
-            aiEntry = clone.transform;
-            cloned = true;
-
+            clone.transform.SetSiblingIndex(clone.transform.parent.childCount - 1);
             SetAiMenuLabel(clone);
+
             if (!TryRepositionMenuParent(clone.transform.parent))
             {
-                clone.transform.localPosition = singleEntry.localPosition + new Vector3(0f, -80f, 0f);
+                PlaceAiMenuInFreeSlot(clone.transform, singleEntry);
             }
+
+            aiEntry = clone.transform;
+            cloned = true;
+        }
+        else if (legacyAiEntry != null)
+        {
+            // Last-resort compatibility path for an unexpected prefab variant.
+            ActivateAiMenuHierarchy(legacyAiEntry);
+            PlaceAiMenuInFreeSlot(legacyAiEntry, null);
+            aiEntry = legacyAiEntry;
         }
 
         if (aiEntry == null)
         {
-            UnityEngine.Debug.LogWarning("[OfflineAI] Neither ai_ nor a cloneable single_ menu entry was found.");
+            UnityEngine.Debug.LogWarning("[OfflineAI] No visible menu entry could be created for AI.");
             return;
         }
-
-        ActivateAiMenuHierarchy(aiEntry);
 
         if (aiEntry.parent != null)
         {
             UIHelper.registEvent(aiEntry.parent.gameObject, "ai_", onClickAI);
         }
         UIHelper.registEvent(gameObject, "ai_", onClickAI);
-
-        UnityEngine.Debug.Log("[OfflineAI] AI menu entry ready. cloned=" + cloned + " activeInHierarchy=" + aiEntry.gameObject.activeInHierarchy);
+        UnityEngine.Debug.Log("[OfflineAI] AI menu entry ready. cloned=" + cloned
+            + " position=" + aiEntry.localPosition
+            + " activeInHierarchy=" + aiEntry.gameObject.activeInHierarchy);
     }
 
     private void ActivateAiMenuHierarchy(Transform entry)
@@ -192,7 +205,6 @@ if "private void EnableAiMenuEntry()" not in menu:
             {
                 cursor.gameObject.SetActive(true);
                 activatedHiddenBranch = true;
-                UnityEngine.Debug.Log("[OfflineAI] Activated hidden AI ancestor: " + cursor.name);
             }
             else if (activatedHiddenBranch && cursor != entry)
             {
@@ -203,12 +215,58 @@ if "private void EnableAiMenuEntry()" not in menu:
             {
                 break;
             }
-
             cursor = cursor.parent;
             depth++;
         }
-
         entry.gameObject.SetActive(true);
+    }
+
+    private void PlaceAiMenuInFreeSlot(Transform entry, Transform reference)
+    {
+        if (entry == null || entry.parent == null)
+        {
+            return;
+        }
+
+        Transform parent = entry.parent;
+        float minY = float.MaxValue;
+        float maxX = float.MinValue;
+        float minX = float.MaxValue;
+        float maxY = float.MinValue;
+        int count = 0;
+
+        for (int i = 0; i < parent.childCount; i++)
+        {
+            Transform child = parent.GetChild(i);
+            if (child == null || child == entry || !child.gameObject.activeSelf)
+            {
+                continue;
+            }
+            Vector3 p = child.localPosition;
+            minY = Mathf.Min(minY, p.y);
+            maxY = Mathf.Max(maxY, p.y);
+            minX = Mathf.Min(minX, p.x);
+            maxX = Mathf.Max(maxX, p.x);
+            count++;
+        }
+
+        Vector3 basePos = reference != null ? reference.localPosition : entry.localPosition;
+        if (count == 0)
+        {
+            entry.localPosition = basePos + new Vector3(0f, -80f, 0f);
+            return;
+        }
+
+        float xSpread = maxX - minX;
+        float ySpread = maxY - minY;
+        if (xSpread > ySpread * 1.25f)
+        {
+            entry.localPosition = new Vector3(maxX + 100f, basePos.y, basePos.z);
+        }
+        else
+        {
+            entry.localPosition = new Vector3(basePos.x, minY - 80f, basePos.z);
+        }
     }
 
     private void SetAiMenuLabel(GameObject root)
@@ -291,10 +349,9 @@ menu_path.write_text(menu, encoding="utf-8")
 print("Finalized offline AI integration:")
 print(f"  - installed {bootstrap_target}")
 print(f"  - installed {viewport_target}")
-print("  - explicitly installed 16:9 viewport from Program startup")
+print("  - retained explicit native 16:9 startup marker")
 print("  - made UTF-8 native paths NUL-terminated and byte-safe")
-print("  - enabled first-use bundled AI data bootstrap")
-print("  - restored/wired AI menu entry in Menu.initialize only")
-print("  - activates hidden AI ancestor branch, with single_ clone fallback")
-print("  - installed centred 16:9 runtime viewport for extra-wide iPhones")
+print("  - enabled bundled AI/card-script bootstrap")
+print("  - cloned AI into the visible menu layout instead of exposing the overlapping legacy slot")
+print("  - added layout reposition/free-slot fallback for the AI menu entry")
 print("  - replaced obsolete non-ASCII filename warning")
