@@ -41,4 +41,50 @@ public sealed class IPhone16x9Viewport : MonoBehaviour
         instance = this;
         DontDestroyOnLoad(gameObject);
     }
+
+    private void Start()
+    {
+#if UNITY_IOS && !UNITY_EDITOR
+        Apply16x9RenderResolution();
+#endif
+    }
+
+    private void Apply16x9RenderResolution()
+    {
+        int width = Screen.width;
+        int height = Screen.height;
+        if (width <= 0 || height <= 0)
+        {
+            return;
+        }
+
+        int longSide = Mathf.Max(width, height);
+        int shortSide = Mathf.Min(width, height);
+        float aspect = (float)longSide / shortSide;
+        if (aspect < 1.95f)
+        {
+            return;
+        }
+
+        if (width >= height)
+        {
+            int targetWidth = Mathf.RoundToInt(height * (16f / 9f));
+            if (Mathf.Abs(width - targetWidth) > 1)
+            {
+                Debug.Log("[IPhone16x9Viewport] Render resolution "
+                    + width + "x" + height + " -> " + targetWidth + "x" + height);
+                Screen.SetResolution(targetWidth, height, true);
+            }
+        }
+        else
+        {
+            int targetHeight = Mathf.RoundToInt(width * (16f / 9f));
+            if (Mathf.Abs(height - targetHeight) > 1)
+            {
+                Debug.Log("[IPhone16x9Viewport] Render resolution "
+                    + width + "x" + height + " -> " + width + "x" + targetHeight);
+                Screen.SetResolution(width, targetHeight, true);
+            }
+        }
+    }
 }
