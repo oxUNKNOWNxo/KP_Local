@@ -77,10 +77,7 @@ container_class = r'''
         content.frame = targetFrame;
         if (sizeChanged)
         {
-            // Do not force a nested layout pass from the container's own
-            // layoutSubviews. Mark UnityView dirty and let UIKit run its
-            // layoutSubviews on the next normal update cycle.
-            [content setNeedsLayout];
+            [self scheduleUnitySurfaceRefresh:content];
         }
         return;
     }
@@ -109,13 +106,23 @@ container_class = r'''
     content.frame = targetFrame;
     if (sizeChanged)
     {
-        // Updating only UIView.frame left the Unity render surface at the old
-        // ultra-wide dimensions in the previous device test. setNeedsLayout
-        // schedules UnityView.layoutSubviews without re-entering layout from
-        // inside this parent layoutSubviews call. UnityView then recreates its
-        // surface and reports the new 16:9 size during the normal UIKit cycle.
-        [content setNeedsLayout];
+        [self scheduleUnitySurfaceRefresh:content];
     }
+}
+
+- (void)scheduleUnitySurfaceRefresh:(UIView*)content
+{
+    if (content == nil)
+        return;
+
+    // Changing UnityView.frame updates its UIKit bounds immediately, but Unity's
+    // render surface is refreshed from UnityView.layoutSubviews. Defer that
+    // child layout until this parent layout pass has fully returned; forcing it
+    // synchronously here caused a real-device startup freeze.
+    [content setNeedsLayout];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [content layoutIfNeeded];
+    });
 }
 @end
 
