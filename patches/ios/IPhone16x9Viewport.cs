@@ -3,7 +3,7 @@ using UnityEngine;
 // Managed marker retained so the build can verify that the viewport feature
 // reaches IL2CPP. The native iOS wrapper now exposes the full iPhone X-class
 // landscape window and reserves only the physical notch side. This class does
-// not call Screen.SetResolution; the native container updates its frame during
+// not change Unity's render resolution at runtime; the native container updates its frame during
 // safe-area/orientation changes.
 public sealed class IPhone16x9Viewport : MonoBehaviour
 {
