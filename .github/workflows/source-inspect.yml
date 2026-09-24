@@ -68,9 +68,18 @@ jobs:
           for FILE in source/Assets/SibylSystem/Servant.cs source/Assets/SibylSystem/WindowServant.cs source/Assets/SibylSystem/WindowServantSP.cs; do
             if [ -f "$FILE" ]; then
               echo "--- $FILE ---"
-              grep -nE -A 80 -B 20 'public virtual void show|public override void show|void show\(|public virtual void hide|public override void hide|void hide\(' "$FILE" || true
+              grep -nE -A 140 -B 30 'public virtual void show|public override void show|void show\(|public virtual void hide|public override void hide|void hide\(|applyShowArrangement|applyHideArrangement' "$FILE" || true
             fi
           done
+
+          echo '=== Delayed-task scheduler implementation ==='
+          grep -RniE -A 120 -B 30 --include='*.cs' 'static void go\(|void go\(|class delayedTask|TimePassed\(|notGo\(' source/Assets/SibylSystem/Program.cs source/Assets/SibylSystem 2>/dev/null | head -1800 || true
+
+          echo '=== Main menu target screen show methods ==='
+          grep -RniE -A 120 -B 20 --include='*.cs' 'class (Setting|selectDeck|selectReplay|SelectServer|MyCard|AIRoom)|public override void show\(' source/Assets/SibylSystem 2>/dev/null | head -2600 || true
+
+          echo '=== Main menu click handlers ==='
+          sed -n '675,790p' "$MENU"
 
           echo '=== Project-wide Chinese progress/update references ==='
           grep -RniE -C 4 --include='*.cs' '正在|更新中|下载|0%|progress|DownloadAndProcessFile|UpdateClientCoroutine' source/Assets/SibylSystem 2>/dev/null | head -1200 || true
