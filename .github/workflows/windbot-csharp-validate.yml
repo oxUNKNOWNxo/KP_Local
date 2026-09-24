@@ -44,7 +44,7 @@ jobs:
           set -euo pipefail
           mapfile -t SOURCES < <(find "$RUNNER_TEMP/windbot-subset/src" -type f -name '*.cs' | sort)
           printf 'Compiling %s C# files\n' "${#SOURCES[@]}"
-          mcs             -langversion:latest             -target:library             -optimize+             -out:"$RUNNER_TEMP/windbot-subset/KoishiWindBotRadiant.dll"             -r:System.Core             -r:System.Data             -r:System.Runtime.Serialization             -r:Mono.Data.Sqlite             "${SOURCES[@]}"
+          mcs             -unsafe             -langversion:latest             -target:library             -optimize+             -out:"$RUNNER_TEMP/windbot-subset/KoishiWindBotRadiant.dll"             -r:System.Core             -r:System.Data             -r:System.Runtime.Serialization             -r:Mono.Data.Sqlite             "${SOURCES[@]}"
           test -s "$RUNNER_TEMP/windbot-subset/KoishiWindBotRadiant.dll"
           monodis --assembly "$RUNNER_TEMP/windbot-subset/KoishiWindBotRadiant.dll"
 
