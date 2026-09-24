@@ -109,6 +109,7 @@ namespace KoishiWindBot.Local
 
         private byte[] _pendingAiResponse;
         private int _waitingPlayer = -1;
+        private int _lastResponsePlayer = -1;
         private bool _ended;
         private bool _pumping;
 
@@ -258,7 +259,10 @@ namespace KoishiWindBot.Local
                     }
 
                     case MsgRetry:
-                        SendToPlayer(_waitingPlayer < 0 ? 0 : _waitingPlayer, Slice(data, start, p));
+                        if (_lastResponsePlayer < 0)
+                            throw new InvalidDataException("MSG_RETRY arrived before any player response.");
+                        _waitingPlayer = _lastResponsePlayer;
+                        SendToPlayer(_waitingPlayer, Slice(data, start, p));
                         return true;
 
                     case MsgHint:
@@ -843,6 +847,7 @@ namespace KoishiWindBot.Local
         private bool SendDecisionAndWait(int player, byte[] packet)
         {
             _waitingPlayer = player;
+            _lastResponsePlayer = player;
             SendToPlayer(player, packet);
             return true;
         }
