@@ -35,11 +35,11 @@ done
 
 while IFS= read -r path; do
   copy_file "$path"
-done < <(find "$WORK/src/Game/AI" -maxdepth 1 -type f -name '*.cs' -printf 'Game/AI/%f\n' | sort)
+done < <(find "$WORK/src/Game/AI" -maxdepth 1 -type f -name '*.cs' | sed "s#^$WORK/src/##" | sort)
 
 while IFS= read -r path; do
   copy_file "$path"
-done < <(find "$WORK/src/Game/AI/Enums" -maxdepth 1 -type f -name '*.cs' -printf 'Game/AI/Enums/%f\n' | sort)
+done < <(find "$WORK/src/Game/AI/Enums" -maxdepth 1 -type f -name '*.cs' | sed "s#^$WORK/src/##" | sort)
 
 copy_file Game/AI/Decks/RadiantTyphoonExecutor.cs
 
@@ -49,11 +49,11 @@ done
 
 while IFS= read -r path; do
   copy_file "$path"
-done < <(find "$WORK/src/YGOSharp.OCGWrapper.Enums" -maxdepth 1 -type f -name '*.cs' ! -path '*/Properties/*' -printf 'YGOSharp.OCGWrapper.Enums/%f\n' | sort)
+done < <(find "$WORK/src/YGOSharp.OCGWrapper.Enums" -maxdepth 1 -type f -name '*.cs' ! -path '*/Properties/*' | sed "s#^$WORK/src/##" | sort)
 
 while IFS= read -r path; do
   copy_file "$path"
-done < <(find "$WORK/src/YGOSharp.Network/Enums" -maxdepth 1 -type f -name '*.cs' -printf 'YGOSharp.Network/Enums/%f\n' | sort)
+done < <(find "$WORK/src/YGOSharp.Network/Enums" -maxdepth 1 -type f -name '*.cs' | sed "s#^$WORK/src/##" | sort)
 copy_file YGOSharp.Network/Utils/BinaryExtensions.cs
 
 cp "$WORK/src/Decks/AI_RadiantTyphoon.ydk" "$OUT/data/Decks/"
