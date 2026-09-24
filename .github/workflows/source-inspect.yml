@@ -81,6 +81,65 @@ jobs:
           echo '=== Main menu click handlers ==='
           sed -n '675,790p' "$MENU"
 
+          echo '=== Script data layout in fixed source ==='
+          find source -maxdepth 6 -type d \( -iname 'script' -o -iname 'scripts' -o -iname 'script_current' -o -iname 'script_legacy' \) -print || true
+          find source -type f -name '*.lua' | sed 's#^source/##' | head -200 || true
+          echo "fixed source lua count: $(find source -type f -name '*.lua' | wc -l)"
+
+          echo '=== ygopro2-data.zip script entries ==='
+          DATA_ZIP=$(find source/Assets -type f -name 'ygopro2-data.zip' -print -quit)
+          if [ -n "$DATA_ZIP" ]; then
+            python3 - "$DATA_ZIP" <<'PY'
+import sys, zipfile
+z=zipfile.ZipFile(sys.argv[1])
+names=[n for n in z.namelist() if n.lower().startswith('script/') and n.lower().endswith('.lua')]
+print('data zip script count:', len(names))
+for n in names[:200]:
+    print(n)
+PY
+          fi
+
+          echo '=== Compare fixed source with current KoishiPro2 upstream HEAD ==='
+          git -C source remote -v
+          git -C source fetch --quiet --no-tags --depth=1 origin HEAD
+          LATEST_COMMIT=$(git -C source rev-parse FETCH_HEAD)
+          echo "latest upstream commit: $LATEST_COMMIT"
+          rm -rf latest-source
+          git clone --quiet --no-checkout "$SOURCE_REPO" latest-source
+          git -C latest-source fetch --quiet --no-tags --depth=1 origin "$LATEST_COMMIT"
+          git -C latest-source checkout --quiet --detach FETCH_HEAD
+          echo "latest source lua count: $(find latest-source -type f -name '*.lua' | wc -l)"
+          LATEST_ZIP=$(find latest-source/Assets -type f -name 'ygopro2-data.zip' -print -quit)
+          if [ -n "$LATEST_ZIP" ]; then
+            python3 - "$DATA_ZIP" "$LATEST_ZIP" <<'PY'
+import sys, zipfile, hashlib
+def scripts(path):
+    with zipfile.ZipFile(path) as z:
+        out={}
+        for n in z.namelist():
+            norm=n.replace('\\','/')
+            if norm.lower().startswith('script/') and norm.lower().endswith('.lua'):
+                out[norm]=hashlib.sha256(z.read(n)).hexdigest()
+        return out
+a=scripts(sys.argv[1]); b=scripts(sys.argv[2])
+print('fixed script count:',len(a))
+print('latest script count:',len(b))
+print('added in latest:',sum(1 for k in b if k not in a))
+print('removed in latest:',sum(1 for k in a if k not in b))
+print('changed:',sum(1 for k in b if k in a and b[k]!=a[k]))
+for label, items in [
+    ('ADDED',[k for k in b if k not in a]),
+    ('REMOVED',[k for k in a if k not in b]),
+    ('CHANGED',[k for k in b if k in a and b[k]!=a[k]),
+]:
+    print('---',label,'---')
+    for k in sorted(items)[:250]:
+        print(k)
+PY
+          else
+            echo 'latest source has no ygopro2-data.zip'
+          fi
+
           echo '=== Project-wide Chinese progress/update references ==='
           grep -RniE -C 4 --include='*.cs' '正在|更新中|下载|0%|progress|DownloadAndProcessFile|UpdateClientCoroutine' source/Assets/SibylSystem 2>/dev/null | head -1200 || true
 
