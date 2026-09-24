@@ -595,10 +595,16 @@ namespace KoishiWindBot.Local
 
                     case MsgSet:
                     {
-                        byte[] packet = Slice(data, start, Math.Min(data.Length, p + 4));
-                        if (packet.Length >= 5)
-                            WriteInt32(packet, 1, 0);
-                        p += Math.Min(4, data.Length - p);
+                        // Current Koishi ocgcore writes:
+                        // MSG_SET + code(4) + packed location info(4).
+                        // The established network/client protocol only forwards
+                        // MSG_SET + hidden code. Consume the full native payload
+                        // to keep the engine stream aligned, but preserve the
+                        // five-byte client packet expected by Koishi/WindBot.
+                        Need(data, p, 8);
+                        byte[] packet = Slice(data, start, p + 4);
+                        WriteInt32(packet, 1, 0);
+                        p += 8;
                         SendBoth(packet);
                         break;
                     }
