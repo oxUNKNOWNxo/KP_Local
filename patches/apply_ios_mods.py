@@ -70,10 +70,62 @@ if already_synced_old not in text:
     raise SystemExit("Could not locate already-synced UseBundledBasicData branch")
 text = text.replace(already_synced_old, already_synced_new, 1)
 
+# iPhone X responsiveness: the upstream texture pump may decode up to five
+# textures in one frame while eight downloads feed the queue. A single image
+# decode can already exceed a mobile frame budget, so five consecutive decodes
+# can look like a multi-second UI freeze. Keep the background system intact,
+# but constrain iOS to two network jobs and one main-thread texture creation.
+download_limit_old = "    private const int MAX_CONCURRENT_DOWNLOADS = 8;"
+download_limit_new = """#if UNITY_IOS || UNITY_IPHONE
+    private const int MAX_CONCURRENT_DOWNLOADS = 2;
+#else
+    private const int MAX_CONCURRENT_DOWNLOADS = 8;
+#endif"""
+if download_limit_old not in text:
+    raise SystemExit("Could not locate texture download concurrency constant")
+text = text.replace(download_limit_old, download_limit_new, 1)
+
+texture_method_marker = "    private void ProcessTextureManagerUpdates()"
+texture_method_index = text.find(texture_method_marker)
+if texture_method_index < 0:
+    raise SystemExit("Could not locate ProcessTextureManagerUpdates")
+texture_tail = text[texture_method_index:]
+texture_tasks_old = "        int maxTasksPerFrame = 5;"
+texture_tasks_index = texture_tail.find(texture_tasks_old)
+if texture_tasks_index < 0:
+    raise SystemExit("Could not locate texture per-frame task limit")
+texture_abs = texture_method_index + texture_tasks_index
+texture_tasks_new = """#if UNITY_IOS || UNITY_IPHONE
+        int maxTasksPerFrame = 1;
+#else
+        int maxTasksPerFrame = 5;
+#endif"""
+text = text[:texture_abs] + texture_tasks_new + text[texture_abs + len(texture_tasks_old):]
+
+# Do not invoke Unity's global unused-asset unload merely because the native
+# iOS compatibility container reports a size transition. This operation can
+# synchronously stall the main thread and is unnecessary for normal rotation/
+# safe-area relayout.
+resize_unload_old = """            if (screenSizeChanged)
+            {
+                Resources.UnloadUnusedAssets();
+            }
+            onRESIZED();"""
+resize_unload_new = """#if !UNITY_IOS && !UNITY_IPHONE
+            if (screenSizeChanged)
+            {
+                Resources.UnloadUnusedAssets();
+            }
+#endif
+            onRESIZED();"""
+if resize_unload_old not in text:
+    raise SystemExit("Could not locate resize-time Resources.UnloadUnusedAssets block")
+text = text.replace(resize_unload_old, resize_unload_new, 1)
+
 program_path.write_text(text, encoding="utf-8")
 print(f"Patched: {program_path}")
 print("  - disabled forced basic-data sync at startup")
-print("  - normalized already-synced basic-data state to Ready")
+print("  - normalized already-synced basic-data state to Ready")\nprint("  - limited iOS texture decode/download pressure for UI responsiveness")\nprint("  - disabled resize-time Resources.UnloadUnusedAssets on iOS")
 print("  - left explicit/manual Resource Update behavior unchanged")
 
 # ---------------------------------------------------------------------------
