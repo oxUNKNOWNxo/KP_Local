@@ -103,6 +103,8 @@ namespace KoishiWindBot.Local
         private readonly WindBotLocalRuntime _ai;
         private readonly Action<byte[]> _humanGameMessage;
         private readonly Action<string> _log;
+        private readonly int _humanPlayer;
+        private readonly int _aiPlayer;
 
         private byte[] _pendingAiResponse;
         private int _waitingPlayer = -1;
@@ -112,12 +114,14 @@ namespace KoishiWindBot.Local
         public bool IsEnded { get { return _ended; } }
         public int WaitingPlayer { get { return _waitingPlayer; } }
 
-        public LocalDuelRouter(LocalDuelNative native, WindBotLocalRuntime ai, Action<byte[]> humanGameMessage, Action<string> log)
+        public LocalDuelRouter(LocalDuelNative native, WindBotLocalRuntime ai, Action<byte[]> humanGameMessage, Action<string> log, bool humanFirst)
         {
             _native = native ?? throw new ArgumentNullException("native");
             _ai = ai ?? throw new ArgumentNullException("ai");
             _humanGameMessage = humanGameMessage ?? throw new ArgumentNullException("humanGameMessage");
             _log = log;
+            _humanPlayer = humanFirst ? 0 : 1;
+            _aiPlayer = 1 - _humanPlayer;
         }
 
         public void SendInitialState(int life, int duelRule)
@@ -127,10 +131,10 @@ namespace KoishiWindBot.Local
             int aiDeck = _native.QueryFieldCount(1, LocalDuelNative.LocationDeck);
             int aiExtra = _native.QueryFieldCount(1, LocalDuelNative.LocationExtra);
 
-            byte[] human = BuildStartPacket(0, duelRule, life, humanDeck, humanExtra, aiDeck, aiExtra);
-            byte[] bot = BuildStartPacket(1, duelRule, life, humanDeck, humanExtra, aiDeck, aiExtra);
-            SendToPlayer(0, human);
-            SendToPlayer(1, bot);
+            byte[] human = BuildStartPacket((byte)_humanPlayer, duelRule, life, humanDeck, humanExtra, aiDeck, aiExtra);
+            byte[] bot = BuildStartPacket((byte)_aiPlayer, duelRule, life, humanDeck, humanExtra, aiDeck, aiExtra);
+            SendToPlayer(_humanPlayer, human);
+            SendToPlayer(_aiPlayer, bot);
             RefreshExtra(0);
             RefreshExtra(1);
         }
@@ -168,7 +172,7 @@ namespace KoishiWindBot.Local
                     if (!wait)
                         continue;
 
-                    if (_waitingPlayer == 1 && _pendingAiResponse != null)
+                    if (_waitingPlayer == _aiPlayer && _pendingAiResponse != null)
                     {
                         byte[] response = _pendingAiResponse;
                         _pendingAiResponse = null;
@@ -189,7 +193,7 @@ namespace KoishiWindBot.Local
         {
             if (_ended)
                 return;
-            if (_waitingPlayer != 0)
+            if (_waitingPlayer != _humanPlayer)
                 throw new InvalidOperationException("The duel is not waiting for the human player.");
             _waitingPlayer = -1;
             _native.SetResponse(response ?? new byte[0]);
@@ -952,11 +956,13 @@ namespace KoishiWindBot.Local
 
         private void SendToPlayer(int player, byte[] gameMessage)
         {
-            if (player == 0)
+            if (player == _humanPlayer)
             {
                 _humanGameMessage(gameMessage);
                 return;
             }
+            if (player != _aiPlayer)
+                throw new InvalidDataException("Invalid routed player index: " + player);
 
             byte[] packet = new byte[gameMessage.Length + 1];
             packet[0] = (byte)StocMessage.GameMsg;
