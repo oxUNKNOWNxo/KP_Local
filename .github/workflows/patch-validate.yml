@@ -62,7 +62,14 @@ jobs:
           echo "Program source: $PROGRAM"
           grep -n 'InitializeBasicDataSyncState();' "$PROGRAM"
           grep -n 'UseBundledBasicData();' "$PROGRAM"
-          ! grep -q 'https://cdntx2.moecube.com/koishipro/content/cards.cdb' "$PROGRAM"
+          if grep -Eq '^[[:space:]]*RetryBasicDataUpdate\(\);[[:space:]]*
+ "$PROGRAM"; then
+            echo 'Forced startup RetryBasicDataUpdate call remains.'
+            exit 1
+          fi
+          # The URLs deliberately remain for the user's manual Resource Update.
+          grep -q 'https://cdntx2.moecube.com/koishipro/content/cards.cdb' "$PROGRAM"
           grep -q 'https://cdntx2.moecube.com/koishipro/content/lflist.conf' "$PROGRAM"
           grep -q 'https://cdntx2.moecube.com/koishipro/content/strings.conf' "$PROGRAM"
-          echo 'Patch validation passed.'
+          grep -q 'BasicDataState = BasicDataUpdateState.Ready;' "$PROGRAM"
+          echo 'Startup DB protection validation passed; manual Resource Update remains available.'
