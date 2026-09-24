@@ -208,6 +208,29 @@ jobs:
           }
           CS
 
+          # Mono on Linux does not consistently apply lib*.so name mapping
+          # for this P/Invoke name. Keep production code unchanged (__Internal
+          # on iOS), but make the host-only smoke build name explicit.
+          python3 - "$RUNNER_TEMP/subset/src/LocalRuntime/LocalDuelNative.cs" <<'PY'
+          from pathlib import Path
+          import sys
+          path = Path(sys.argv[1])
+          text = path.read_text(encoding='utf-8-sig')
+          old = 'private const string NativeLibrary = "koishi_ocgcore";'
+          new = 'private const string NativeLibrary = "libkoishi_ocgcore.so";'
+          if old not in text:
+              raise SystemExit('host P/Invoke library anchor not found')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+
+          ldd "$ROOT/libkoishi_ocgcore.so"
+          python3 - "$ROOT/libkoishi_ocgcore.so" <<'PY'
+          import ctypes
+          import sys
+          ctypes.CDLL(sys.argv[1])
+          print('ctypes native load ok')
+          PY
+
           mapfile -t SOURCES < <(find "$RUNNER_TEMP/subset/src" -type f -name '*.cs' | sort)
           mcs -unsafe -langversion:latest -optimize+ \
             -out:"$ROOT/Smoke.exe" \
