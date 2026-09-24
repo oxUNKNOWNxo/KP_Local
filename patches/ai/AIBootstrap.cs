@@ -6,22 +6,49 @@ public static class AIBootstrap
 {
     private const string BundledPackName = "koishi-ai-pack.zip";
     private const string PackMarker = "ai/KOISHIPRO2-AI-PACK-V4.txt";
+    private const string RuntimeMarker = "ai/KOISHIPRO2-AI-RUNTIME-V4.txt";
+    private static bool readyThisSession = false;
 
     public static bool EnsureInstalled()
     {
+        if (readyThisSession)
+        {
+            return true;
+        }
+
         try
         {
             Directory.CreateDirectory("ai");
             Directory.CreateDirectory("ai/ydk");
             Directory.CreateDirectory("script");
 
+            if (IsRuntimeReadyFast())
+            {
+                readyThisSession = true;
+                return true;
+            }
+
+            bool hadExtractedPack =
+                File.Exists(PackMarker)
+                && Directory.Exists("script_current")
+                && Directory.Exists("script_legacy");
+
+            // Builds prior to this optimization already extracted and copied the
+            // complete runtime, but had no runtime-ready marker. Adopt that
+            // existing installation with a read-only count check instead of
+            // rewriting thousands of Lua files again.
+            if (hadExtractedPack && CanAdoptExistingRuntime())
+            {
+                MarkRuntimeReady();
+                readyThisSession = true;
+                return true;
+            }
+
             // V4 ships a complete snapshot of the current official card scripts.
             // script_current is authoritative for the bundled official files;
             // the historical set is used only when the current snapshot does not
             // contain a file required by the restored Percy/ocgcore runtime.
-            if (!File.Exists(PackMarker)
-                || !Directory.Exists("script_current")
-                || !Directory.Exists("script_legacy"))
+            if (!hadExtractedPack)
             {
                 if (Directory.Exists("script_current"))
                 {
@@ -46,6 +73,11 @@ public static class AIBootstrap
             int currentCopied = CopyScripts("script_current", "script", true);
             int legacyAdded = CopyScripts("script_legacy", "script", false);
             bool ok = HasUsableAiData();
+            if (ok)
+            {
+                MarkRuntimeReady();
+                readyThisSession = true;
+            }
             Program.DEBUGLOG(
                 "[OfflineAI] runtime scripts ready=" + ok
                 + " currentCopied=" + currentCopied
@@ -58,6 +90,45 @@ public static class AIBootstrap
             Program.DEBUGLOG("Failed to install bundled AI pack: " + e);
             return false;
         }
+    }
+
+    private static bool IsRuntimeReadyFast()
+    {
+        return File.Exists(RuntimeMarker)
+            && File.Exists(PackMarker)
+            && File.Exists("ai/ai.lua")
+            && File.Exists("script/constant.lua")
+            && File.Exists("script/utility.lua");
+    }
+
+    private static bool CanAdoptExistingRuntime()
+    {
+        if (!File.Exists("ai/ai.lua")
+            || !Directory.Exists("ai/ydk")
+            || !File.Exists("script/constant.lua")
+            || !File.Exists("script/utility.lua"))
+        {
+            return false;
+        }
+
+        string[] aiDecks = Directory.GetFiles("ai/ydk", "*.ydk", SearchOption.TopDirectoryOnly);
+        if (aiDecks.Length == 0)
+        {
+            return false;
+        }
+
+        // This is intentionally a one-time migration check only. It is far
+        // cheaper than copying the whole current script snapshot on every tap.
+        string[] liveCardScripts = Directory.GetFiles("script", "c*.lua", SearchOption.AllDirectories);
+        return liveCardScripts.Length > 1000;
+    }
+
+    private static void MarkRuntimeReady()
+    {
+        File.WriteAllText(
+            RuntimeMarker,
+            "KoishiPro2 offline AI runtime v4 ready\n"
+        );
     }
 
     private static int CopyScripts(string sourceDir, string destinationDir, bool overwrite)
