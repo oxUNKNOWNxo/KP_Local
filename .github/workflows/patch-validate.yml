@@ -62,11 +62,13 @@ jobs:
           echo "Program source: $PROGRAM"
           grep -n 'InitializeBasicDataSyncState();' "$PROGRAM"
           grep -n 'UseBundledBasicData();' "$PROGRAM"
-          if grep -Eq '^[[:space:]]*RetryBasicDataUpdate\(\);[[:space:]]*
- "$PROGRAM"; then
-            echo 'Forced startup RetryBasicDataUpdate call remains.'
-            exit 1
-          fi
+          python3 - "$PROGRAM" <<'PY'
+          from pathlib import Path
+          import sys
+          lines = Path(sys.argv[1]).read_text(encoding='utf-8-sig').splitlines()
+          if any(line.strip() == 'RetryBasicDataUpdate();' for line in lines):
+              raise SystemExit('Forced startup RetryBasicDataUpdate call remains.')
+          PY
           # The URLs deliberately remain for the user's manual Resource Update.
           grep -q 'https://cdntx2.moecube.com/koishipro/content/cards.cdb' "$PROGRAM"
           grep -q 'https://cdntx2.moecube.com/koishipro/content/lflist.conf' "$PROGRAM"
