@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using KoishiWindBot.OCGWrapper;
 using WindBot.Game;
 using WindBot.Local;
@@ -29,7 +30,7 @@ namespace KoishiWindBot.Local
                 });
 
             LocalDuelNative.Configure(
-                dataRoot,
+                Directory.GetCurrentDirectory(),
                 code =>
                 {
                     Card card = Card.Get((int)code);
