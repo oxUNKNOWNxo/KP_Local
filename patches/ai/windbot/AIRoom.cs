@@ -91,6 +91,11 @@ public class AIRoom : WindowServantSP
 
     public override void show()
     {
+        if (windbot != null)
+        {
+            windbot.Dispose();
+            windbot = null;
+        }
         base.show();
         printFile();
         superScrollView.selectedString = Config.Get("deckInUse", "miaowu");
