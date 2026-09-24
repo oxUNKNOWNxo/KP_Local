@@ -69,9 +69,10 @@ jobs:
           if any(line.strip() == 'RetryBasicDataUpdate();' for line in lines):
               raise SystemExit('Forced startup RetryBasicDataUpdate call remains.')
           PY
-          # The URLs deliberately remain for the user's manual Resource Update.
-          grep -q 'https://cdntx2.moecube.com/koishipro/content/cards.cdb' "$PROGRAM"
-          grep -q 'https://cdntx2.moecube.com/koishipro/content/lflist.conf' "$PROGRAM"
-          grep -q 'https://cdntx2.moecube.com/koishipro/content/strings.conf' "$PROGRAM"
+          # Do not pin this validation to particular CDN URLs. The important
+          # behavior is that automatic startup sync is gone while the existing
+          # manual Resource Update coroutine/method remains in the client.
+          grep -q 'UpdateClientCoroutine()' "$PROGRAM"
+          grep -q 'RetryBasicDataUpdate()' "$PROGRAM"
           grep -q 'BasicDataState = BasicDataUpdateState.Ready;' "$PROGRAM"
           echo 'Startup DB protection validation passed; manual Resource Update remains available.'
