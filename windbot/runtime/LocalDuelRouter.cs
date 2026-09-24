@@ -244,6 +244,7 @@ namespace KoishiWindBot.Local
             {
                 int start = p;
                 byte type = ReadByte(data, ref p);
+                _log?.Invoke("[WindBot/Router] MSG=" + type + " offset=" + start + "/" + data.Length);
 
                 switch (type)
                 {
@@ -843,7 +844,15 @@ namespace KoishiWindBot.Local
                         break;
 
                     default:
-                        throw new InvalidDataException("Unsupported Koishi ocgcore message in local WindBot router: " + type);
+                    {
+                        int dumpStart = Math.Max(0, start - 24);
+                        int dumpLength = Math.Min(data.Length - dumpStart, 64);
+                        string hex = BitConverter.ToString(data, dumpStart, dumpLength);
+                        throw new InvalidDataException(
+                            "Unsupported Koishi ocgcore message in local WindBot router: " + type
+                            + " at offset " + start + "/" + data.Length
+                            + " bytes[" + dumpStart + "..]=" + hex);
+                    }
                 }
             }
             return false;
