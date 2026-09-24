@@ -81,8 +81,8 @@ namespace KoishiWindBot.Local
             _native.SetRegistry("draw_count", drawCount.ToString());
             _native.SetRegistry("player_name_0", _humanPlayer == 0 ? "Player" : "WindBot");
             _native.SetRegistry("player_name_1", _humanPlayer == 1 ? "Player" : "WindBot");
-            _native.SetRegistry("player_type_0", "0");
-            _native.SetRegistry("player_type_1", "1");
+            _native.SetRegistry("player_type_0", _aiPlayer == 0 ? "1" : "0");
+            _native.SetRegistry("player_type_1", _aiPlayer == 1 ? "1" : "0");
 
             _native.Preload("./script/patches/entry.lua");
             _native.Preload("./script/special.lua");
