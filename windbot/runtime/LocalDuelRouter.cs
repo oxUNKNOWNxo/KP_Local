@@ -553,12 +553,12 @@ namespace KoishiWindBot.Local
                         byte currentPosition = ReadByte(data, ref p);
                         Skip(data, ref p, 4);
                         byte[] full = Slice(data, start, p);
+                        bool hideCode = ShouldHideFacedownCode(currentPosition);
+                        if ((currentLocation & 0x0c) != 0)
+                            StripRevealFlag(full, (codeOffset - start) + 8);
                         SendToPlayer(currentController, full);
 
                         byte[] hidden = (byte[])full.Clone();
-                        bool hideCode = ShouldHideFacedownCode(currentPosition);
-                        if ((currentLocation & 0x0c) != 0)
-                            StripRevealFlag(hidden, (codeOffset - start) + 8);
                         if ((currentLocation & (LocalDuelNative.LocationGrave | 0x80)) == 0 &&
                             (((currentLocation & (LocalDuelNative.LocationDeck | LocalDuelNative.LocationHand)) != 0) || hideCode))
                             WriteInt32(hidden, codeOffset - start, 0);
@@ -638,11 +638,11 @@ namespace KoishiWindBot.Local
                         Skip(data, ref p, 2);
                         byte position = ReadByte(data, ref p);
                         byte[] full = Slice(data, start, p);
+                        StripRevealFlag(full, codeOffset - start + 4);
                         SendToPlayer(controller, full);
                         byte[] hidden = (byte[])full.Clone();
                         if (ShouldHideFacedownCode(position))
                             WriteInt32(hidden, codeOffset - start, 0);
-                        StripRevealFlag(hidden, codeOffset - start + 4);
                         SendToPlayer(1 - controller, hidden);
                         break;
                     }
@@ -870,26 +870,28 @@ namespace KoishiWindBot.Local
         private void RefreshHiddenField(int player, byte location, uint flags, int useCache)
         {
             byte[] query = _native.QueryField((byte)player, location, flags | QueryCode | QueryPosition, useCache);
-            byte[] own = BuildUpdateData((byte)player, location, query);
-            SendToPlayer(player, own);
-
-            byte[] hiddenQuery = (byte[])query.Clone();
+            var hiddenSegments = new List<Tuple<int, int>>();
             int p = 0;
-            while (p < hiddenQuery.Length)
+            while (p < query.Length)
             {
-                int segment = ReadInt32(hiddenQuery, ref p);
-                if (segment <= 0 || p + segment - 4 > hiddenQuery.Length)
+                int segment = ReadInt32(query, ref p);
+                if (segment <= 0 || p + segment - 4 > query.Length)
                     break;
-                if (segment > 8)
+                if (segment > 4)
                 {
-                    byte position = GetPosition(hiddenQuery, p, 8);
+                    byte position = GetPosition(query, p, 8);
                     bool hide = ShouldHideFacedownCode(position);
-                    StripRevealFlag(hiddenQuery, p + 8);
+                    StripRevealFlag(query, p + 8);
                     if (hide)
-                        Array.Clear(hiddenQuery, p, segment - 4);
+                        hiddenSegments.Add(Tuple.Create(p, segment - 4));
                 }
                 p += segment - 4;
             }
+
+            SendToPlayer(player, BuildUpdateData((byte)player, location, query));
+            byte[] hiddenQuery = (byte[])query.Clone();
+            foreach (var segment in hiddenSegments)
+                Array.Clear(hiddenQuery, segment.Item1, segment.Item2);
             SendToPlayer(1 - player, BuildUpdateData((byte)player, location, hiddenQuery));
         }
 
@@ -905,7 +907,7 @@ namespace KoishiWindBot.Local
                 int segment = ReadInt32(hidden, ref p);
                 if (segment <= 0 || p + segment - 4 > hidden.Length)
                     break;
-                if (segment > 8)
+                if (segment > 4)
                 {
                     byte position = GetPosition(hidden, p, 8);
                     if ((position & PositionFaceUp) == 0)
@@ -931,19 +933,22 @@ namespace KoishiWindBot.Local
         private void RefreshSingle(int player, byte location, byte sequence, uint flags = 0xf81fff)
         {
             byte[] query = _native.QueryCard((byte)player, location, sequence, flags | QueryCode | QueryPosition, 0);
-            byte[] own = BuildUpdateCard((byte)player, location, sequence, query);
-            SendToPlayer(player, own);
             if (query.Length <= 4)
+            {
+                SendToPlayer(player, BuildUpdateCard((byte)player, location, sequence, query));
                 return;
+            }
 
-            byte[] hidden = (byte[])query.Clone();
-            byte position = GetPosition(hidden, 0, 12);
+            byte position = GetPosition(query, 0, 12);
             bool hide = (position & PositionFaceDown) != 0;
             if ((location & 0x0c) != 0)
             {
                 hide = ShouldHideFacedownCode(position);
-                StripRevealFlag(hidden, 12);
+                StripRevealFlag(query, 12);
             }
+            SendToPlayer(player, BuildUpdateCard((byte)player, location, sequence, query));
+
+            byte[] hidden = (byte[])query.Clone();
             if (hide)
             {
                 byte[] minimal = new byte[16];
