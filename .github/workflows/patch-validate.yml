@@ -57,7 +57,25 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          PROGRAM=$(grep -RIl --include='*.cs' 'UseBundledBasicData()' source/Assets | head -1)
+          PROGRAM=$(python3 - <<'PY'
+          from pathlib import Path
+          candidates = []
+          for path in Path('source/Assets').rglob('*.cs'):
+              try:
+                  text = path.read_text(encoding='utf-8-sig')
+              except UnicodeDecodeError:
+                  continue
+              if (
+                  'UpdateClientCoroutine()' in text
+                  and 'UseBundledBasicData()' in text
+                  and 'RetryBasicDataUpdate()' in text
+              ):
+                  candidates.append(path)
+          if len(candidates) != 1:
+              raise SystemExit(f'Expected exactly one Program source, found: {candidates}')
+          print(candidates[0])
+          PY
+          )
           test -n "$PROGRAM"
           echo "Program source: $PROGRAM"
           grep -n 'InitializeBasicDataSyncState();' "$PROGRAM"
