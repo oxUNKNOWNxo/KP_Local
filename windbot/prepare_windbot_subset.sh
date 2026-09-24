@@ -131,6 +131,7 @@ namespace WindBot
     public static class Program
     {
         public static readonly Random Rand = new Random();
+        public static bool ServerMode = false;
         public static string DataRoot = ".";
 
         public static FileStream ReadFile(string directory, string name, string extension)
