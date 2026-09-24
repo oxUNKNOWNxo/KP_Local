@@ -153,6 +153,19 @@ jobs:
 
           public static class Smoke
           {
+              private const int Chant = 67115133;
+              private const byte MsgSelectBattleCmd = 10;
+              private const byte MsgSelectIdleCmd = 11;
+              private const byte MsgSelectEffectYn = 12;
+              private const byte MsgSelectYesNo = 13;
+              private const byte MsgSelectOption = 14;
+              private const byte MsgSelectChain = 16;
+              private const byte MsgChaining = 70;
+
+              private static byte[] LastHumanMessage;
+              private static int HumanMessages;
+              private static bool SawChantActivation;
+
               private static void LoadYdk(string path, out List<int> main, out List<int> extra)
               {
                   main = new List<int>();
@@ -171,6 +184,45 @@ jobs:
                   }
               }
 
+              private static bool ContainsInt32(byte[] packet, int value)
+              {
+                  byte[] needle = BitConverter.GetBytes(value);
+                  for (int i = 0; i + 4 <= packet.Length; ++i)
+                  {
+                      if (packet[i] == needle[0] && packet[i + 1] == needle[1] &&
+                          packet[i + 2] == needle[2] && packet[i + 3] == needle[3])
+                          return true;
+                  }
+                  return false;
+              }
+
+              private static void OnHumanMessage(byte[] packet)
+              {
+                  HumanMessages++;
+                  LastHumanMessage = packet;
+                  byte type = packet != null && packet.Length > 0 ? packet[0] : (byte)0;
+                  if (type == MsgChaining && ContainsInt32(packet, Chant))
+                  {
+                      SawChantActivation = true;
+                      Console.WriteLine("SMOKE: RadiantTyphoonChant activation observed.");
+                  }
+              }
+
+              private static byte[] DefaultHumanResponse(byte type)
+              {
+                  switch (type)
+                  {
+                      case MsgSelectChain:
+                          return BitConverter.GetBytes(-1);
+                      case MsgSelectEffectYn:
+                      case MsgSelectYesNo:
+                      case MsgSelectOption:
+                          return BitConverter.GetBytes(0);
+                      default:
+                          return null;
+                  }
+              }
+
               public static int Main()
               {
                   try
@@ -178,25 +230,69 @@ jobs:
                       List<int> main;
                       List<int> extra;
                       LoadYdk(Path.Combine("Decks", "AI_RadiantTyphoon.ydk"), out main, out extra);
-                      Console.WriteLine("human proof deck main=" + main.Count + " extra=" + extra.Count);
-                      int messages = 0;
+                      Console.WriteLine("proof deck main=" + main.Count + " extra=" + extra.Count);
+
                       using (var duel = new RadiantTyphoonLocalDuel(
                           Directory.GetCurrentDirectory(),
                           Path.Combine(Directory.GetCurrentDirectory(), "cards.cdb"),
-                          packet => { messages++; },
+                          OnHumanMessage,
                           log => Console.WriteLine(log),
                           false))
                       {
-                          duel.Start(main, extra, false, 8000, 5, 1, 5);
+                          // AI goes first and the deck is not shuffled. In the current
+                          // WindBot YDK this puts Radiant Typhoon Chant in the opening
+                          // hand, exercising the effect that stalled on iPhone.
+                          duel.Start(main, extra, true, 8000, 5, 1, 5);
+
+                          bool reachedHumanMainPhase = false;
+                          for (int guard = 0; guard < 200 && !duel.IsEnded; ++guard)
+                          {
+                              if (duel.WaitingPlayer == 0)
+                              {
+                                  throw new Exception(
+                                      "WindBot stalled waiting for its own response. lastHumanType=" +
+                                      (LastHumanMessage == null ? -1 : LastHumanMessage[0]));
+                              }
+
+                              if (duel.WaitingPlayer != 1)
+                                  continue;
+
+                              if (LastHumanMessage == null || LastHumanMessage.Length == 0)
+                                  throw new Exception("Human response requested without a game message.");
+
+                              byte type = LastHumanMessage[0];
+                              if (type == MsgSelectIdleCmd || type == MsgSelectBattleCmd)
+                              {
+                                  reachedHumanMainPhase = true;
+                                  Console.WriteLine("SMOKE: AI turn completed; human command boundary reached.");
+                                  break;
+                              }
+
+                              byte[] response = DefaultHumanResponse(type);
+                              if (response == null)
+                              {
+                                  throw new Exception(
+                                      "Unexpected human decision during AI-turn smoke: MSG_" + type);
+                              }
+
+                              Console.WriteLine("SMOKE: auto-decline human MSG_" + type);
+                              duel.SubmitHumanResponse(response);
+                          }
+
                           Console.WriteLine("ended=" + duel.IsEnded
                               + " waitingPlayer=" + duel.WaitingPlayer
-                              + " humanMessages=" + messages);
-                          if (!duel.IsEnded && duel.WaitingPlayer != 1)
-                              throw new Exception("AI-first duel did not advance to the human player's response boundary.");
-                          if (messages < 3)
+                              + " humanMessages=" + HumanMessages
+                              + " sawChant=" + SawChantActivation);
+
+                          if (!SawChantActivation)
+                              throw new Exception("Deterministic AI turn never activated Radiant Typhoon Chant.");
+                          if (!duel.IsEnded && !reachedHumanMainPhase)
+                              throw new Exception("AI turn did not finish after Radiant Typhoon Chant.");
+                          if (HumanMessages < 10)
                               throw new Exception("Too few game messages reached the human client.");
                       }
-                      Console.WriteLine("WINDBOT_LOCAL_DUEL_SMOKE_OK");
+
+                      Console.WriteLine("WINDBOT_CHANT_TURN_SMOKE_OK");
                       return 0;
                   }
                   catch (Exception ex)
@@ -207,7 +303,6 @@ jobs:
               }
           }
           CS
-
           # Mono on Linux does not consistently apply lib*.so name mapping
           # for this P/Invoke name. Keep production code unchanged (__Internal
           # on iOS), but make the host-only smoke build name explicit.
@@ -245,7 +340,7 @@ jobs:
           ROOT="$RUNNER_TEMP/host-runtime"
           cd "$ROOT"
           LD_LIBRARY_PATH="$ROOT" mono "$ROOT/Smoke.exe" | tee "$ROOT/smoke.log"
-          grep -q 'WINDBOT_LOCAL_DUEL_SMOKE_OK' "$ROOT/smoke.log"
+          grep -q 'WINDBOT_CHANT_TURN_SMOKE_OK' "$ROOT/smoke.log"
 
       - name: Upload smoke log
         if: always()
