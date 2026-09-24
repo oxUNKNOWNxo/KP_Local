@@ -65,6 +65,12 @@ fi
 cp "$WORK/src/LICENSE" "$OUT/WindBot-LICENSE.txt"
 printf '%s\n' "$SHA" > "$OUT/windbot-revision.txt"
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if compgen -G "$SCRIPT_DIR/runtime/*.cs" > /dev/null; then
+  mkdir -p "$OUT/src/LocalRuntime"
+  cp "$SCRIPT_DIR"/runtime/*.cs "$OUT/src/LocalRuntime/"
+fi
+
 python3 - "$OUT/src" <<'PY'
 from pathlib import Path
 import sys
