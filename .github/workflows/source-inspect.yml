@@ -17,14 +17,18 @@ concurrency:
 
 jobs:
   inspect:
-    if: github.actor == github.repository_owner && (github.event_name == 'workflow_dispatch' || github.event_name == 'push')
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       SOURCE_REPO: https://code.moenext.com/hex/ygopro2.git
       SOURCE_COMMIT: c1850e1120df6a5885692eadacad8ad114a3cf11
 
     steps:
+      - name: Checkout control repository
+        uses: actions/checkout@v4
+        with:
+          path: control
+
       - name: Restore fixed KoishiPro2 source snapshot
         id: source-cache
         uses: actions/cache/restore@v4
@@ -32,122 +36,68 @@ jobs:
           path: source
           key: koishipro2-source-${{ env.SOURCE_COMMIT }}-v1
 
-      - name: Verify fixed source snapshot
+      - name: Inspect fixed and current upstream script layouts
         shell: bash
         run: |
           set -euo pipefail
-          test '${{ steps.source-cache.outputs.cache-hit }}' = 'true'
           test -d source/.git
           test "$(git -C source rev-parse HEAD)" = "$SOURCE_COMMIT"
 
-      - name: Inspect CDB sync and menu transition paths
-        shell: bash
-        run: |
-          set -euo pipefail
-          PROGRAM='source/Assets/SibylSystem/Program.cs'
-          MENU='source/Assets/SibylSystem/Menu/Menu.cs'
-          test -s "$PROGRAM"
-          test -s "$MENU"
-
-          echo '=== Program: basic-data/CDB/update references ==='
-          grep -nE -C 22 'cards\.cdb|BasicData|RetryBasicDataUpdate|UpdateClientCoroutine|ReloadGameDatabases|DownloadAndProcessFile|正在|progress|download|update' "$PROGRAM" || true
-
-          echo '=== Menu: transition/click references ==='
-          grep -nE -C 18 'shiftToServant|onClickAI|onClickPizzle|onClickDeck|onClickReplay|StartCoroutine|WaitForSeconds|WWW|UnityWebRequest' "$MENU" || true
-
-          echo '=== Program shiftToServant implementation ==='
-          grep -n -A 180 -B 25 'void shiftToServant' "$PROGRAM" || true
-
-          echo '=== Program per-frame resize/update implementation ==='
-          sed -n '2145,2420p' "$PROGRAM"
-
-          echo '=== Menu show/status/update-check implementation ==='
-          sed -n '130,270p' "$MENU"
-
-          echo '=== Servant/window show-hide implementations ==='
-          for FILE in source/Assets/SibylSystem/Servant.cs source/Assets/SibylSystem/WindowServant.cs source/Assets/SibylSystem/WindowServantSP.cs; do
-            if [ -f "$FILE" ]; then
-              echo "--- $FILE ---"
-              grep -nE -A 140 -B 30 'public virtual void show|public override void show|void show\(|public virtual void hide|public override void hide|void hide\(|applyShowArrangement|applyHideArrangement' "$FILE" || true
-            fi
-          done
-
-          echo '=== Delayed-task scheduler implementation ==='
-          grep -RniE -A 120 -B 30 --include='*.cs' 'static void go\(|void go\(|class delayedTask|TimePassed\(|notGo\(' source/Assets/SibylSystem/Program.cs source/Assets/SibylSystem 2>/dev/null | head -1800 || true
-
-          echo '=== Main menu target screen show methods ==='
-          grep -RniE -A 120 -B 20 --include='*.cs' 'class (Setting|selectDeck|selectReplay|SelectServer|MyCard|AIRoom)|public override void show\(' source/Assets/SibylSystem 2>/dev/null | head -2600 || true
-
-          echo '=== Main menu click handlers ==='
-          sed -n '675,790p' "$MENU"
-
-          echo '=== Script data layout in fixed source ==='
-          find source -maxdepth 6 -type d \( -iname 'script' -o -iname 'scripts' -o -iname 'script_current' -o -iname 'script_legacy' \) -print || true
-          find source -type f -name '*.lua' | sed 's#^source/##' | head -200 || true
-          echo "fixed source lua count: $(find source -type f -name '*.lua' | wc -l)"
-
-          echo '=== ygopro2-data.zip script entries ==='
-          DATA_ZIP=$(find source/Assets -type f -name 'ygopro2-data.zip' -print -quit)
-          if [ -n "$DATA_ZIP" ]; then
-            python3 - "$DATA_ZIP" <<'PY'
-import sys, zipfile
-z=zipfile.ZipFile(sys.argv[1])
-names=[n for n in z.namelist() if n.lower().startswith('script/') and n.lower().endswith('.lua')]
-print('data zip script count:', len(names))
-for n in names[:200]:
-    print(n)
-PY
-          fi
-
-          echo '=== Compare fixed source with current KoishiPro2 upstream HEAD ==='
-          git -C source remote -v
+          git -C source config http.version HTTP/1.1
           git -C source fetch --quiet --no-tags --depth=1 origin HEAD
           LATEST_COMMIT=$(git -C source rev-parse FETCH_HEAD)
           echo "latest upstream commit: $LATEST_COMMIT"
-          rm -rf latest-source
-          git clone --quiet --no-checkout "$SOURCE_REPO" latest-source
-          git -C latest-source fetch --quiet --no-tags --depth=1 origin "$LATEST_COMMIT"
-          git -C latest-source checkout --quiet --detach FETCH_HEAD
-          echo "latest source lua count: $(find latest-source -type f -name '*.lua' | wc -l)"
-          LATEST_ZIP=$(find latest-source/Assets -type f -name 'ygopro2-data.zip' -print -quit)
-          if [ -n "$LATEST_ZIP" ]; then
-            python3 - "$DATA_ZIP" "$LATEST_ZIP" <<'PY'
-import sys, zipfile, hashlib
-def scripts(path):
-    with zipfile.ZipFile(path) as z:
-        out={}
-        for n in z.namelist():
-            norm=n.replace('\\','/')
-            if norm.lower().startswith('script/') and norm.lower().endswith('.lua'):
-                out[norm]=hashlib.sha256(z.read(n)).hexdigest()
-        return out
-a=scripts(sys.argv[1]); b=scripts(sys.argv[2])
-print('fixed script count:',len(a))
-print('latest script count:',len(b))
-print('added in latest:',sum(1 for k in b if k not in a))
-print('removed in latest:',sum(1 for k in a if k not in b))
-print('changed:',sum(1 for k in b if k in a and b[k]!=a[k]))
-for label, items in [
-    ('ADDED',[k for k in b if k not in a]),
-    ('REMOVED',[k for k in a if k not in b]),
-    ('CHANGED',[k for k in b if k in a and b[k]!=a[k]),
-]:
-    print('---',label,'---')
-    for k in sorted(items)[:250]:
-        print(k)
-PY
-          else
-            echo 'latest source has no ygopro2-data.zip'
-          fi
 
-          echo '=== Project-wide Chinese progress/update references ==='
-          grep -RniE -C 4 --include='*.cs' '正在|更新中|下载|0%|progress|DownloadAndProcessFile|UpdateClientCoroutine' source/Assets/SibylSystem 2>/dev/null | head -1200 || true
+          rm -rf latest-source
+          git -C source worktree add --quiet --detach latest-source "$LATEST_COMMIT"
+          trap 'git -C source worktree remove --force latest-source >/dev/null 2>&1 || true' EXIT
 
           mkdir -p inspection
-          cp "$PROGRAM" inspection/Program.cs
-          cp "$MENU" inspection/Menu.cs
-          grep -RniE --include='*.cs' '正在|更新中|下载|0%|progress|DownloadAndProcessFile|UpdateClientCoroutine' source/Assets/SibylSystem 2>/dev/null > inspection/update-search.txt || true
-          printf '%s\n' "$SOURCE_COMMIT" > inspection/SOURCE_COMMIT.txt
+          printf '%s\n' "$SOURCE_COMMIT" > inspection/fixed-commit.txt
+          printf '%s\n' "$LATEST_COMMIT" > inspection/latest-commit.txt
+
+          {
+            echo '=== fixed loose lua ==='
+            find source -type f -name '*.lua' | sed 's#^source/##' | sort | head -400 || true
+            echo
+            echo '=== latest loose lua ==='
+            find latest-source -type f -name '*.lua' | sed 's#^latest-source/##' | sort | head -800 || true
+            echo
+            echo '=== latest likely script directories ==='
+            find latest-source -maxdepth 8 -type d \( -iname 'script' -o -iname 'scripts' -o -iname '*script*' \) | sort | head -500 || true
+            echo
+            echo '=== latest archives ==='
+            find latest-source/Assets -type f \( -name '*.zip' -o -name '*.7z' -o -name '*.tar*' \) | sort || true
+          } | tee inspection/layout.txt
+
+          python3 - <<'PY' | tee inspection/archive-layout.txt
+from pathlib import Path
+import zipfile
+
+for root_label, root in [('fixed', Path('source')), ('latest', Path('latest-source'))]:
+    print(f'=== {root_label} zip inspection ===')
+    zips = sorted(root.joinpath('Assets').rglob('*.zip'))
+    for path in zips:
+        try:
+            with zipfile.ZipFile(path) as z:
+                names = [n.replace('\\\\','/') for n in z.namelist()]
+                lua = [n for n in names if n.lower().endswith('.lua')]
+                interesting = [
+                    n for n in names
+                    if n.lower().endswith('.lua')
+                    or 'constant.lua' in n.lower()
+                    or 'utility.lua' in n.lower()
+                    or '/script' in n.lower()
+                    or n.lower().startswith('script')
+                ]
+                if lua or path.name == 'ygopro2-data.zip':
+                    print(path)
+                    print(' entries=', len(names), ' lua=', len(lua))
+                    for n in interesting[:600]:
+                        print(' ', n)
+        except zipfile.BadZipFile:
+            pass
+PY
 
       - name: Upload inspection snapshot
         uses: actions/upload-artifact@v4
