@@ -8,6 +8,7 @@ on:
     paths:
       - '.github/workflows/ios-cloud-build.yml'
       - 'patches/**'
+      - 'windbot/**'
 
 permissions:
   contents: read
@@ -52,7 +53,7 @@ jobs:
 
           while IFS= read -r script; do
             bash -n "$script"
-          done < <(find control/patches -type f -name '*.sh' -print | sort)
+          done < <(find control/patches control/windbot -type f -name '*.sh' -print | sort)
 
           python3 - <<'PY'
           from pathlib import Path
@@ -153,7 +154,7 @@ jobs:
           set -euo pipefail
           (
             cd control
-            git ls-files -z patches | sort -z | xargs -0 shasum -a 256
+            git ls-files -z patches windbot | sort -z | xargs -0 shasum -a 256
           ) > "$RUNNER_TEMP/patch-files.sha256"
           PATCH_HASH=$(shasum -a 256 "$RUNNER_TEMP/patch-files.sha256" | awk '{print $1}')
           test -n "$PATCH_HASH"
