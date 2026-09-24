@@ -164,8 +164,13 @@ namespace KoishiWindBot.Local
 
                     if (length <= 0)
                     {
-                        if (engineFlag == LocalDuelNative.ProcessorWaiting)
-                            break;
+                        // Match Koishi's SingleDuel::Process(): PROCESSOR_WAITING
+                        // by itself is an internal ocgcore yield, not proof that
+                        // a player response is required. Real response waits
+                        // always arrive with a selection message and Analyze()
+                        // stops the pump there. Continuing here is essential
+                        // for effects such as Radiant Typhoon Chant, which
+                        // insert an empty PROCESSOR_WAIT while resolving.
                         continue;
                     }
 
