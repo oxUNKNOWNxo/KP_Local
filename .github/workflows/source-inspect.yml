@@ -36,21 +36,34 @@ jobs:
           path: source
           key: koishipro2-source-${{ env.SOURCE_COMMIT }}-v1
 
+      - name: Ensure fixed source is available
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -d source/.git ] || [ "$(git -C source rev-parse HEAD 2>/dev/null || true)" != "$SOURCE_COMMIT" ]; then
+            rm -rf source
+            mkdir source
+            git -C source init -q
+            git -C source remote add origin "$SOURCE_REPO"
+            git -C source config http.version HTTP/1.1
+            git -C source fetch --quiet --no-tags --depth=1 origin "$SOURCE_COMMIT"
+            git -C source checkout --quiet --detach FETCH_HEAD
+          fi
+          test "$(git -C source rev-parse HEAD)" = "$SOURCE_COMMIT"
+
       - name: Inspect fixed and current upstream script layouts
         shell: bash
         run: |
           set -euo pipefail
-          test -d source/.git
-          test "$(git -C source rev-parse HEAD)" = "$SOURCE_COMMIT"
-
           git -C source config http.version HTTP/1.1
           git -C source fetch --quiet --no-tags --depth=1 origin HEAD
           LATEST_COMMIT=$(git -C source rev-parse FETCH_HEAD)
+          LATEST_ROOT="$PWD/latest-source"
           echo "latest upstream commit: $LATEST_COMMIT"
 
-          rm -rf latest-source
-          git -C source worktree add --quiet --detach latest-source "$LATEST_COMMIT"
-          trap 'git -C source worktree remove --force latest-source >/dev/null 2>&1 || true' EXIT
+          rm -rf "$LATEST_ROOT"
+          git -C source worktree add --quiet --detach "$LATEST_ROOT" "$LATEST_COMMIT"
+          trap 'git -C source worktree remove --force "$LATEST_ROOT" >/dev/null 2>&1 || true' EXIT
 
           mkdir -p inspection
           printf '%s\n' "$SOURCE_COMMIT" > inspection/fixed-commit.txt
@@ -61,43 +74,54 @@ jobs:
             find source -type f -name '*.lua' | sed 's#^source/##' | sort | head -400 || true
             echo
             echo '=== latest loose lua ==='
-            find latest-source -type f -name '*.lua' | sed 's#^latest-source/##' | sort | head -800 || true
+            find "$LATEST_ROOT" -type f -name '*.lua' | sed "s#^$LATEST_ROOT/##" | sort | head -800 || true
             echo
             echo '=== latest likely script directories ==='
-            find latest-source -maxdepth 8 -type d \( -iname 'script' -o -iname 'scripts' -o -iname '*script*' \) | sort | head -500 || true
+            find "$LATEST_ROOT" -maxdepth 8 -type d \( -iname 'script' -o -iname 'scripts' -o -iname '*script*' \) | sort | head -500 || true
             echo
             echo '=== latest archives ==='
-            find latest-source/Assets -type f \( -name '*.zip' -o -name '*.7z' -o -name '*.tar*' \) | sort || true
+            find "$LATEST_ROOT/Assets" -type f \( -name '*.zip' -o -name '*.7z' -o -name '*.tar*' \) | sort || true
+            echo
+            echo '=== latest WindBot/bot references ==='
+            grep -RniE --include='*.cs' --include='*.json' --include='*.txt' 'WindBot|bots\.json|RadiantTyphoon|GameAI|Executor' "$LATEST_ROOT/Assets" 2>/dev/null | head -1000 || true
           } | tee inspection/layout.txt
 
+          export LATEST_ROOT
           python3 - <<'PY' | tee inspection/archive-layout.txt
-from pathlib import Path
-import zipfile
+          from pathlib import Path
+          import os
+          import zipfile
 
-for root_label, root in [('fixed', Path('source')), ('latest', Path('latest-source'))]:
-    print(f'=== {root_label} zip inspection ===')
-    zips = sorted(root.joinpath('Assets').rglob('*.zip'))
-    for path in zips:
-        try:
-            with zipfile.ZipFile(path) as z:
-                names = [n.replace('\\\\','/') for n in z.namelist()]
-                lua = [n for n in names if n.lower().endswith('.lua')]
-                interesting = [
-                    n for n in names
-                    if n.lower().endswith('.lua')
-                    or 'constant.lua' in n.lower()
-                    or 'utility.lua' in n.lower()
-                    or '/script' in n.lower()
-                    or n.lower().startswith('script')
-                ]
-                if lua or path.name == 'ygopro2-data.zip':
-                    print(path)
-                    print(' entries=', len(names), ' lua=', len(lua))
-                    for n in interesting[:600]:
-                        print(' ', n)
-        except zipfile.BadZipFile:
-            pass
-PY
+          roots = [
+              ('fixed', Path('source')),
+              ('latest', Path(os.environ['LATEST_ROOT'])),
+          ]
+          for root_label, root in roots:
+              print(f'=== {root_label} zip inspection ===')
+              zips = sorted(root.joinpath('Assets').rglob('*.zip'))
+              for path in zips:
+                  try:
+                      with zipfile.ZipFile(path) as z:
+                          names = [n.replace('\\\\', '/') for n in z.namelist()]
+                          lua = [n for n in names if n.lower().endswith('.lua')]
+                          interesting = [
+                              n for n in names
+                              if n.lower().endswith('.lua')
+                              or 'constant.lua' in n.lower()
+                              or 'utility.lua' in n.lower()
+                              or '/script' in n.lower()
+                              or n.lower().startswith('script')
+                              or 'windbot' in n.lower()
+                              or 'bot' in n.lower()
+                          ]
+                          if lua or path.name == 'ygopro2-data.zip' or interesting:
+                              print(path)
+                              print(' entries=', len(names), ' lua=', len(lua))
+                              for n in interesting[:1000]:
+                                  print(' ', n)
+                  except zipfile.BadZipFile:
+                      pass
+          PY
 
       - name: Upload inspection snapshot
         uses: actions/upload-artifact@v4
