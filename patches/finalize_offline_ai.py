@@ -12,12 +12,15 @@ if not assets.is_dir():
 patch_root = Path(__file__).resolve().parent
 bootstrap_source = patch_root / "ai" / "AIBootstrap.cs"
 bootstrap_target = assets / "SibylSystem" / "AIBootstrap.cs"
+main_script_bootstrap_source = patch_root / "MainScriptBootstrap.cs"
+main_script_bootstrap_target = assets / "SibylSystem" / "MainScriptBootstrap.cs"
 viewport_source = patch_root / "ios" / "IPhone16x9Viewport.cs"
 viewport_target = assets / "SibylSystem" / "IPhone16x9Viewport.cs"
-for required in (bootstrap_source, viewport_source):
+for required in (bootstrap_source, main_script_bootstrap_source, viewport_source):
     if not required.is_file():
         raise SystemExit(f"Required patch source missing: {required}")
 shutil.copyfile(bootstrap_source, bootstrap_target)
+shutil.copyfile(main_script_bootstrap_source, main_script_bootstrap_target)
 shutil.copyfile(viewport_source, viewport_target)
 
 # Keep an explicit startup marker for the iOS viewport integration. The actual
@@ -35,6 +38,19 @@ if "IPhone16x9Viewport.EnsureInstalled();" not in program:
     indent = match.group("indent")
     replacement = match.group(0) + "\n" + indent + "IPhone16x9Viewport.EnsureInstalled();"
     program = program[: match.start()] + replacement + program[match.end() :]
+# Prepare shared card scripts and AI-specific data before the main menu
+# becomes interactive. This keeps AI-room entry free of installation/copy work.
+startup_anchor = "        backGroundPic.show();\n        shiftToServant(menu);"
+startup_replacement = (
+    "        MainScriptBootstrap.EnsureInstalled();\n"
+    "        AIBootstrap.EnsureInstalled();\n"
+    "        backGroundPic.show();\n"
+    "        shiftToServant(menu);"
+)
+if startup_anchor not in program:
+    raise SystemExit("Could not locate Program.gameStart menu startup anchor")
+program = program.replace(startup_anchor, startup_replacement, 1)
+
 program_path.write_text(program, encoding="utf-8")
 
 core_path = assets / "SibylSystem" / "coreWrapper.cs"
@@ -257,10 +273,12 @@ menu_path.write_text(menu, encoding="utf-8")
 
 print("Finalized offline AI integration:")
 print(f"  - installed {bootstrap_target}")
+print(f"  - installed {main_script_bootstrap_target}")
 print(f"  - installed {viewport_target}")
 print("  - retained explicit native 16:9 startup marker")
 print("  - made UTF-8 native paths NUL-terminated and byte-safe")
-print("  - enabled bundled AI/card-script bootstrap")
+print("  - AI now uses the main KoishiPro2 script/ directory")
+print("  - main script synchronization and AI data install run before menu display")
 print("  - re-enabled the existing AI menu hierarchy")
 print("  - reflowed AI from visible sibling bounds without using its hidden prefab Y")
 print("  - replaced obsolete non-ASCII filename warning")
