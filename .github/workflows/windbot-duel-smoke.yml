@@ -1,0 +1,236 @@
+name: WindBot local duel smoke test
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/windbot-duel-smoke.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windbot-local-duel-smoke
+  cancel-in-progress: true
+
+jobs:
+  duel-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout control repository
+        uses: actions/checkout@v4
+
+      - name: Install host build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential curl mono-devel mono-utils sqlite3
+
+      - name: Prepare WindBot managed subset
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x windbot/prepare_windbot_subset.sh
+          windbot/prepare_windbot_subset.sh "$RUNNER_TEMP/subset"
+
+      - name: Resolve current Koishi runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$RUNNER_TEMP/host-runtime"
+          mkdir -p "$ROOT"
+
+          fetch_head() {
+            local repo="$1"
+            local dir="$2"
+            mkdir -p "$dir"
+            git -C "$dir" init -q
+            git -C "$dir" remote add origin "$repo"
+            git -C "$dir" fetch --quiet --no-tags --depth=1 origin master
+            git -C "$dir" checkout --quiet --detach FETCH_HEAD
+          }
+          fetch_commit() {
+            local repo="$1"
+            local sha="$2"
+            local dir="$3"
+            mkdir -p "$dir"
+            git -C "$dir" init -q
+            git -C "$dir" remote add origin "$repo"
+            git -C "$dir" fetch --quiet --no-tags --depth=1 origin "$sha"
+            git -C "$dir" checkout --quiet --detach FETCH_HEAD
+            test "$(git -C "$dir" rev-parse HEAD)" = "$sha"
+          }
+
+          fetch_head https://github.com/purerosefallen/ygopro.git "$ROOT/ygopro"
+          YGOPRO_SHA=$(git -C "$ROOT/ygopro" rev-parse HEAD)
+          CORE_SHA=$(git -C "$ROOT/ygopro" ls-tree "$YGOPRO_SHA" ocgcore | awk '{print $3}')
+          SCRIPT_SHA=$(git -C "$ROOT/ygopro" ls-tree "$YGOPRO_SHA" script | awk '{print $3}')
+          test -n "$CORE_SHA"
+          test -n "$SCRIPT_SHA"
+          fetch_commit https://github.com/purerosefallen/ygopro-core.git "$CORE_SHA" "$ROOT/core"
+          fetch_commit https://github.com/Smile-DK/ygopro-scripts.git "$SCRIPT_SHA" "$ROOT/script"
+
+          printf 'ygopro=%s\nocgcore=%s\nscript=%s\n' "$YGOPRO_SHA" "$CORE_SHA" "$SCRIPT_SHA" | tee "$ROOT/revisions.txt"
+
+          curl --fail --location --retry 4 --retry-delay 2 \
+            https://www.lua.org/ftp/lua-5.4.8.tar.gz -o "$ROOT/lua.tar.gz"
+          echo '4f18ddae154e793e46eeab727c59ef1c0c0c2b744e7b94219710d76f530629ae  '"$ROOT/lua.tar.gz" | sha256sum -c -
+          tar -xzf "$ROOT/lua.tar.gz" -C "$ROOT"
+
+          curl --fail --location --retry 4 --retry-delay 2 \
+            https://cdntx2.moecube.com/koishipro/content/cards.cdb -o "$ROOT/cards.cdb"
+          sqlite3 "$ROOT/cards.cdb" 'select count(*) from datas;'
+          test "$(sqlite3 "$ROOT/cards.cdb" 'select count(*) from datas;')" -gt 10000
+
+      - name: Build current Koishi core for host
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$RUNNER_TEMP/host-runtime"
+          CORE="$ROOT/core"
+          LUA="$ROOT/lua-5.4.8/src"
+          OBJ="$ROOT/obj"
+          mkdir -p "$OBJ/core" "$OBJ/lua"
+
+          COMMON=(-O2 -fPIC -fvisibility=hidden -I"$CORE" -I"$LUA")
+          while IFS= read -r src; do
+            base=$(basename "$src" .cpp)
+            g++ "${COMMON[@]}" -std=c++14 -DOCGCORE_EXPORT_FUNCTIONS -c "$src" -o "$OBJ/core/$base.o"
+          done < <(find "$CORE" -maxdepth 1 -type f -name '*.cpp' | sort)
+
+          while IFS= read -r src; do
+            base=$(basename "$src" .c)
+            case "$base" in
+              lua|luac|onelua|linit|loslib) continue ;;
+            esac
+            gcc "${COMMON[@]}" -std=gnu99 -DLUA_USE_POSIX -c "$src" -o "$OBJ/lua/$base.o"
+          done < <(find "$LUA" -maxdepth 1 -type f -name '*.c' | sort)
+
+          g++ -shared -o "$ROOT/libkoishi_ocgcore.so" "$OBJ"/core/*.o "$OBJ"/lua/*.o -ldl -lm
+          test -s "$ROOT/libkoishi_ocgcore.so"
+          nm -D "$ROOT/libkoishi_ocgcore.so" | grep ' create_duel_v2$'
+          nm -D "$ROOT/libkoishi_ocgcore.so" | grep ' process$'
+
+      - name: Assemble smoke-test data
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$RUNNER_TEMP/host-runtime"
+          cp -R "$RUNNER_TEMP/subset/data/Decks" "$ROOT/Decks"
+          cp -R "$RUNNER_TEMP/subset/data/Dialogs" "$ROOT/Dialogs"
+          test -s "$ROOT/Decks/AI_RadiantTyphoon.ydk"
+          test -s "$ROOT/Dialogs/wof-Kasumisawa-Haruma.json"
+          test -s "$ROOT/script/constant.lua"
+          test -s "$ROOT/script/utility.lua"
+          test -s "$ROOT/script/procedure.lua"
+          test -s "$ROOT/script/patches/entry.lua"
+
+          missing=0
+          while read -r id; do
+            [ -z "$id" ] && continue
+            found=$(sqlite3 "$ROOT/cards.cdb" "select count(*) from datas where id=$id;")
+            if [ "$found" -ne 1 ]; then
+              echo "RadiantTyphoon card is missing from current cards.cdb: $id"
+              missing=$((missing + 1))
+            fi
+          done < <(grep -E '^[0-9]+$' "$ROOT/Decks/AI_RadiantTyphoon.ydk" | sort -nu)
+          test "$missing" -eq 0
+
+      - name: Compile local duel harness
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$RUNNER_TEMP/host-runtime"
+          cat > "$ROOT/Smoke.cs" <<'CS'
+          using System;
+          using System.Collections.Generic;
+          using System.IO;
+          using KoishiWindBot.Local;
+
+          public static class Smoke
+          {
+              private static void LoadYdk(string path, out List<int> main, out List<int> extra)
+              {
+                  main = new List<int>();
+                  extra = new List<int>();
+                  int section = 0;
+                  foreach (string raw in File.ReadAllLines(path))
+                  {
+                      string line = raw.Trim();
+                      if (line == "#main") { section = 0; continue; }
+                      if (line == "#extra") { section = 1; continue; }
+                      if (line == "!side") { section = 2; continue; }
+                      if (line.Length == 0 || line[0] == '#') continue;
+                      int id;
+                      if (!Int32.TryParse(line, out id) || section == 2) continue;
+                      if (section == 1) extra.Add(id); else main.Add(id);
+                  }
+              }
+
+              public static int Main()
+              {
+                  try
+                  {
+                      List<int> main;
+                      List<int> extra;
+                      LoadYdk(Path.Combine("Decks", "AI_RadiantTyphoon.ydk"), out main, out extra);
+                      Console.WriteLine("human proof deck main=" + main.Count + " extra=" + extra.Count);
+                      int messages = 0;
+                      using (var duel = new RadiantTyphoonLocalDuel(
+                          Directory.GetCurrentDirectory(),
+                          Path.Combine(Directory.GetCurrentDirectory(), "cards.cdb"),
+                          packet => { messages++; },
+                          log => Console.WriteLine(log),
+                          false))
+                      {
+                          duel.Start(main, extra, false, 8000, 5, 1, 5);
+                          Console.WriteLine("ended=" + duel.IsEnded
+                              + " waitingPlayer=" + duel.WaitingPlayer
+                              + " humanMessages=" + messages);
+                          if (!duel.IsEnded && duel.WaitingPlayer != 1)
+                              throw new Exception("AI-first duel did not advance to the human player's response boundary.");
+                          if (messages < 3)
+                              throw new Exception("Too few game messages reached the human client.");
+                      }
+                      Console.WriteLine("WINDBOT_LOCAL_DUEL_SMOKE_OK");
+                      return 0;
+                  }
+                  catch (Exception ex)
+                  {
+                      Console.Error.WriteLine(ex);
+                      return 1;
+                  }
+              }
+          }
+          CS
+
+          mapfile -t SOURCES < <(find "$RUNNER_TEMP/subset/src" -type f -name '*.cs' | sort)
+          mcs -unsafe -langversion:latest -optimize+ \
+            -out:"$ROOT/Smoke.exe" \
+            -r:System.Core -r:System.Data -r:System.Runtime.Serialization -r:Mono.Data.Sqlite \
+            "${SOURCES[@]}" "$ROOT/Smoke.cs"
+          test -s "$ROOT/Smoke.exe"
+
+      - name: Run AI-first local duel
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$RUNNER_TEMP/host-runtime"
+          cd "$ROOT"
+          LD_LIBRARY_PATH="$ROOT" mono "$ROOT/Smoke.exe" | tee "$ROOT/smoke.log"
+          grep -q 'WINDBOT_LOCAL_DUEL_SMOKE_OK' "$ROOT/smoke.log"
+
+      - name: Upload smoke log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: WindBot-local-duel-smoke
+          path: |
+            ${{ runner.temp }}/host-runtime/revisions.txt
+            ${{ runner.temp }}/host-runtime/smoke.log
+          if-no-files-found: warn
+          retention-days: 2
