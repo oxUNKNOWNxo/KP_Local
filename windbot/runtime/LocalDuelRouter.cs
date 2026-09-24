@@ -34,6 +34,7 @@ namespace KoishiWindBot.Local
         private const byte MsgConfirmCards = 31;
         private const byte MsgShuffleDeck = 32;
         private const byte MsgShuffleHand = 33;
+        private const byte MsgRefreshDeck = 34;
         private const byte MsgSwapGraveDeck = 35;
         private const byte MsgShuffleSetCard = 36;
         private const byte MsgReverseDeck = 37;
@@ -486,6 +487,11 @@ namespace KoishiWindBot.Local
                         break;
                     }
 
+                    case MsgRefreshDeck:
+                        Skip(data, ref p, 1);
+                        SendBoth(Slice(data, start, p));
+                        break;
+
                     case MsgSwapGraveDeck:
                     {
                         byte player = ReadByte(data, ref p);
@@ -927,7 +933,7 @@ namespace KoishiWindBot.Local
             byte[] query = _native.QueryCard((byte)player, location, sequence, flags | QueryCode | QueryPosition, 0);
             byte[] own = BuildUpdateCard((byte)player, location, sequence, query);
             SendToPlayer(player, own);
-            if (query.Length <= 8)
+            if (query.Length <= 4)
                 return;
 
             byte[] hidden = (byte[])query.Clone();
