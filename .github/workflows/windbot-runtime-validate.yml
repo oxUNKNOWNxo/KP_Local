@@ -6,7 +6,7 @@ on:
     branches:
       - main
     paths:
-      - 'windbot/**'
+      - 'windbot/build_koishi_core_ios.sh'
       - '.github/workflows/windbot-runtime-validate.yml'
 
 permissions:
