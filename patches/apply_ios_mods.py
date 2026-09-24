@@ -125,7 +125,9 @@ text = text.replace(resize_unload_old, resize_unload_new, 1)
 program_path.write_text(text, encoding="utf-8")
 print(f"Patched: {program_path}")
 print("  - disabled forced basic-data sync at startup")
-print("  - normalized already-synced basic-data state to Ready")\nprint("  - limited iOS texture decode/download pressure for UI responsiveness")\nprint("  - disabled resize-time Resources.UnloadUnusedAssets on iOS")
+print("  - normalized already-synced basic-data state to Ready")
+print("  - limited iOS texture decode/download pressure for UI responsiveness")
+print("  - disabled resize-time Resources.UnloadUnusedAssets on iOS")
 print("  - left explicit/manual Resource Update behavior unchanged")
 
 # ---------------------------------------------------------------------------
