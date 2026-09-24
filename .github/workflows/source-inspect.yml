@@ -58,6 +58,9 @@ jobs:
           echo '=== Program shiftToServant implementation ==='
           grep -n -A 180 -B 25 'void shiftToServant' "$PROGRAM" || true
 
+          echo '=== Program per-frame resize/update implementation ==='
+          sed -n '2145,2420p' "$PROGRAM"
+
           echo '=== Menu show/status/update-check implementation ==='
           sed -n '130,270p' "$MENU"
 
