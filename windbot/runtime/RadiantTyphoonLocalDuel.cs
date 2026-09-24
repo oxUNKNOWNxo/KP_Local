@@ -11,9 +11,13 @@ namespace KoishiWindBot.Local
         private readonly LocalDuelNative _native;
         private readonly WindBotLocalRuntime _windBot;
         private readonly LocalDuelRouter _router;
+        private readonly int _humanPlayer;
+        private readonly int _aiPlayer;
 
-        public RadiantTyphoonLocalDuel(string dataRoot, string cardsDatabase, Action<byte[]> humanGameMessage, Action<string> log)
+        public RadiantTyphoonLocalDuel(string dataRoot, string cardsDatabase, Action<byte[]> humanGameMessage, Action<string> log, bool humanFirst)
         {
+            _humanPlayer = humanFirst ? 0 : 1;
+            _aiPlayer = 1 - _humanPlayer;
             LocalDuelRouter routerRef = null;
             _windBot = new WindBotLocalRuntime(
                 dataRoot,
@@ -51,7 +55,7 @@ namespace KoishiWindBot.Local
                 log);
 
             _native = new LocalDuelNative();
-            _router = new LocalDuelRouter(_native, _windBot, humanGameMessage, log);
+            _router = new LocalDuelRouter(_native, _windBot, humanGameMessage, log, humanFirst);
             routerRef = _router;
         }
 
@@ -74,8 +78,8 @@ namespace KoishiWindBot.Local
             _native.SetRegistry("start_lp", life.ToString());
             _native.SetRegistry("start_hand", startHand.ToString());
             _native.SetRegistry("draw_count", drawCount.ToString());
-            _native.SetRegistry("player_name_0", "Player");
-            _native.SetRegistry("player_name_1", "WindBot");
+            _native.SetRegistry("player_name_0", _humanPlayer == 0 ? "Player" : "WindBot");
+            _native.SetRegistry("player_name_1", _humanPlayer == 1 ? "Player" : "WindBot");
             _native.SetRegistry("player_type_0", "0");
             _native.SetRegistry("player_type_1", "1");
 
@@ -83,12 +87,12 @@ namespace KoishiWindBot.Local
             _native.Preload("./script/special.lua");
             _native.Preload("./script/init.lua");
 
-            LoadDeck(humanMain, 0, LocalDuelNative.LocationDeck);
-            LoadDeck(humanExtra, 0, LocalDuelNative.LocationExtra);
+            LoadDeck(humanMain, (byte)_humanPlayer, LocalDuelNative.LocationDeck);
+            LoadDeck(humanExtra, (byte)_humanPlayer, LocalDuelNative.LocationExtra);
             foreach (NamedCard card in aiDeck.Cards)
-                _native.AddCard((uint)card.Id, 1, 1, LocalDuelNative.LocationDeck);
+                _native.AddCard((uint)card.Id, (byte)_aiPlayer, (byte)_aiPlayer, LocalDuelNative.LocationDeck);
             foreach (NamedCard card in aiDeck.ExtraCards)
-                _native.AddCard((uint)card.Id, 1, 1, LocalDuelNative.LocationExtra);
+                _native.AddCard((uint)card.Id, (byte)_aiPlayer, (byte)_aiPlayer, LocalDuelNative.LocationExtra);
 
             _router.SendInitialState(life, duelRule);
             uint options = unchecked((uint)duelRule << 16);
