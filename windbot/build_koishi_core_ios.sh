@@ -108,7 +108,7 @@ echo "Compiling Lua 5.4.8..."
 while IFS= read -r src; do
   base="$(basename "$src" .c)"
   case "$base" in
-    lua|luac|onelua|linit|loslib) continue ;;
+    lua|luac|onelua|loslib) continue ;;
   esac
   "$CLANG" "${COMMON[@]}" -std=gnu99 -DLUA_USE_POSIX -Wno-deprecated-declarations -c "$src" -o "$OBJ/lua/$base.o"
 done < <(find "$LUA" -maxdepth 1 -type f -name '*.c' | sort)
