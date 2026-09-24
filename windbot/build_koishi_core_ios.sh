@@ -104,13 +104,13 @@ while IFS= read -r src; do
   "$CLANGXX" "${COMMON[@]}" -std=c++14 -DOCGCORE_EXPORT_FUNCTIONS -Wno-deprecated-declarations -c "$src" -o "$OBJ/core/$base.o"
 done < <(find "$CORE" -maxdepth 1 -type f -name '*.cpp' | sort)
 
-echo "Compiling Lua 5.4.8..."
+echo "Compiling Lua 5.4.8 as C++ (matching Koishi/ygopro-core premake)..."
 while IFS= read -r src; do
   base="$(basename "$src" .c)"
   case "$base" in
-    lua|luac|onelua|loslib) continue ;;
+    lua|luac|onelua|linit|loslib) continue ;;
   esac
-  "$CLANG" "${COMMON[@]}" -std=gnu99 -DLUA_USE_POSIX -Wno-deprecated-declarations -c "$src" -o "$OBJ/lua/$base.o"
+  "$CLANGXX" "${COMMON[@]}" -x c++ -std=c++14 -DLUA_USE_POSIX -Wno-deprecated-declarations -c "$src" -o "$OBJ/lua/$base.o"
 done < <(find "$LUA" -maxdepth 1 -type f -name '*.c' | sort)
 
 LIB="$OUT_DIR/libkoishi_ocgcore.a"
@@ -126,6 +126,18 @@ done
 cp "$CORE/LICENSE" "$OUT_DIR/ocgcore-LICENSE.txt"
 cp "$WORK/script/LICENSE" "$OUT_DIR/scripts-LICENSE.txt" 2>/dev/null || true
 cp "$WORK/windbot/LICENSE" "$OUT_DIR/windbot-LICENSE.txt"
+
+echo "Link-probing the archive to catch unresolved C/C++ ABI mismatches..."
+cat > "$WORK/linkprobe.cpp" <<'CPP'
+#include <cstdint>
+extern "C" void* create_duel_v2(uint32_t*);
+int main() {
+    auto fn = &create_duel_v2;
+    return fn ? 0 : 1;
+}
+CPP
+"$CLANGXX" -arch arm64 -isysroot "$SDKROOT" -miphoneos-version-min=13.0 "$WORK/linkprobe.cpp" "$LIB" -o "$WORK/linkprobe"
+file "$WORK/linkprobe"
 
 echo "Built: $LIB"
 file "$LIB"
