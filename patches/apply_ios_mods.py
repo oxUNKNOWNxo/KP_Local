@@ -358,16 +358,25 @@ print("  - added safe handling for a missing AI data pack")
 # finalize managed AI integration, bundle the offline AI data, and build the
 # ARM64 static ocgcore plugin before Unity imports/exports the project.
 if os.environ.get("GITHUB_WORKFLOW") == "KoishiPro2 iOS cloud build":
-    print("Preparing production offline AI payload for iOS build...")
+    print("Preparing production shared scripts and offline AI payload for iOS build...")
+    subprocess.run(["bash", str(patch_root / "sync_main_scripts.sh"), str(root)], check=True)
     subprocess.run([sys.executable, str(patch_root / "finalize_offline_ai.py"), str(root)], check=True)
     subprocess.run(["bash", str(patch_root / "prepare_ai_pack.sh"), str(root)], check=True)
     subprocess.run(["bash", str(patch_root / "build_ai_core_ios.sh"), str(root)], check=True)
 
     ai_pack = assets / "StreamingAssets" / "koishi-ai-pack.zip"
+    script_update = assets / "StreamingAssets" / "koishi-main-script-update.zip"
+    script_revision = assets / "StreamingAssets" / "koishi-main-scripts-revision.txt"
     ai_core = assets / "Plugins" / "iOS" / "libocgcore.a"
     if not ai_pack.is_file() or ai_pack.stat().st_size == 0:
         raise SystemExit(f"Bundled AI pack was not created: {ai_pack}")
+    if not script_update.is_file() or script_update.stat().st_size == 0:
+        raise SystemExit(f"Main script update pack was not created: {script_update}")
+    if not script_revision.is_file() or script_revision.stat().st_size == 0:
+        raise SystemExit(f"Main script revision marker was not created: {script_revision}")
     if not ai_core.is_file() or ai_core.stat().st_size == 0:
         raise SystemExit(f"ARM64 iOS ocgcore library was not created: {ai_core}")
-    print(f"  - bundled AI data: {ai_pack}")
+    print(f"  - bundled AI-only data: {ai_pack}")
+    print(f"  - synchronized main scripts: {script_update}")
+    print(f"  - main script revision: {script_revision.read_text(encoding='utf-8').strip()}")
     print(f"  - bundled ARM64 ocgcore: {ai_core}")
