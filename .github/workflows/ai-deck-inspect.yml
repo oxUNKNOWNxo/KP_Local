@@ -1,0 +1,102 @@
+name: KoishiPro2 AI deck inspection
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/ai-deck-inspect.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SOURCE_REPO: https://code.moenext.com/hex/ygopro2.git
+      SOURCE_COMMIT: c1850e1120df6a5885692eadacad8ad114a3cf11
+    steps:
+      - name: Restore fixed source
+        id: source-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: source
+          key: koishipro2-source-${{ env.SOURCE_COMMIT }}-v1
+
+      - name: Ensure fixed source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -d source/.git ] || [ "$(git -C source rev-parse HEAD 2>/dev/null || true)" != "$SOURCE_COMMIT" ]; then
+            rm -rf source
+            git clone --quiet --no-checkout "$SOURCE_REPO" source
+            git -C source fetch --quiet --no-tags --depth=1 origin "$SOURCE_COMMIT"
+            git -C source checkout --quiet --detach FETCH_HEAD
+          fi
+          test "$(git -C source rev-parse HEAD)" = "$SOURCE_COMMIT"
+
+      - name: Inspect fixed and latest AI deck data
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "=== fixed source direct AI/deck files ==="
+          find source -type f \( -iname '*.ydk' -o -iname '*.lua' \) | grep -Ei '(^|/)(ai|deck)/' | sort || true
+
+          echo "=== fixed ygopro2-data.zip deck/AI entries ==="
+          FIXED_ZIP=$(find source/Assets -type f -name 'ygopro2-data.zip' -print -quit)
+          echo "fixed zip: $FIXED_ZIP"
+          python3 - "$FIXED_ZIP" <<'PY'
+import sys, zipfile
+p=sys.argv[1]
+with zipfile.ZipFile(p) as z:
+    names=[n.replace('\\','/') for n in z.namelist()]
+for prefix in ('ai/','deck/'):
+    xs=sorted(n for n in names if n.lower().startswith(prefix) and (n.lower().endswith('.ydk') or n.lower().endswith('.lua')))
+    print(prefix, 'count=',len(xs))
+    for n in xs:
+        print(n)
+for needle in ('絢爛','绚烂','kenran','gorgeous','brilliant','splendid'):
+    hits=[n for n in names if needle.lower() in n.lower()]
+    if hits:
+        print('needle',needle,'hits=',hits)
+PY
+
+          echo "=== source references to AI deck/resource updating ==="
+          grep -RniE --include='*.cs' --include='*.py' --include='*.sh' --include='*.yml' --include='*.yaml'             'ai/ydk|aideck|AI.*deck|deck.*AI|update.*ai|ai.*update|resource.*update|DownloadAndProcessFile|cdntx2|moecube'             source/Assets source 2>/dev/null | head -3000 || true
+
+          echo "=== latest upstream source ==="
+          git -C source fetch --quiet --no-tags --depth=1 origin HEAD
+          LATEST=$(git -C source rev-parse FETCH_HEAD)
+          echo "latest commit: $LATEST"
+          rm -rf latest
+          git clone --quiet --no-checkout "$SOURCE_REPO" latest
+          git -C latest fetch --quiet --no-tags --depth=1 origin "$LATEST"
+          git -C latest checkout --quiet --detach FETCH_HEAD
+
+          echo "=== latest direct AI/deck files ==="
+          find latest -type f \( -iname '*.ydk' -o -iname '*.lua' \) | grep -Ei '(^|/)(ai|deck)/' | sort || true
+
+          echo "=== latest ygopro2-data.zip deck/AI entries ==="
+          LATEST_ZIP=$(find latest/Assets -type f -name 'ygopro2-data.zip' -print -quit)
+          echo "latest zip: $LATEST_ZIP"
+          python3 - "$LATEST_ZIP" <<'PY'
+import sys, zipfile
+p=sys.argv[1]
+with zipfile.ZipFile(p) as z:
+    names=[n.replace('\\','/') for n in z.namelist()]
+for prefix in ('ai/','deck/'):
+    xs=sorted(n for n in names if n.lower().startswith(prefix) and (n.lower().endswith('.ydk') or n.lower().endswith('.lua')))
+    print(prefix, 'count=',len(xs))
+    for n in xs:
+        print(n)
+for needle in ('絢爛','绚烂','kenran','gorgeous','brilliant','splendid'):
+    hits=[n for n in names if needle.lower() in n.lower()]
+    if hits:
+        print('needle',needle,'hits=',hits)
+PY
+
+          echo "=== latest source references to AI deck/resource updating ==="
+          grep -RniE --include='*.cs' 'ai/ydk|aideck|AI.*deck|deck.*AI|update.*ai|ai.*update|DownloadAndProcessFile|cdntx2|moecube'             latest/Assets/SibylSystem 2>/dev/null | head -3000 || true
