@@ -232,27 +232,36 @@ jobs:
             echo 'Runtime Screen.SetResolution remains in the managed viewport helper.'
             exit 1
           fi
-          grep -q 'AIBootstrap.EnsureInstalled' "$AIROOM"
-          echo 'Patched managed source validation passed.'
+          grep -q 'KoishiWindBotBridge' "$AIROOM"
+          ! grep -q 'PrecyOcg' "$AIROOM"
+          test -s 'source/Assets/SibylSystem/KoishiWindBotBridge.cs'
+          test -s 'source/Assets/SibylSystem/WindBotRuntime/LocalRuntime/LocalDuelRouter.cs'
+          test -s 'source/Assets/SibylSystem/WindBotRuntime/Game/AI/Decks/RadiantTyphoonExecutor.cs'
+          ! grep -q 'AIBootstrap.EnsureInstalled' 'source/Assets/SibylSystem/Program.cs'
+          echo 'Patched WindBot managed source validation passed.'
 
-      - name: Verify offline AI payload
+      - name: Verify offline WindBot payload
         shell: bash
         run: |
           set -euo pipefail
-          PACK='source/Assets/StreamingAssets/koishi-ai-pack.zip'
-          CORE='source/Assets/Plugins/iOS/libocgcore.a'
-          test -s "$PACK"
+          DECK='source/Assets/StreamingAssets/WindBotData/Decks/AI_RadiantTyphoon.ydk'
+          DIALOG='source/Assets/StreamingAssets/WindBotData/Dialogs/wof-Kasumisawa-Haruma.json'
+          CORE='source/Assets/Plugins/iOS/libkoishi_ocgcore.a'
+          SCRIPTS='source/Assets/StreamingAssets/koishi-main-script-update.zip'
+          test -s "$DECK"
+          test -s "$DIALOG"
           test -s "$CORE"
-          unzip -l "$PACK" | grep -q 'ai/ai.lua'
-          unzip -l "$PACK" | grep -q 'ai/decks/Blackwing.lua'
-          unzip -l "$PACK" | grep -q 'ai/ydk/Blackwing.ydk'
-          xcrun nm -gU "$CORE" > "$RUNNER_TEMP/ios-ai-core-symbols.txt"
-          for symbol in _create_duel _end_duel _process _preload_script _set_ai_id _set_chat_handler _start_duel; do
-            grep -q "$symbol" "$RUNNER_TEMP/ios-ai-core-symbols.txt"
+          test -s "$SCRIPTS"
+          unzip -l "$SCRIPTS" | grep -q 'script/constant.lua'
+          unzip -l "$SCRIPTS" | grep -q 'script/utility.lua'
+          unzip -l "$SCRIPTS" | grep -q 'script/patches/entry.lua'
+          xcrun nm -gU "$CORE" > "$RUNNER_TEMP/ios-windbot-core-symbols.txt"
+          for symbol in _create_duel_v2 _end_duel _process _get_message _preload_script _query_field_card _set_registry_value _start_duel; do
+            grep -q "$symbol" "$RUNNER_TEMP/ios-windbot-core-symbols.txt"
           done
           file "$CORE"
-          ls -lh "$PACK" "$CORE"
-          echo 'Offline AI payload validation passed before Unity build.'
+          ls -lh "$DECK" "$CORE" "$SCRIPTS"
+          echo 'Offline WindBot payload validation passed before Unity build.'
 
       - name: Install Unity CLI
         shell: bash
@@ -477,15 +486,15 @@ jobs:
           NATIVE_DIR='source/output/Classes/Native'
           test -d "$NATIVE_DIR"
           grep -R -l --include='*.cpp' --include='*.h' 'IPhone16x9Viewport' "$NATIVE_DIR" > "$RUNNER_TEMP/viewport-il2cpp.txt" || true
-          grep -R -l --include='*.cpp' --include='*.h' 'AIBootstrap' "$NATIVE_DIR" > "$RUNNER_TEMP/ai-bootstrap-il2cpp.txt" || true
+          grep -R -l --include='*.cpp' --include='*.h' -E 'KoishiWindBotBridge|LocalDuelRouter|RadiantTyphoonExecutor' "$NATIVE_DIR" > "$RUNNER_TEMP/windbot-il2cpp.txt" || true
           grep -R -l --include='*.cpp' --include='*.h' -E 'onClickAI|ai_' "$NATIVE_DIR" > "$RUNNER_TEMP/ai-menu-il2cpp.txt" || true
           test -s "$RUNNER_TEMP/viewport-il2cpp.txt" || { echo 'IPhone16x9Viewport did not reach IL2CPP output.'; exit 1; }
-          test -s "$RUNNER_TEMP/ai-bootstrap-il2cpp.txt" || { echo 'AIBootstrap did not reach IL2CPP output.'; exit 1; }
+          test -s "$RUNNER_TEMP/windbot-il2cpp.txt" || { echo 'WindBot runtime did not reach IL2CPP output.'; exit 1; }
           test -s "$RUNNER_TEMP/ai-menu-il2cpp.txt" || { echo 'AI menu handler did not reach IL2CPP output.'; exit 1; }
           echo '--- viewport IL2CPP files ---'
           cat "$RUNNER_TEMP/viewport-il2cpp.txt"
-          echo '--- AI bootstrap IL2CPP files ---'
-          cat "$RUNNER_TEMP/ai-bootstrap-il2cpp.txt"
+          echo '--- WindBot IL2CPP files ---'
+          cat "$RUNNER_TEMP/windbot-il2cpp.txt"
           echo '--- AI menu IL2CPP files ---'
           cat "$RUNNER_TEMP/ai-menu-il2cpp.txt"
           echo 'Verified patched runtime code in IL2CPP output.'
@@ -526,8 +535,8 @@ jobs:
           echo '--- launch configuration after compatibility patch ---'
           plutil -p source/output/Info.plist | grep -E 'UILaunch|UIRequiresFullScreen' || true
           echo '--- exported native AI plugin ---'
-          find source/output -name 'libocgcore.a' -print
-          grep -n 'libocgcore.a' source/output/Unity-iPhone.xcodeproj/project.pbxproj | head -20
+          find source/output -name 'libkoishi_ocgcore.a' -print
+          grep -n 'libkoishi_ocgcore.a' source/output/Unity-iPhone.xcodeproj/project.pbxproj | head -20
 
       - name: Build unsigned iOS app with Xcode
         timeout-minutes: 60
