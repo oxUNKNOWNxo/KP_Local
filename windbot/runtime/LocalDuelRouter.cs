@@ -218,6 +218,8 @@ namespace KoishiWindBot.Local
             if (type == CtosMessage.Surrender)
             {
                 _log?.Invoke("[WindBot] AI requested surrender.");
+                byte[] win = new byte[] { MsgWin, (byte)_humanPlayer, 0x04 };
+                SendBoth(win);
                 _ended = true;
                 return;
             }
