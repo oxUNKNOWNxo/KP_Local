@@ -59,7 +59,7 @@ namespace KoishiWindBot.Local
             routerRef = _router;
         }
 
-        public void Start(IList<int> humanMain, IList<int> humanExtra, int life = 8000, int startHand = 5, int drawCount = 1, int duelRule = 5)
+        public void Start(IList<int> humanMain, IList<int> humanExtra, bool noShuffle = false, int life = 8000, int startHand = 5, int drawCount = 1, int duelRule = 5)
         {
             if (humanMain == null)
                 throw new ArgumentNullException("humanMain");
@@ -96,6 +96,8 @@ namespace KoishiWindBot.Local
 
             _router.SendInitialState(life, duelRule);
             uint options = unchecked((uint)duelRule << 16);
+            if (noShuffle)
+                options |= 0x10u; // DUEL_PSEUDO_SHUFFLE
             _native.Start(options);
             _router.Pump();
         }
