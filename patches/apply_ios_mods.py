@@ -102,6 +102,32 @@ texture_tasks_new = """#if UNITY_IOS || UNITY_IPHONE
 #endif"""
 text = text[:texture_abs] + texture_tasks_new + text[texture_abs + len(texture_tasks_old):]
 
+# Never run main-thread texture creation on the same iOS frame that is
+# handling a touch/click. This guarantees that a menu tap is dispatched and
+# rendered before background card-art work resumes on following frames.
+texture_pump_old = """        if (GameTextureManager.IsInitialized)
+        {
+            ProcessTextureManagerUpdates();
+        }"""
+texture_pump_new = """        if (GameTextureManager.IsInitialized)
+        {
+#if UNITY_IOS || UNITY_IPHONE
+            if (
+                !Input.GetMouseButton(0)
+                && !Input.GetMouseButtonDown(0)
+                && !Input.GetMouseButtonUp(0)
+            )
+            {
+                ProcessTextureManagerUpdates();
+            }
+#else
+            ProcessTextureManagerUpdates();
+#endif
+        }"""
+if texture_pump_old not in text:
+    raise SystemExit("Could not locate per-frame texture pump call")
+text = text.replace(texture_pump_old, texture_pump_new, 1)
+
 # Do not invoke Unity's global unused-asset unload merely because the native
 # iOS compatibility container reports a size transition. This operation can
 # synchronously stall the main thread and is unnecessary for normal rotation/
@@ -127,6 +153,7 @@ print(f"Patched: {program_path}")
 print("  - disabled forced basic-data sync at startup")
 print("  - normalized already-synced basic-data state to Ready")
 print("  - limited iOS texture decode/download pressure for UI responsiveness")
+print("  - skips iOS main-thread texture creation on touch frames")
 print("  - disabled resize-time Resources.UnloadUnusedAssets on iOS")
 print("  - left explicit/manual Resource Update behavior unchanged")
 
