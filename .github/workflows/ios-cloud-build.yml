@@ -77,16 +77,16 @@ jobs:
           if 'clone.name' in finalizer or 'clone.name' in packer:
               raise SystemExit('Obsolete cloned AI menu logic remains in reviewed patches')
           viewport = Path('control/patches/ios/IPhone16x9Viewport.cs').read_text(encoding='utf-8')
-          if 'Koishi16x9ContainerView' not in notch:
-              raise SystemExit('Notch/aspect patch is missing the native 16:9 container')
+          if 'KoishiNotchAwareContainerView' not in notch:
+              raise SystemExit('Notch/aspect patch is missing the native notch-aware container')
           if 'scheduleUnitySurfaceRefresh' in notch or '[content layoutIfNeeded];' in notch:
               raise SystemExit('Obsolete native UnityView surface refresh logic remains')
           if 'Screen.SetResolution' in viewport:
               raise SystemExit('Runtime Screen.SetResolution must not be used on iOS')
-          if 'Legacy 16:9 iPhone compatibility framing enabled.' not in viewport:
-              raise SystemExit('Managed compatibility marker is missing')
-          if 'plist["UILaunchScreen"]' in notch:
-              raise SystemExit('Modern UILaunchScreen opt-in must remain disabled')
+          if 'Native notch-aware maximum-width framing enabled.' not in viewport:
+              raise SystemExit('Managed notch-aware viewport marker is missing')
+          if 'UILaunchStoryboardName' not in notch:
+              raise SystemExit('Modern iPhone launch storyboard opt-in is missing')
 
           print('Static patch preflight passed.')
           PY
@@ -228,7 +228,7 @@ jobs:
           PY
           ! grep -q 'clone.name' "$MENU"
           grep -q 'IPhone16x9Viewport' "$VIEWPORT"
-          grep -q 'Legacy 16:9 iPhone compatibility framing enabled' "$VIEWPORT"
+          grep -q 'Native notch-aware maximum-width framing enabled' "$VIEWPORT"
           if grep -q 'Screen.SetResolution' "$VIEWPORT"; then
             echo 'Runtime Screen.SetResolution remains in the managed viewport helper.'
             exit 1
@@ -519,20 +519,22 @@ jobs:
           import sys
 
           text = Path(sys.argv[1]).read_text(encoding='utf-8')
-          if 'Koishi16x9ContainerView' not in text:
-              raise SystemExit('Generated native 16:9 container is missing')
+          if 'KoishiNotchAwareContainerView' not in text:
+              raise SystemExit('Generated native notch-aware container is missing')
+          if 'UIInterfaceOrientationLandscapeLeft' not in text or 'UIInterfaceOrientationLandscapeRight' not in text:
+              raise SystemExit('Generated native viewport does not react to notch-side rotation')
           if 'scheduleUnitySurfaceRefresh' in text or '[content layoutIfNeeded];' in text:
               raise SystemExit('Obsolete native UnityView surface refresh logic reached Xcode output')
           if '[koishiContainer layoutIfNeeded];' in text:
               raise SystemExit('Synchronous container layout must not run during startup')
           PY
-          for key in UILaunchStoryboardName UILaunchScreens UILaunchScreen UILaunchStoryboards; do
-            if /usr/libexec/PlistBuddy -c "Print :$key" source/output/Info.plist >/dev/null 2>&1; then
-              echo "Unexpected modern launch declaration remains: $key"
-              exit 1
-            fi
-          done
-          echo 'Legacy launch-image compatibility mode verified; native 16:9 fallback has no forced relayout.'
+          /usr/libexec/PlistBuddy -c 'Print :UILaunchStoryboardName' source/output/Info.plist >/dev/null
+          /usr/libexec/PlistBuddy -c 'Print :UILaunchStoryboardName~iphone' source/output/Info.plist >/dev/null
+          if /usr/libexec/PlistBuddy -c 'Print :UILaunchImages' source/output/Info.plist >/dev/null 2>&1; then
+            echo 'Legacy iPhone launch images remain; refusing native notch-aware viewport.'
+            exit 1
+          fi
+          echo 'Native iPhone launch mode verified; notch-aware maximum-width container is active.'
           echo '--- launch configuration after compatibility patch ---'
           plutil -p source/output/Info.plist | grep -E 'UILaunch|UIRequiresFullScreen' || true
           echo '--- exported native AI plugin ---'
@@ -558,7 +560,6 @@ jobs:
             CODE_SIGN_IDENTITY='' \
             DEVELOPMENT_TEAM='' \
             ENABLE_BITCODE=NO \
-            ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME=LaunchImage \
             build
 
       - name: Package TrollStore IPA
@@ -570,20 +571,12 @@ jobs:
 
           echo '--- final app launch configuration ---'
           plutil -p "$APP/Info.plist" | grep -E 'UILaunch|UIRequiresFullScreen' || true
-          if /usr/libexec/PlistBuddy -c 'Print :UILaunchStoryboardName' "$APP/Info.plist" >/dev/null 2>&1; then
-            echo 'Unexpected iPhone base launch storyboard remains; refusing to package.'
+          /usr/libexec/PlistBuddy -c 'Print :UILaunchStoryboardName' "$APP/Info.plist" >/dev/null
+          /usr/libexec/PlistBuddy -c 'Print :UILaunchStoryboardName~iphone' "$APP/Info.plist" >/dev/null
+          if /usr/libexec/PlistBuddy -c 'Print :UILaunchImages' "$APP/Info.plist" >/dev/null 2>&1; then
+            echo 'Legacy iPhone launch images remain in final app; refusing to package.'
             exit 1
           fi
-          if /usr/libexec/PlistBuddy -c 'Print :UILaunchStoryboardName~iphone' "$APP/Info.plist" >/dev/null 2>&1; then
-            echo 'Unexpected iPhone-specific launch storyboard remains; refusing to package.'
-            exit 1
-          fi
-          for key in UILaunchScreen UILaunchScreens UILaunchStoryboards; do
-            if /usr/libexec/PlistBuddy -c "Print :$key" "$APP/Info.plist" >/dev/null 2>&1; then
-              echo "Unexpected modern launch declaration remains in final app: $key"
-              exit 1
-            fi
-          done
 
           rm -rf ipa
           mkdir -p ipa/Payload
