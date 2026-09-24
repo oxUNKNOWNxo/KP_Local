@@ -248,6 +248,9 @@ namespace KoishiWindBot.Local
             return path;
         }
 
+#if UNITY_IOS && !UNITY_EDITOR
+        [AOT.MonoPInvokeCallback(typeof(ScriptReader))]
+#endif
         private static unsafe IntPtr ReadScript(IntPtr scriptName, int* length)
         {
             try
@@ -284,6 +287,9 @@ namespace KoishiWindBot.Local
             }
         }
 
+#if UNITY_IOS && !UNITY_EDITOR
+        [AOT.MonoPInvokeCallback(typeof(CardReader))]
+#endif
         private static unsafe uint ReadCard(uint code, NativeCardData* output)
         {
             if (output == null)
@@ -317,6 +323,9 @@ namespace KoishiWindBot.Local
             return output->Code;
         }
 
+#if UNITY_IOS && !UNITY_EDITOR
+        [AOT.MonoPInvokeCallback(typeof(MessageHandler))]
+#endif
         private static uint OnNativeMessage(IntPtr duel, uint messageType)
         {
             try
