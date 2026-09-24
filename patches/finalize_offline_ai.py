@@ -82,15 +82,13 @@ marker = '''    void printFile()
         Directory.CreateDirectory("deck");
         Directory.CreateDirectory("ai");
         Directory.CreateDirectory("ai/ydk");'''
-replacement = '''    void printFile()
-    {
-        Directory.CreateDirectory("deck");
-        Directory.CreateDirectory("ai");
-        Directory.CreateDirectory("ai/ydk");
-        AIBootstrap.EnsureInstalled();'''
 if marker not in airoom:
-    raise SystemExit("Could not locate AIRoom data bootstrap insertion point")
-airoom = airoom.replace(marker, replacement, 1)
+    raise SystemExit("Could not locate AIRoom data-directory guard")
+# AI and main-script installation is completed in Program.gameStart before the
+# menu becomes interactive. Do not perform installation or script-copy work
+# from AIRoom.show()/printFile(); opening AI must be a UI/listing operation only.
+if "AIBootstrap.EnsureInstalled();" in airoom:
+    raise SystemExit("AIRoom unexpectedly contains per-open AI bootstrap work")
 airoom_path.write_text(airoom, encoding="utf-8")
 
 precy_path = assets / "SibylSystem" / "precy.cs"
