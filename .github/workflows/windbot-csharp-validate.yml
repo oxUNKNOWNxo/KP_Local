@@ -1,0 +1,72 @@
+name: WindBot RadiantTyphoon C# validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'windbot/**'
+      - '.github/workflows/windbot-csharp-validate.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windbot-radiant-csharp-validation
+  cancel-in-progress: true
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout control repository
+        uses: actions/checkout@v4
+
+      - name: Install Mono compiler
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq mono-devel
+
+      - name: Prepare current WindBot subset
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x windbot/prepare_windbot_subset.sh
+          windbot/prepare_windbot_subset.sh "$RUNNER_TEMP/windbot-subset"
+
+      - name: Compile isolated RadiantTyphoon runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t SOURCES < <(find "$RUNNER_TEMP/windbot-subset/src" -type f -name '*.cs' | sort)
+          printf 'Compiling %s C# files\n' "${#SOURCES[@]}"
+          mcs             -langversion:latest             -target:library             -optimize+             -out:"$RUNNER_TEMP/windbot-subset/KoishiWindBotRadiant.dll"             -r:System.Core             -r:System.Data             -r:System.Runtime.Serialization             -r:Mono.Data.Sqlite             "${SOURCES[@]}"
+          test -s "$RUNNER_TEMP/windbot-subset/KoishiWindBotRadiant.dll"
+          monodis --assembly "$RUNNER_TEMP/windbot-subset/KoishiWindBotRadiant.dll"
+
+      - name: Verify proof payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s "$RUNNER_TEMP/windbot-subset/data/Decks/AI_RadiantTyphoon.ydk"
+          test -s "$RUNNER_TEMP/windbot-subset/data/Dialogs/wof-Kasumisawa-Haruma.json"
+          test -s "$RUNNER_TEMP/windbot-subset/windbot-revision.txt"
+          grep -R -q 'class RadiantTyphoonExecutor' "$RUNNER_TEMP/windbot-subset/src"
+          grep -R -q 'explicit iOS proof registry' "$RUNNER_TEMP/windbot-subset/src"
+
+      - name: Upload compile proof
+        uses: actions/upload-artifact@v4
+        with:
+          name: WindBot-RadiantTyphoon-CSharp-proof
+          path: |
+            ${{ runner.temp }}/windbot-subset/KoishiWindBotRadiant.dll
+            ${{ runner.temp }}/windbot-subset/windbot-revision.txt
+            ${{ runner.temp }}/windbot-subset/data/Decks/AI_RadiantTyphoon.ydk
+            ${{ runner.temp }}/windbot-subset/data/Dialogs/wof-Kasumisawa-Haruma.json
+            ${{ runner.temp }}/windbot-subset/WindBot-LICENSE.txt
+          if-no-files-found: error
+          retention-days: 2
