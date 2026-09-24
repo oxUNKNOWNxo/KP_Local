@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Collections.Generic;
 using UnityEngine;
 
 public class AIRoom : WindowServantSP
@@ -23,6 +24,15 @@ public class AIRoom : WindowServantSP
         UIHelper.registEvent(gameObject, "exit_", () => { Program.I().shiftToServant(Program.I().menu); });
         UIHelper.trySetLableText(gameObject, "percyHint", "WindBot AIモード（実証版：絢嵐）");
         superScrollView.install();
+        // The restored AI prefab leaves the list's prototype row inside the
+        // clipped panel on some iOS layouts. Keep it available for cloning,
+        // but park the prototype itself well outside the visible area.
+        if (superScrollView.mod != null)
+        {
+            Vector3 prototypePosition = superScrollView.mod.transform.localPosition;
+            prototypePosition.y = 100000f;
+            superScrollView.mod.transform.localPosition = prototypePosition;
+        }
         SetActiveFalse();
     }
 
@@ -69,15 +79,28 @@ public class AIRoom : WindowServantSP
         FileInfo[] files = (new DirectoryInfo("deck")).GetFiles("*.ydk");
         Array.Sort(files, Config.Get(sort, "1") == "1" ? UIHelper.CompareTime : UIHelper.CompareName);
 
-        for (int pass = 0; pass < 2; ++pass)
+        List<string> deckNames = new List<string>();
+        HashSet<string> seen = new HashSet<string>(StringComparer.Ordinal);
+        for (int i = 0; i < files.Length; ++i)
         {
-            for (int i = 0; i < files.Length; ++i)
-            {
-                string name = Path.GetFileNameWithoutExtension(files[i].Name);
-                bool selected = name == deckInUse;
-                if ((pass == 0 && selected) || (pass == 1 && !selected))
-                    superScrollView.add(name);
-            }
+            string name = Path.GetFileNameWithoutExtension(files[i].Name);
+            if (String.IsNullOrWhiteSpace(name) || !seen.Add(name))
+                continue;
+            deckNames.Add(name);
+        }
+
+        if (String.IsNullOrWhiteSpace(deckInUse) || !seen.Contains(deckInUse))
+        {
+            deckInUse = deckNames.Count > 0 ? deckNames[0] : "";
+            Config.Set("deckInUse", deckInUse);
+        }
+
+        if (!String.IsNullOrEmpty(deckInUse))
+            superScrollView.add(deckInUse);
+        for (int i = 0; i < deckNames.Count; ++i)
+        {
+            if (!String.Equals(deckNames[i], deckInUse, StringComparison.Ordinal))
+                superScrollView.add(deckNames[i]);
         }
 
         list_aideck.Clear();
@@ -98,7 +121,9 @@ public class AIRoom : WindowServantSP
         }
         base.show();
         printFile();
-        superScrollView.selectedString = Config.Get("deckInUse", "miaowu");
+        string selectedDeck = Config.Get("deckInUse", "");
+        if (!String.IsNullOrWhiteSpace(selectedDeck))
+            superScrollView.selectedString = selectedDeck;
         superScrollView.toTop();
         Program.charge();
     }
