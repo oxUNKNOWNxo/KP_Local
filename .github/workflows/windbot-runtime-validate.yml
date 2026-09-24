@@ -1,0 +1,54 @@
+name: WindBot iOS runtime validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'windbot/**'
+      - '.github/workflows/windbot-runtime-validate.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windbot-ios-runtime-validation
+  cancel-in-progress: true
+
+jobs:
+  build-core:
+    runs-on: macos-15-intel
+    timeout-minutes: 30
+    steps:
+      - name: Checkout control repository
+        uses: actions/checkout@v4
+
+      - name: Build current KoishiPro ocgcore for iOS
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x windbot/build_koishi_core_ios.sh
+          windbot/build_koishi_core_ios.sh "$RUNNER_TEMP/runtime"
+
+      - name: Verify resolved runtime family
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat "$RUNNER_TEMP/runtime/koishi-runtime-revisions.txt"
+          test -s "$RUNNER_TEMP/runtime/libkoishi_ocgcore.a"
+          grep -q '^ocgcore=' "$RUNNER_TEMP/runtime/koishi-runtime-revisions.txt"
+          grep -q '^script=' "$RUNNER_TEMP/runtime/koishi-runtime-revisions.txt"
+          grep -q '^windbot=' "$RUNNER_TEMP/runtime/koishi-runtime-revisions.txt"
+
+      - name: Upload runtime proof
+        uses: actions/upload-artifact@v4
+        with:
+          name: KoishiPro-WindBot-iOS-runtime-proof
+          path: |
+            ${{ runner.temp }}/runtime/libkoishi_ocgcore.a
+            ${{ runner.temp }}/runtime/koishi-runtime-revisions.txt
+            ${{ runner.temp }}/runtime/koishi-ocgcore-symbols.txt
+            ${{ runner.temp }}/runtime/*-LICENSE.txt
+          if-no-files-found: error
+          retention-days: 2
