@@ -1,11 +1,10 @@
 using UnityEngine;
 
 // Managed marker retained so the build can verify that the viewport feature
-// reaches IL2CPP. iPhone X compatibility sizing is selected by the legacy
-// launch-image configuration before Unity starts. The native wrapper remains
-// as a defensive fallback, but no runtime resolution switch is made:
-// changing the render resolution after scene load can stall startup and does
-// not change the iOS window compatibility mode.
+// reaches IL2CPP. The native iOS wrapper now exposes the full iPhone X-class
+// landscape window and reserves only the physical notch side. This class does
+// not call Screen.SetResolution; the native container updates its frame during
+// safe-area/orientation changes.
 public sealed class IPhone16x9Viewport : MonoBehaviour
 {
     private static IPhone16x9Viewport instance;
@@ -27,7 +26,7 @@ public sealed class IPhone16x9Viewport : MonoBehaviour
         GameObject host = new GameObject("IPhone16x9Viewport");
         DontDestroyOnLoad(host);
         instance = host.AddComponent<IPhone16x9Viewport>();
-        Debug.Log("[IPhone16x9Viewport] Legacy 16:9 iPhone compatibility framing enabled.");
+        Debug.Log("[IPhone16x9Viewport] Native notch-aware maximum-width framing enabled.");
 #endif
     }
 
