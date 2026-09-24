@@ -123,6 +123,15 @@ jobs:
                       pass
           PY
 
+      - name: Inspect script download and extraction paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo '=== script/lua/update references ==='
+            grep -RniE -C 8 --include='*.cs' 'script[/\\]|\.lua|lua|StreamingAssets|ExtractZip|DownloadAndProcessFile|UnityWebRequest|http[s]?://|Resource Update|资源|更新' source/Assets/SibylSystem source/Assets/YGOSharp 2>/dev/null | head -5000 || true
+          } | tee inspection/script-update-paths.txt
+
       - name: Upload inspection snapshot
         uses: actions/upload-artifact@v4
         with:
