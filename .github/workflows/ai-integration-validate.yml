@@ -1,4 +1,4 @@
-name: KoishiPro2 offline AI integration validation
+name: KoishiPro2 WindBot integration validation
 
 on:
   workflow_dispatch:
@@ -9,24 +9,27 @@ on:
       - '.github/workflows/ai-integration-validate.yml'
       - 'patches/apply_ios_mods.py'
       - 'patches/finalize_offline_ai.py'
-      - 'patches/build_ai_core_ios.sh'
-      - 'patches/prepare_ai_pack.sh'
-      - 'patches/ai/**'
+      - 'patches/activate_windbot_ai.py'
+      - 'patches/prepare_windbot_runtime.sh'
+      - 'patches/sync_main_scripts.sh'
+      - 'patches/ai/windbot/**'
+      - 'windbot/**'
 
 permissions:
   contents: read
 
 concurrency:
-  group: koishipro2-ai-integration-validation
+  group: koishipro2-windbot-integration-validation
   cancel-in-progress: true
 
 jobs:
   validate:
     runs-on: macos-15-intel
-    timeout-minutes: 40
+    timeout-minutes: 50
     env:
       SOURCE_REPO: https://code.moenext.com/hex/ygopro2.git
       SOURCE_COMMIT: c1850e1120df6a5885692eadacad8ad114a3cf11
+
     steps:
       - name: Checkout control repository
         uses: actions/checkout@v4
@@ -39,16 +42,13 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-
           for path in sorted(Path('control/patches').rglob('*.py')):
-              source = path.read_text(encoding='utf-8')
-              compile(source, str(path), 'exec')
+              compile(path.read_text(encoding='utf-8'), str(path), 'exec')
               print(f'python syntax ok: {path}')
           PY
-
           while IFS= read -r script; do
             bash -n "$script"
-          done < <(find control/patches -type f -name '*.sh' -print | sort)
+          done < <(find control/patches control/windbot -type f -name '*.sh' -print | sort)
 
       - name: Restore fixed KoishiPro2 source snapshot
         id: source-cache
@@ -69,122 +69,98 @@ jobs:
             git -C source init -q
             git -C source remote add origin "$SOURCE_REPO"
             git -C source config http.version HTTP/1.1
-            fetched=0
-            for attempt in 1 2 3 4 5; do
-              echo "Fetch attempt $attempt/5"
-              if git -C source fetch --quiet --no-tags --depth=1 origin "$SOURCE_COMMIT"; then
-                fetched=1
-                break
-              fi
-              [ "$attempt" -eq 5 ] || sleep 5
-            done
-            test "$fetched" -eq 1
+            git -C source fetch --quiet --no-tags --depth=1 origin "$SOURCE_COMMIT"
             git -C source checkout --quiet --detach FETCH_HEAD
           fi
           test "$(git -C source rev-parse HEAD)" = "$SOURCE_COMMIT"
 
-      - name: Apply DB and offline AI restoration patches
+      - name: Apply base iOS modifications
         shell: bash
         run: |
           set -euo pipefail
           python3 control/patches/apply_ios_mods.py source
+          bash control/patches/sync_main_scripts.sh source
           python3 control/patches/finalize_offline_ai.py source
+          python3 control/patches/activate_windbot_ai.py source
+          bash control/patches/prepare_windbot_runtime.sh source
 
-      - name: Prepare bundled offline AI data pack
+      - name: Build current Koishi ocgcore for iOS
         shell: bash
         run: |
           set -euo pipefail
-          bash control/patches/prepare_ai_pack.sh source
-          PACK='source/Assets/StreamingAssets/koishi-ai-pack.zip'
-          test -s "$PACK"
-          unzip -l "$PACK" | grep -q 'ai/ai.lua'
-          unzip -l "$PACK" | grep -q 'ai/decks/Blackwing.lua'
-          unzip -l "$PACK" | grep -q 'ai/ydk/Blackwing.ydk'
-          unzip -l "$PACK" | grep -q 'ai/ydk/Shaddoll.ydk'
-          echo 'Bundled AI data pack validation passed.'
+          chmod +x control/windbot/build_koishi_core_ios.sh
+          control/windbot/build_koishi_core_ios.sh source/Assets/Plugins/iOS
 
-      - name: Validate restored managed AI integration
+      - name: Validate generated WindBot integration
         shell: bash
         run: |
           set -euo pipefail
-          CORE='source/Assets/SibylSystem/coreWrapper.cs'
-          PRECY='source/Assets/SibylSystem/precy.cs'
-          AIROOM='source/Assets/SibylSystem/Room/AIRoom.cs'
-          BOOTSTRAP='source/Assets/SibylSystem/AIBootstrap.cs'
-          MENU='source/Assets/SibylSystem/Menu/Menu.cs'
           PROGRAM='source/Assets/SibylSystem/Program.cs'
+          MENU='source/Assets/SibylSystem/Menu/Menu.cs'
+          AIROOM='source/Assets/SibylSystem/Room/AIRoom.cs'
+          BRIDGE='source/Assets/SibylSystem/KoishiWindBotBridge.cs'
+          ROUTER='source/Assets/SibylSystem/WindBotRuntime/LocalRuntime/LocalDuelRouter.cs'
+          NATIVE='source/Assets/SibylSystem/WindBotRuntime/LocalRuntime/LocalDuelNative.cs'
+          EXECUTOR='source/Assets/SibylSystem/WindBotRuntime/Game/AI/Decks/RadiantTyphoonExecutor.cs'
+          DECK='source/Assets/StreamingAssets/WindBotData/Decks/AI_RadiantTyphoon.ydk'
+          DIALOG='source/Assets/StreamingAssets/WindBotData/Dialogs/wof-Kasumisawa-Haruma.json'
+          CORE='source/Assets/Plugins/iOS/libkoishi_ocgcore.a'
+          SCRIPTS='source/Assets/StreamingAssets/koishi-main-script-update.zip'
 
-          for f in "$CORE" "$PRECY" "$AIROOM" "$BOOTSTRAP" "$MENU" "$PROGRAM"; do test -s "$f"; done
+          for f in "$PROGRAM" "$MENU" "$AIROOM" "$BRIDGE" "$ROUTER" "$NATIVE" "$EXECUTOR" "$DECK" "$DIALOG" "$CORE" "$SCRIPTS"; do
+            test -s "$f"
+          done
 
-          grep -q 'OcgCoreLibrary = "__Internal"' "$CORE"
-          grep -q 'AOT.MonoPInvokeCallback(typeof(CardReader))' "$CORE"
-          grep -q 'AOT.MonoPInvokeCallback(typeof(MessageHandler))' "$CORE"
-          grep -q 'Marshal.WriteByte(ptrFileName, s.Length, 0)' "$CORE"
-          grep -q 'Marshal.AllocHGlobal(s.Length + 1)' "$CORE"
-          ! grep -q '\[DllImport("ocgcore"' "$CORE"
-          grep -q 'class PrecyOcg' "$PRECY"
-          grep -q 'new Percy.smallYgopro' "$PRECY"
-          grep -q 'new PrecyOcg()' "$AIROOM"
-          grep -q 'AIBootstrap.EnsureInstalled()' "$AIROOM"
-          grep -q 'startAI(' "$AIROOM"
-          grep -q 'AIデータが見つかりません' "$AIROOM"
-          grep -q 'koishi-ai-pack.zip' "$BOOTSTRAP"
+          grep -q 'KoishiWindBotBridge' "$AIROOM"
+          grep -q 'RadiantTyphoon' "$AIROOM"
+          grep -q 'new RadiantTyphoonLocalDuel' "$BRIDGE"
+          grep -q 'MasterRule = 5' "$BRIDGE"
+          grep -q 'class LocalDuelRouter' "$ROUTER"
+          grep -q 'ShouldHideFacedownCode' "$ROUTER"
+          grep -q 'AOT.MonoPInvokeCallback' "$NATIVE"
+          grep -q 'class RadiantTyphoonExecutor' "$EXECUTOR"
+          grep -q 'MainScriptBootstrap.EnsureInstalled();' "$PROGRAM"
+          ! grep -q 'AIBootstrap.EnsureInstalled();' "$PROGRAM"
+          ! test -e source/Assets/SibylSystem/precy.cs
+          ! test -e source/Assets/SibylSystem/coreWrapper.cs
+          ! test -e source/Assets/SibylSystem/AIBootstrap.cs
+          ! test -e source/Assets/Plugins/iOS/libocgcore.a
+
+          unzip -l "$SCRIPTS" | grep -q 'script/constant.lua'
+          unzip -l "$SCRIPTS" | grep -q 'script/utility.lua'
+          unzip -l "$SCRIPTS" | grep -q 'script/procedure.lua'
+          unzip -l "$SCRIPTS" | grep -q 'script/patches/entry.lua'
+
+          xcrun nm -gU "$CORE" > "$RUNNER_TEMP/koishi-core-symbols.txt"
+          for symbol in _create_duel_v2 _start_duel _end_duel _process _get_message _set_responseb _query_field_card _set_registry_value; do
+            grep -q "$symbol" "$RUNNER_TEMP/koishi-core-symbols.txt"
+          done
+
           python3 - "$MENU" <<'PY'
           from pathlib import Path
           import sys
-
           lines = Path(sys.argv[1]).read_text(encoding='utf-8-sig').splitlines()
-          active = [
-              line for line in lines
-              if line.strip() == 'UIHelper.registEvent(gameObject, "ai_", onClickAI);'
-          ]
+          active = [line for line in lines if line.strip() == 'UIHelper.registEvent(gameObject, "ai_", onClickAI);']
           if len(active) != 1:
               raise SystemExit(f'Expected exactly one active ai_ event registration; found {len(active)}')
           PY
-          grep -q 'EnableAiMenuEntry();' "$MENU"
-          grep -q 'System.Collections.Generic.List<Transform> columnItems' "$MENU"
-          grep -q 'Mathf.Abs(siblingPosition.x - p.x) > 12f' "$MENU"
-          grep -q 'bool foundExistingBounds = false;' "$MENU"
-          grep -q 'sibling == movable' "$MENU"
-          grep -q 'columnItems.Insert(0, movable);' "$MENU"
-          grep -q 'float rowSpacing = (topY - bottomY) / (columnItems.Count - 1);' "$MENU"
-          ! grep -q 'clone.name' "$MENU"
-          grep -q 'shiftToServant(Program.I().aiRoom)' "$MENU"
-          grep -q 'UseBundledBasicData();' "$PROGRAM"
-          ! grep -Eq '^[[:space:]]*RetryBasicDataUpdate\(\);[[:space:]]*$' "$PROGRAM"
-
-          echo '--- AI menu asset references ---'
-          grep -Rni --include='*.prefab' --include='*.unity' --include='*.asset' 'ai_' source/Assets | head -40 || true
-          echo '--- unsafe-code related project settings ---'
-          grep -RniE 'allowUnsafe|unsafe' source/ProjectSettings source/Assets/*.asmdef source/Assets/*/*.asmdef 2>/dev/null | head -40 || true
-          echo 'Managed AI restoration validation passed.'
-
-      - name: Build and validate ARM64 iOS AI core
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash control/patches/build_ai_core_ios.sh source
-          test -s source/Assets/Plugins/iOS/libocgcore.a
-          file source/Assets/Plugins/iOS/libocgcore.a
-          xcrun nm -gU source/Assets/Plugins/iOS/libocgcore.a > "$RUNNER_TEMP/ai-core-symbols.txt"
-          for symbol in _create_duel _preload_script _set_ai_id _set_chat_handler _get_ai_going_first_second; do
-            grep -q "$symbol" "$RUNNER_TEMP/ai-core-symbols.txt"
-          done
-          echo 'Native ARM64 iOS AI core validation passed.'
+          echo 'WindBot integration validation passed.'
 
       - name: Upload validation snapshot
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: KoishiPro2-ai-integration-validation
+          name: KoishiPro2-WindBot-integration-validation
           path: |
-            source/Assets/SibylSystem/coreWrapper.cs
-            source/Assets/SibylSystem/precy.cs
             source/Assets/SibylSystem/Room/AIRoom.cs
-            source/Assets/SibylSystem/AIBootstrap.cs
-            source/Assets/SibylSystem/Menu/Menu.cs
-            source/Assets/Plugins/iOS/libocgcore.a
-            source/Assets/Plugins/iOS/ocgcore-LICENSE.txt
-            source/Assets/StreamingAssets/koishi-ai-pack.zip
+            source/Assets/SibylSystem/KoishiWindBotBridge.cs
+            source/Assets/SibylSystem/WindBotRuntime/LocalRuntime/LocalDuelRouter.cs
+            source/Assets/SibylSystem/WindBotRuntime/LocalRuntime/LocalDuelNative.cs
+            source/Assets/SibylSystem/WindBotRuntime/Game/AI/Decks/RadiantTyphoonExecutor.cs
+            source/Assets/Plugins/iOS/libkoishi_ocgcore.a
+            source/Assets/Plugins/iOS/koishi-runtime-revisions.txt
+            source/Assets/StreamingAssets/WindBotData/windbot-revision.txt
+            source/Assets/StreamingAssets/WindBotData/Decks/AI_RadiantTyphoon.ydk
+            source/Assets/StreamingAssets/koishi-main-scripts-revision.txt
           if-no-files-found: warn
           retention-days: 1
