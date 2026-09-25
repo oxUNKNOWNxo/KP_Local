@@ -51,6 +51,7 @@ test -n "$CORE_SHA"
 test -n "$SCRIPT_SHA"
 
 fetch_commit "$CORE_REPO" "$CORE_SHA" "$WORK/core"
+python3 "$(cd "$(dirname "$0")" && pwd)/patch_koishi_core_alias_script.py" "$WORK/core"
 fetch_commit "$SCRIPT_REPO" "$SCRIPT_SHA" "$WORK/script"
 fetch_head "$WINDBOT_REPO" "$WORK/windbot"
 WINDBOT_SHA="$(git -C "$WORK/windbot" rev-parse HEAD)"

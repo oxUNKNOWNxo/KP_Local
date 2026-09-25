@@ -74,6 +74,7 @@ jobs:
           test -n "$CORE_SHA"
           test -n "$SCRIPT_SHA"
           fetch_commit https://github.com/purerosefallen/ygopro-core.git "$CORE_SHA" "$ROOT/core"
+          python3 windbot/patch_koishi_core_alias_script.py "$ROOT/core"
           fetch_commit https://github.com/Smile-DK/ygopro-scripts.git "$SCRIPT_SHA" "$ROOT/script"
 
           printf 'ygopro=%s\nocgcore=%s\nscript=%s\n' "$YGOPRO_SHA" "$CORE_SHA" "$SCRIPT_SHA" | tee "$ROOT/revisions.txt"
@@ -160,8 +161,15 @@ jobs:
           );
           INSERT INTO datas VALUES (19999999, 1, 0, 0, 33, 1200, 800, 4, 1, 1, 0);
           INSERT INTO texts VALUES (19999999, 'Expansion Smoke Monster', 'Expansion-only smoke card.');
+          INSERT INTO datas VALUES (19999998, 1, 55144522, 0, 33, 1300, 900, 4, 1, 1, 0);
+          INSERT INTO texts VALUES (19999998, 'Expansion Alias Smoke Monster', 'Distant-alias smoke card with its own script.');
           SQL
           cat > "$ROOT/expansions/script/c19999999.lua" <<'LUA'
+          local s,id=GetID()
+          function s.initial_effect(c)
+          end
+          LUA
+          cat > "$ROOT/expansions/script/c19999998.lua" <<'LUA'
           local s,id=GetID()
           function s.initial_effect(c)
           end
@@ -197,6 +205,8 @@ jobs:
           {
               private const int Chant = 67115133;
               private const int ExpansionMonster = 19999999;
+              private const int ExpansionAliasMonster = 19999998;
+              private const int ExpansionAliasTarget = 55144522;
               private const byte MsgSelectBattleCmd = 10;
               private const byte MsgSelectIdleCmd = 11;
               private const byte MsgSelectEffectYn = 12;
@@ -275,6 +285,7 @@ jobs:
                       LoadYdk(Path.Combine("Decks", "AI_RadiantTyphoon.ydk"), out main, out extra);
                       Console.WriteLine("proof deck main=" + main.Count + " extra=" + extra.Count);
                       main.Add(ExpansionMonster);
+                      main.Add(ExpansionAliasMonster);
 
                       var blueEyesRuntime = new WindBotLocalRuntime(
                           Directory.GetCurrentDirectory(),
@@ -294,24 +305,45 @@ jobs:
 
                       LocalDuelNative.CardProvider hostCardProvider = code =>
                       {
-                          if (code != ExpansionMonster)
-                              return null;
-                          return new CardRecord
+                          if (code == ExpansionMonster)
                           {
-                              Code = ExpansionMonster,
-                              Alias = 0,
-                              Setcode = 0,
-                              Type = 33,
-                              Level = 4,
-                              Attribute = 1,
-                              Race = 1,
-                              Attack = 1200,
-                              Defense = 800,
-                              LScale = 0,
-                              RScale = 0,
-                              LinkMarker = 0,
-                              RuleCode = 0
-                          };
+                              return new CardRecord
+                              {
+                                  Code = ExpansionMonster,
+                                  Alias = 0,
+                                  Setcode = 0,
+                                  Type = 33,
+                                  Level = 4,
+                                  Attribute = 1,
+                                  Race = 1,
+                                  Attack = 1200,
+                                  Defense = 800,
+                                  LScale = 0,
+                                  RScale = 0,
+                                  LinkMarker = 0,
+                                  RuleCode = 0
+                              };
+                          }
+                          if (code == ExpansionAliasMonster)
+                          {
+                              return new CardRecord
+                              {
+                                  Code = ExpansionAliasMonster,
+                                  Alias = ExpansionAliasTarget,
+                                  Setcode = 0,
+                                  Type = 33,
+                                  Level = 4,
+                                  Attribute = 1,
+                                  Race = 1,
+                                  Attack = 1300,
+                                  Defense = 900,
+                                  LScale = 0,
+                                  RScale = 0,
+                                  LinkMarker = 0,
+                                  RuleCode = 0
+                              };
+                          }
+                          return null;
                       };
 
                       using (var duel = new RadiantTyphoonLocalDuel(
@@ -450,6 +482,7 @@ jobs:
           LD_LIBRARY_PATH="$ROOT" mono "$ROOT/Smoke.exe" | tee "$ROOT/smoke.log"
           grep -q 'SMOKE: multi-deck registry verified;' "$ROOT/smoke.log"
           grep -q 'SMOKE: host card-data fallback and expansion script fallback verified.' "$ROOT/smoke.log"
+          grep -q 'using expansion card script: expansions/script/c19999998.lua' "$ROOT/smoke.log"
           grep -q 'WINDBOT_CHANT_TURN_SMOKE_OK' "$ROOT/smoke.log"
 
       - name: Upload smoke log

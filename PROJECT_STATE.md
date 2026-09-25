@@ -461,3 +461,36 @@ expansions/script/c<ID>.lua
 
 旧 `expansions/scripts` は使用しない。
 標準 `script/c<ID>.lua` が存在しないカードだけ、`expansions/script/c<ID>.lua` をfallbackとして読む。
+
+
+---
+
+## 17. aliasとカードスクリプト選択
+
+2026-09-26、ユーザー実機確認で、CDBの `alias` を持つ原作寄り改変カードがalias先のOCG版Luaを使う問題を確認。
+
+旧Koishi/purerosefallen coreでは:
+
+```
+get_original_code() = alias ? alias : code
+register_card() -> load_card_script(get_original_code())
+```
+
+だったため、aliasが遠い別IDでも無条件でalias先 `c<alias>.lua` を使用していた。
+
+現在は現行EDOProの挙動に合わせる。
+
+- `alias` と本人 `code` が±10未満の近接ID:
+  - alternate printingとしてalias先スクリプトを使用
+- それ以外の遠いalias:
+  - 本人 `code` のスクリプトを使用
+  - 追加カードなら `expansions/script/c<code>.lua` へfallback
+
+alias値自体は0に潰さない。カード名・同名判定などalias本来の意味は保持し、スクリプト選択だけを互換修正する。
+
+実装:
+- `windbot/patch_koishi_core_alias_script.py`
+- iOS core buildとhost duel smokeの両方で同じpatchを適用
+
+回帰テストでは、遠いaliasを持つ expansion-only カードにも本人IDのLuaを用意し、
+ログが `expansions/script/c<本人ID>.lua` を読むことを確認する。
