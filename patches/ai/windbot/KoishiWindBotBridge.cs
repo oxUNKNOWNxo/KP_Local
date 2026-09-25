@@ -43,6 +43,7 @@ public sealed class KoishiWindBotBridge
                 dbPath,
                 ReceiveHumanGameMessage,
                 message => Program.DEBUGLOG("[WindBot] " + message),
+                ReadHostCard,
                 playerGoFirst);
 
             duel.Start(main, extra, noShuffle, life, 5, 1, 5);
@@ -56,6 +57,30 @@ public sealed class KoishiWindBotBridge
             Dispose();
             return false;
         }
+    }
+
+    private static CardRecord ReadHostCard(uint code)
+    {
+        YGOSharp.Card card = YGOSharp.CardsManager.GetCard((int)code);
+        if (card == null)
+            return null;
+
+        return new CardRecord
+        {
+            Code = (uint)card.Id,
+            Alias = (uint)card.Alias,
+            Setcode = card.Setcode,
+            Type = (uint)card.Type,
+            Level = (uint)card.Level,
+            Attribute = (uint)card.Attribute,
+            Race = (uint)card.Race,
+            Attack = card.Attack,
+            Defense = card.Defense,
+            LScale = (uint)card.LScale,
+            RScale = (uint)card.RScale,
+            LinkMarker = (uint)card.LinkMarker,
+            RuleCode = (uint)card.RuleCode
+        };
     }
 
     private void PrepareOcgcore(bool playerGoFirst, int life)
