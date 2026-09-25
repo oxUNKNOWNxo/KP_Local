@@ -102,23 +102,126 @@ jobs:
           ROUTER='source/Assets/SibylSystem/WindBotRuntime/LocalRuntime/LocalDuelRouter.cs'
           NATIVE='source/Assets/SibylSystem/WindBotRuntime/LocalRuntime/LocalDuelNative.cs'
           EXECUTOR='source/Assets/SibylSystem/WindBotRuntime/Game/AI/Decks/RadiantTyphoonExecutor.cs'
+          ALTEXECUTOR='source/Assets/SibylSystem/WindBotRuntime/Game/AI/Decks/BlueEyesExecutor.cs'
           DECK='source/Assets/StreamingAssets/WindBotData/Decks/AI_RadiantTyphoon.ydk'
+          ALTDECK='source/Assets/StreamingAssets/WindBotData/Decks/AI_BlueEyes.ydk'
+          CATALOG='source/Assets/StreamingAssets/WindBotData/deck-catalog.tsv'
           DIALOG='source/Assets/StreamingAssets/WindBotData/Dialogs/wof-Kasumisawa-Haruma.json'
           CORE='source/Assets/Plugins/iOS/libkoishi_ocgcore.a'
           SCRIPTS='source/Assets/StreamingAssets/koishi-main-script-update.zip'
 
-          for f in "$PROGRAM" "$MENU" "$AIROOM" "$BRIDGE" "$ROUTER" "$NATIVE" "$EXECUTOR" "$DECK" "$DIALOG" "$CORE" "$SCRIPTS"; do
+          for f in "$PROGRAM" "$MENU" "$AIROOM" "$BRIDGE" "$ROUTER" "$NATIVE" "$EXECUTOR" "$ALTEXECUTOR" "$DECK" "$ALTDECK" "$CATALOG" "$DIALOG" "$CORE" "$SCRIPTS"; do
             test -s "$f"
           done
 
           grep -q 'KoishiWindBotBridge' "$AIROOM"
-          grep -q 'RadiantTyphoon' "$AIROOM"
+          grep -q 'GetDeckNames' "$AIROOM"
+          grep -q 'StartAI(playerDeck, aiDeck' "$AIROOM"
           grep -q 'new RadiantTyphoonLocalDuel' "$BRIDGE"
+          grep -q 'GetDeckFile(aiDeckName)' "$BRIDGE"
           grep -q 'MasterRule = 5' "$BRIDGE"
           grep -q 'class LocalDuelRouter' "$ROUTER"
           grep -q 'ShouldHideFacedownCode' "$ROUTER"
           grep -q 'AOT.MonoPInvokeCallback' "$NATIVE"
           grep -q 'class RadiantTyphoonExecutor' "$EXECUTOR"
+          grep -q 'class BlueEyesExecutor' "$ALTEXECUTOR"
+          grep -q           grep -q 'MainScriptBootstrap.EnsureInstalled();' "$PROGRAM"
+          ! grep -q 'AIBootstrap.EnsureInstalled();' "$PROGRAM"
+          ! test -e source/Assets/SibylSystem/precy.cs
+          ! test -e source/Assets/SibylSystem/coreWrapper.cs
+          ! test -e source/Assets/SibylSystem/AIBootstrap.cs
+          ! test -e source/Assets/Plugins/iOS/libocgcore.a
+
+          unzip -l "$SCRIPTS" | grep -q 'script/constant.lua'
+          unzip -l "$SCRIPTS" | grep -q 'script/utility.lua'
+          unzip -l "$SCRIPTS" | grep -q 'script/procedure.lua'
+          unzip -l "$SCRIPTS" | grep -q 'script/patches/entry.lua'
+
+          xcrun nm -gU "$CORE" > "$RUNNER_TEMP/koishi-core-symbols.txt"
+          for symbol in _create_duel_v2 _start_duel _end_duel _process _get_message _set_responseb _query_field_card _set_registry_value; do
+            grep -q "$symbol" "$RUNNER_TEMP/koishi-core-symbols.txt"
+          done
+
+          python3 - "$MENU" <<'PY'
+          from pathlib import Path
+          import sys
+          lines = Path(sys.argv[1]).read_text(encoding='utf-8-sig').splitlines()
+          active = [line for line in lines if line.strip() == 'UIHelper.registEvent(gameObject, "ai_", onClickAI);']
+          if len(active) != 1:
+              raise SystemExit(f'Expected exactly one active ai_ event registration; found {len(active)}')
+          PY
+          echo 'WindBot integration validation passed.'
+
+      - name: Upload validation snapshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: KoishiPro2-WindBot-integration-validation
+          path: |
+            source/Assets/SibylSystem/Room/AIRoom.cs
+            source/Assets/SibylSystem/KoishiWindBotBridge.cs
+            source/Assets/SibylSystem/WindBotRuntime/LocalRuntime/LocalDuelRouter.cs
+            source/Assets/SibylSystem/WindBotRuntime/LocalRuntime/LocalDuelNative.cs
+            source/Assets/SibylSystem/WindBotRuntime/Game/AI/Decks/RadiantTyphoonExecutor.cs
+            source/Assets/SibylSystem/WindBotRuntime/Game/AI/Decks/BlueEyesExecutor.cs
+            source/Assets/StreamingAssets/WindBotData/deck-catalog.tsv
+            source/Assets/Plugins/iOS/libkoishi_ocgcore.a
+            source/Assets/Plugins/iOS/koishi-runtime-revisions.txt
+            source/Assets/StreamingAssets/WindBotData/windbot-revision.txt
+            source/Assets/StreamingAssets/WindBotData/Decks/AI_RadiantTyphoon.ydk
+            source/Assets/StreamingAssets/koishi-main-scripts-revision.txt
+          if-no-files-found: warn
+          retention-days: 1
+^Blue-Eyes\\tAI_BlueEyes\\t' "$CATALOG"
+          grep -q           grep -q 'MainScriptBootstrap.EnsureInstalled();' "$PROGRAM"
+          ! grep -q 'AIBootstrap.EnsureInstalled();' "$PROGRAM"
+          ! test -e source/Assets/SibylSystem/precy.cs
+          ! test -e source/Assets/SibylSystem/coreWrapper.cs
+          ! test -e source/Assets/SibylSystem/AIBootstrap.cs
+          ! test -e source/Assets/Plugins/iOS/libocgcore.a
+
+          unzip -l "$SCRIPTS" | grep -q 'script/constant.lua'
+          unzip -l "$SCRIPTS" | grep -q 'script/utility.lua'
+          unzip -l "$SCRIPTS" | grep -q 'script/procedure.lua'
+          unzip -l "$SCRIPTS" | grep -q 'script/patches/entry.lua'
+
+          xcrun nm -gU "$CORE" > "$RUNNER_TEMP/koishi-core-symbols.txt"
+          for symbol in _create_duel_v2 _start_duel _end_duel _process _get_message _set_responseb _query_field_card _set_registry_value; do
+            grep -q "$symbol" "$RUNNER_TEMP/koishi-core-symbols.txt"
+          done
+
+          python3 - "$MENU" <<'PY'
+          from pathlib import Path
+          import sys
+          lines = Path(sys.argv[1]).read_text(encoding='utf-8-sig').splitlines()
+          active = [line for line in lines if line.strip() == 'UIHelper.registEvent(gameObject, "ai_", onClickAI);']
+          if len(active) != 1:
+              raise SystemExit(f'Expected exactly one active ai_ event registration; found {len(active)}')
+          PY
+          echo 'WindBot integration validation passed.'
+
+      - name: Upload validation snapshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: KoishiPro2-WindBot-integration-validation
+          path: |
+            source/Assets/SibylSystem/Room/AIRoom.cs
+            source/Assets/SibylSystem/KoishiWindBotBridge.cs
+            source/Assets/SibylSystem/WindBotRuntime/LocalRuntime/LocalDuelRouter.cs
+            source/Assets/SibylSystem/WindBotRuntime/LocalRuntime/LocalDuelNative.cs
+            source/Assets/SibylSystem/WindBotRuntime/Game/AI/Decks/RadiantTyphoonExecutor.cs
+            source/Assets/Plugins/iOS/libkoishi_ocgcore.a
+            source/Assets/Plugins/iOS/koishi-runtime-revisions.txt
+            source/Assets/StreamingAssets/WindBotData/windbot-revision.txt
+            source/Assets/StreamingAssets/WindBotData/Decks/AI_RadiantTyphoon.ydk
+            source/Assets/StreamingAssets/koishi-main-scripts-revision.txt
+          if-no-files-found: warn
+          retention-days: 1
+^RadiantTyphoon\\tAI_RadiantTyphoon\\t' "$CATALOG"
+          deck_count=$(tail -n +2 "$CATALOG" | wc -l | tr -d ' ')
+          echo "registered WindBot decks=$deck_count"
+          test "$deck_count" -gt 20
           grep -q 'MainScriptBootstrap.EnsureInstalled();' "$PROGRAM"
           ! grep -q 'AIBootstrap.EnsureInstalled();' "$PROGRAM"
           ! test -e source/Assets/SibylSystem/precy.cs

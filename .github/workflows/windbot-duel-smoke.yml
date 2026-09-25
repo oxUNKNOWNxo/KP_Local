@@ -125,6 +125,9 @@ jobs:
           cp -R "$RUNNER_TEMP/subset/data/Decks" "$ROOT/Decks"
           cp -R "$RUNNER_TEMP/subset/data/Dialogs" "$ROOT/Dialogs"
           test -s "$ROOT/Decks/AI_RadiantTyphoon.ydk"
+          test -s "$ROOT/Decks/AI_BlueEyes.ydk"
+          cp "$RUNNER_TEMP/subset/data/deck-catalog.tsv" "$ROOT/deck-catalog.tsv"
+          test -s "$ROOT/deck-catalog.tsv"
           test -s "$ROOT/Dialogs/wof-Kasumisawa-Haruma.json"
           test -s "$ROOT/script/constant.lua"
           test -s "$ROOT/script/utility.lua"
@@ -188,6 +191,7 @@ jobs:
           using System.IO;
           using System.Reflection;
           using KoishiWindBot.Local;
+          using WindBot.Local;
 
           public static class Smoke
           {
@@ -272,6 +276,22 @@ jobs:
                       Console.WriteLine("proof deck main=" + main.Count + " extra=" + extra.Count);
                       main.Add(ExpansionMonster);
 
+                      var blueEyesRuntime = new WindBotLocalRuntime(
+                          Directory.GetCurrentDirectory(),
+                          Path.Combine(Directory.GetCurrentDirectory(), "cards.cdb"),
+                          "Blue-Eyes",
+                          "AI_BlueEyes",
+                          packet => { });
+                      if (blueEyesRuntime.ExecutorName != "BlueEyesExecutor")
+                          throw new Exception("Blue-Eyes executor registry mismatch: " + blueEyesRuntime.ExecutorName);
+
+                      string[] registeredDecks = WindBot.Game.AI.DecksManager.GetDeckNames();
+                      if (registeredDecks.Length < 20)
+                          throw new Exception("Too few WindBot decks registered: " + registeredDecks.Length);
+                      if (WindBot.Game.AI.DecksManager.GetDeckFile("RadiantTyphoon") != "AI_RadiantTyphoon")
+                          throw new Exception("RadiantTyphoon deck-file mapping is incorrect.");
+                      Console.WriteLine("SMOKE: multi-deck registry verified; count=" + registeredDecks.Length);
+
                       LocalDuelNative.CardProvider hostCardProvider = code =>
                       {
                           if (code != ExpansionMonster)
@@ -297,6 +317,8 @@ jobs:
                       using (var duel = new RadiantTyphoonLocalDuel(
                           Directory.GetCurrentDirectory(),
                           Path.Combine(Directory.GetCurrentDirectory(), "cards.cdb"),
+                          "RadiantTyphoon",
+                          "AI_RadiantTyphoon",
                           OnHumanMessage,
                           log => Console.WriteLine(log),
                           hostCardProvider,
@@ -426,6 +448,7 @@ jobs:
           ROOT="$RUNNER_TEMP/host-runtime"
           cd "$ROOT"
           LD_LIBRARY_PATH="$ROOT" mono "$ROOT/Smoke.exe" | tee "$ROOT/smoke.log"
+          grep -q 'SMOKE: multi-deck registry verified;' "$ROOT/smoke.log"
           grep -q 'SMOKE: host card-data fallback and expansion script fallback verified.' "$ROOT/smoke.log"
           grep -q 'WINDBOT_CHANT_TURN_SMOKE_OK' "$ROOT/smoke.log"
 
