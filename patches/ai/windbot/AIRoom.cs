@@ -11,7 +11,7 @@ public class AIRoom : WindowServantSP
     UIPopupList list_airank;
     KoishiWindBotBridge windbot;
     string[] aiDeckNames = new string[0];
-    const int AiDecksPerPage = 12;
+    const int AiDecksPerPage = 8;
     int aiDeckPage = 0;
 
     public override void initialize()
@@ -45,12 +45,19 @@ public class AIRoom : WindowServantSP
     {
         if (list_airank != null && !String.IsNullOrWhiteSpace(list_airank.value))
         {
-            int selectedPage = ParseAiDeckPage(list_airank.value);
-            if (selectedPage != aiDeckPage)
+            string nav = list_airank.value;
+            if (nav == "前のAI")
             {
-                aiDeckPage = selectedPage;
-                Config.Set("list_airank", FormatAiDeckPage(aiDeckPage));
+                aiDeckPage = Math.Max(0, aiDeckPage - 1);
                 RebuildAiDeckPage();
+                RebuildAiPageNavigator();
+                return;
+            }
+            if (nav == "次のAI")
+            {
+                aiDeckPage = Math.Min(AiDeckPageCount() - 1, aiDeckPage + 1);
+                RebuildAiDeckPage();
+                RebuildAiPageNavigator();
                 return;
             }
         }
@@ -69,21 +76,23 @@ public class AIRoom : WindowServantSP
         return "AI " + (page + 1) + "/" + AiDeckPageCount();
     }
 
-    int ParseAiDeckPage(string value)
+    void RebuildAiPageNavigator()
     {
-        if (String.IsNullOrEmpty(value))
-            return 0;
+        if (list_airank == null)
+            return;
 
-        int slash = value.IndexOf('/');
-        int space = value.LastIndexOf(' ', slash >= 0 ? slash : value.Length - 1);
-        if (slash <= 0 || space < 0)
-            return 0;
+        list_airank.Clear();
+        if (aiDeckPage > 0)
+            list_airank.AddItem("前のAI");
 
-        int page;
-        if (!Int32.TryParse(value.Substring(space + 1, slash - space - 1), out page))
-            return 0;
+        string current = FormatAiDeckPage(aiDeckPage);
+        list_airank.AddItem(current);
 
-        return Math.Max(0, Math.Min(AiDeckPageCount() - 1, page - 1));
+        if (aiDeckPage + 1 < AiDeckPageCount())
+            list_airank.AddItem("次のAI");
+
+        list_airank.value = current;
+        Config.Set("list_airank", current);
     }
 
     void RebuildAiDeckPage()
@@ -187,12 +196,7 @@ public class AIRoom : WindowServantSP
         else
             aiDeckPage = 0;
 
-        list_airank.Clear();
-        for (int page = 0; page < AiDeckPageCount(); ++page)
-            list_airank.AddItem(FormatAiDeckPage(page));
-        list_airank.value = FormatAiDeckPage(aiDeckPage);
-        Config.Set("list_airank", list_airank.value);
-
+        RebuildAiPageNavigator();
         RebuildAiDeckPage();
     }
 

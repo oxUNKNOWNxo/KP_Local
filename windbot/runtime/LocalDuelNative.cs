@@ -249,7 +249,7 @@ namespace KoishiWindBot.Local
             }
 
             // The bundled WindBotData scripts remain authoritative.  The
-            // expansions/scripts folder is only a fallback for card scripts
+            // expansions/script folder is only a fallback for card scripts
             // that are not present in the bundled script snapshot, allowing
             // newly announced cards to be tested before the bundled scripts
             // catch up without overriding an existing standard script.
@@ -285,7 +285,7 @@ namespace KoishiWindBot.Local
                     return null;
             }
 
-            return Path.Combine("expansions", "scripts", fileName);
+            return Path.Combine("expansions", "script", fileName);
         }
 
 #if UNITY_IOS && !UNITY_EDITOR

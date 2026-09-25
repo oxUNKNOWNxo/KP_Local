@@ -17,10 +17,10 @@
 - **AI対戦が正常に開始・進行する**
 - 相手AIとして WindBot / Radiant Typhoon が正常稼働する
 - **`expansions/*.cdb` にのみ存在する追加カードが正常なカード種別で扱われる**
-- **`expansions/scripts/c<ID>.lua` に置いた追加カードLuaが正常に利用される**
-- 既存カードの標準Luaは、`expansions/scripts` によって不用意に上書きされない
+- **`expansions/script/c<ID>.lua` に置いた追加カードLuaが正常に利用される**
+- 既存カードの標準Luaは、`expansions/script` によって不用意に上書きされない
 - 画面の縦横比は実機で想定どおり
-- iPhone X横画面のノッチ側余白は、左右方向の誤りを修正済み
+- iPhone X横画面のノッチ側余白は、左右方向・余分な隙間ともに実機で解消確認済み
 - AI選択画面の不要な空行問題は修正済み
 
 正常基準の主なCI:
@@ -107,7 +107,7 @@ KoishiPro2本体の YGOSharp.CardsManager に問い合わせる
 追加Luaは
 
 ```
-expansions/scripts/c12345678.lua
+expansions/script/c12345678.lua
 ```
 
 形式。
@@ -123,14 +123,14 @@ ocgcoreが
 1. まず通常のバンドル済み標準スクリプトを探す
 2. 標準側に存在する場合はそれを使う
 3. **標準側に存在しないカードスクリプトの場合のみ**
-   `expansions/scripts/c<ID>.lua` を探す
+   `expansions/script/c<ID>.lua` を探す
 4. 見つかればそれを使用
 
-つまり `expansions/scripts` は「既存カードLuaのMOD上書き機構」ではなく、
+つまり `expansions/script` は「既存カードLuaのMOD上書き機構」ではなく、
 **まだ標準スクリプトに入っていない超先行カードを補完するための機構**として扱う。
 
 `utility.lua`, `procedure.lua`, `constant.lua` などの共通スクリプトを
-`expansions/scripts` から任意に差し替える設計にはしない。
+`expansions/script` から任意に差し替える設計にはしない。
 
 ---
 
@@ -168,7 +168,7 @@ WindBot managed runtime
   - ocgcore P/Invoke
   - カードデータreader
   - Lua script reader
-  - `expansions/scripts` フォールバック
+  - `expansions/script` フォールバック
 - `windbot/runtime/LocalDuelRouter.cs`
   - ocgcoreメッセージとWindBot/人間クライアント間のルーティング
 - `windbot/prepare_windbot_subset.sh`
@@ -210,7 +210,7 @@ AIターン完走スモークが成功している。
 
 コミット:
 - `718569735e446ab4495b8aee970cb8f9e5684658`
-  - 標準に無いカードLuaを `expansions/scripts` から補完
+  - 標準に無いカードLuaを `expansions/script` から補完
 
 これは現在も有効な方向性。
 
@@ -329,7 +329,7 @@ UI一覧ロジックを触る場合は再発に注意。
 
 - 標準 `cards.cdb` には存在しない
 - host側カードデータfallbackでモンスター情報を供給
-- `expansions/scripts/c19999999.lua` を補完
+- `expansions/script/c19999999.lua` を補完
 - AIターンを完走
 
 まで確認する。
@@ -391,7 +391,7 @@ iOS cloud buildで利用しているKoishiPro2ソース:
 4. 追加カード問題の場合は、
    **WindBot側でCDBを再読込しない**ことを最初に確認
 5. Lua問題の場合は、
-   「標準Luaが無い時だけ `expansions/scripts/c<ID>.lua`」
+   「標準Luaが無い時だけ `expansions/script/c<ID>.lua`」
    という現在仕様を維持
 6. AI進行停止の場合は、
    `LocalDuelRouter.cs` と current-core message parsing の回帰を疑う
@@ -414,10 +414,50 @@ iOS cloud buildで利用しているKoishiPro2ソース:
 - ローカルWindBot
 - Radiant Typhoon AI
 - `expansions/*.cdb` の超先行カード
-- `expansions/scripts/c<ID>.lua` の超先行カード効果
+- `expansions/script/c<ID>.lua` の超先行カード効果
 
 を同時に利用できる状態まで到達している。
 
 **ユーザー実機でAI対戦と追加カードの正常動作を確認済み。**
 
 今後の変更では、この状態を「動作基準」として扱うこと。
+
+
+---
+
+## 14. WindBot AI多デッキ化
+
+2026-09-26時点で、Radiant Typhoon固定から複数AI対応へ拡張。
+
+- upstream WindBotの `[Deck(...)]` と対応YDKをビルド時に解析
+- IL2CPP対策としてReflection/Activator.CreateInstanceには戻さず、直接 `new XxxExecutor(...)` するregistryを自動生成
+- 対応YDKが存在するAIを登録
+- 検証時点では72デッキを登録
+- `OldSchool` はupstreamに対応YDKが無いため除外
+- Blue-Eyesを代表としてRadiant以外のExecutor生成をCIで確認
+
+AI選択UIはNGUIの長いPopupListが画面外へ見切れるため、1ページ8件とし、
+rank欄を「前のAI / AI x/y / 次のAI」のページ移動に利用する。
+長いドロップダウンのスクロール機能には依存しない。
+
+## 15. デッキシャッフル
+
+AI対戦UIの `unrand_` が「シャッフルなし」指定。
+
+- OFF: 通常のocgcoreシャッフル
+- ON: `DUEL_PSEUDO_SHUFFLE (0x10)` を設定し、メインデッキのランダム化を抑止
+
+したがって、OFFでも毎回同じ初手になる場合は仕様ではなく回帰として調査する。
+
+## 16. expansion Luaフォルダ名
+
+追加カードLuaの正式な配置先は今後
+
+```
+expansions/script/c<ID>.lua
+```
+
+とする。
+
+旧 `expansions/scripts` は使用しない。
+標準 `script/c<ID>.lua` が存在しないカードだけ、`expansions/script/c<ID>.lua` をfallbackとして読む。

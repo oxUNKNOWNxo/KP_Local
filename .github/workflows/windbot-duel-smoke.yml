@@ -138,7 +138,7 @@ jobs:
           # the downloaded base cards.cdb. It verifies that local WindBot and
           # ocgcore can consume data/scripts for newly announced cards from
           # expansions without overriding the bundled database.
-          mkdir -p "$ROOT/expansions/scripts"
+          mkdir -p "$ROOT/expansions/script"
           sqlite3 "$ROOT/expansions/early-card.cdb" <<'SQL'
           CREATE TABLE datas (
             id integer primary key,
@@ -161,7 +161,7 @@ jobs:
           INSERT INTO datas VALUES (19999999, 1, 0, 0, 33, 1200, 800, 4, 1, 1, 0);
           INSERT INTO texts VALUES (19999999, 'Expansion Smoke Monster', 'Expansion-only smoke card.');
           SQL
-          cat > "$ROOT/expansions/scripts/c19999999.lua" <<'LUA'
+          cat > "$ROOT/expansions/script/c19999999.lua" <<'LUA'
           local s,id=GetID()
           function s.initial_effect(c)
           end
