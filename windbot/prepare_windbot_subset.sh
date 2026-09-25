@@ -89,6 +89,183 @@ for path in root.rglob("*.cs"):
         text = text.replace(old, new)
     path.write_text(text, encoding="utf-8")
 
+
+# WindBot keeps its own card database separate from KoishiPro2's YGOSharp
+# database. Load expansion CDBs as a fallback as well so cards that are newer
+# than the bundled cards.cdb retain their real type/stats in the local duel.
+cards_mgr = root / "YGOSharp.OCGWrapper/CardsManager.cs"
+text = cards_mgr.read_text(encoding="utf-8")
+text = text.replace("using System.Data;\\n", "using System.Data;\\nusing System;\\nusing System.IO;\\n")
+old = """        internal static void Init(string databaseFullPath)
+        {
+            _cards = new Dictionary<int, Card>();
+
+            using (SqliteConnection connection = new SqliteConnection("Data Source=" + databaseFullPath))
+            {
+                connection.Open();
+
+                using (IDbCommand command = new SqliteCommand("SELECT id, ot, alias, setcode, type, level, race, attribute, atk, def FROM datas", connection))
+                {
+                    using (IDataReader reader = command.ExecuteReader())
+                    {
+                        while (reader.Read())
+                        {
+                            LoadCard(reader);
+                        }
+                    }
+                }
+            }
+        }
+"""
+new = """        internal static void Init(string databaseFullPath)
+        {
+            _cards = new Dictionary<int, Card>();
+            LoadDatabase(databaseFullPath);
+            LoadExpansionDatabases(databaseFullPath);
+        }
+
+        private static void LoadExpansionDatabases(string baseDatabase)
+        {
+            string expansionDirectory = Path.Combine(Directory.GetCurrentDirectory(), "expansions");
+            if (!Directory.Exists(expansionDirectory))
+                return;
+
+            string baseFullPath = Path.GetFullPath(baseDatabase);
+            foreach (string path in Directory.GetFiles(expansionDirectory, "*.cdb"))
+            {
+                if (string.Equals(Path.GetFullPath(path), baseFullPath, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                LoadDatabase(path);
+            }
+        }
+
+        private static void LoadDatabase(string databaseFullPath)
+        {
+            using (SqliteConnection connection = new SqliteConnection("Data Source=" + databaseFullPath))
+            {
+                connection.Open();
+
+                using (IDbCommand command = new SqliteCommand("SELECT id, ot, alias, setcode, type, level, race, attribute, atk, def FROM datas", connection))
+                {
+                    using (IDataReader reader = command.ExecuteReader())
+                    {
+                        while (reader.Read())
+                            LoadCard(reader);
+                    }
+                }
+            }
+        }
+"""
+if old not in text:
+    raise SystemExit("CardsManager Init anchor not found")
+text = text.replace(old, new, 1)
+old = """        private static void LoadCard(IDataRecord reader)
+        {
+            Card card = new Card(reader);
+            _cards.Add(card.Id, card);
+        }
+"""
+new = """        private static void LoadCard(IDataRecord reader)
+        {
+            Card card = new Card(reader);
+            if (!_cards.ContainsKey(card.Id))
+                _cards.Add(card.Id, card);
+        }
+"""
+if old not in text:
+    raise SystemExit("CardsManager LoadCard anchor not found")
+cards_mgr.write_text(text, encoding="utf-8")
+
+named_mgr = root / "YGOSharp.OCGWrapper/NamedCardsManager.cs"
+text = named_mgr.read_text(encoding="utf-8")
+old = """                _cards = new Dictionary<int, NamedCard>();
+
+                using (SqliteConnection connection = new SqliteConnection("Data Source=" + databaseFullPath))
+                {
+                    connection.Open();
+
+                    using (IDbCommand command = new SqliteCommand(
+                        "SELECT datas.id, ot, alias, setcode, type, level, race, attribute, atk, def, texts.name, texts.desc"
+                        + " FROM datas INNER JOIN texts ON datas.id = texts.id",
+                        connection))
+                    {
+                        using (IDataReader reader = command.ExecuteReader())
+                        {
+                            while (reader.Read())
+                            {
+                                LoadCard(reader);
+                            }
+                        }
+                    }
+                }
+"""
+new = """                _cards = new Dictionary<int, NamedCard>();
+                LoadDatabase(databaseFullPath);
+                LoadExpansionDatabases(databaseFullPath);
+"""
+if old not in text:
+    raise SystemExit("NamedCardsManager Init anchor not found")
+text = text.replace(old, new, 1)
+insert_before = """        internal static NamedCard GetCard(int id)
+"""
+helpers = """        private static void LoadExpansionDatabases(string baseDatabase)
+        {
+            string expansionDirectory = Path.Combine(Directory.GetCurrentDirectory(), "expansions");
+            if (!Directory.Exists(expansionDirectory))
+                return;
+
+            string baseFullPath = Path.GetFullPath(baseDatabase);
+            foreach (string path in Directory.GetFiles(expansionDirectory, "*.cdb"))
+            {
+                if (string.Equals(Path.GetFullPath(path), baseFullPath, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                LoadDatabase(path);
+            }
+        }
+
+        private static void LoadDatabase(string databaseFullPath)
+        {
+            using (SqliteConnection connection = new SqliteConnection("Data Source=" + databaseFullPath))
+            {
+                connection.Open();
+
+                using (IDbCommand command = new SqliteCommand(
+                    "SELECT datas.id, ot, alias, setcode, type, level, race, attribute, atk, def, texts.name, texts.desc"
+                    + " FROM datas INNER JOIN texts ON datas.id = texts.id",
+                    connection))
+                {
+                    using (IDataReader reader = command.ExecuteReader())
+                    {
+                        while (reader.Read())
+                            LoadCard(reader);
+                    }
+                }
+            }
+        }
+
+"""
+if insert_before not in text:
+    raise SystemExit("NamedCardsManager insertion anchor not found")
+text = text.replace(insert_before, helpers + insert_before, 1)
+old = """        private static void LoadCard(IDataRecord reader)
+        {
+            NamedCard card = new NamedCard(reader);
+            _cards.Add(card.Id, card);
+        }
+"""
+new = """        private static void LoadCard(IDataRecord reader)
+        {
+            NamedCard card = new NamedCard(reader);
+            if (!_cards.ContainsKey(card.Id))
+                _cards.Add(card.Id, card);
+        }
+"""
+if old not in text:
+    raise SystemExit("NamedCardsManager LoadCard anchor not found")
+text = text.replace(old, new, 1)
+named_mgr.write_text(text, encoding="utf-8")
+
+
 deck_mgr = root / "Game/AI/DecksManager.cs"
 text = deck_mgr.read_text(encoding="utf-8")
 text = text.replace("using System.Reflection;\n", "")
