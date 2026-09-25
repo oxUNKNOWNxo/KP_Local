@@ -72,6 +72,8 @@ jobs:
           grep -R -q 'class BlueEyesExecutor' "$RUNNER_TEMP/windbot-subset/src"
           grep -R -q 'class RyzealExecutor' "$RUNNER_TEMP/windbot-subset/src"
           grep -R -q 'explicit iOS registry' "$RUNNER_TEMP/windbot-subset/src"
+          grep -R -q 'public int ChooseRockPaperScissors()' "$RUNNER_TEMP/windbot-subset/src"
+          grep -R -q 'public bool ChooseFirst()' "$RUNNER_TEMP/windbot-subset/src"
           awk -F '\t' '$1=="Blue-Eyes" && $2=="AI_BlueEyes" { found=1 } END { exit(found ? 0 : 1) }' "$CATALOG"
           awk -F '\t' '$1=="RadiantTyphoon" && $2=="AI_RadiantTyphoon" { found=1 } END { exit(found ? 0 : 1) }' "$CATALOG"
           deck_count=$(tail -n +2 "$CATALOG" | wc -l | tr -d ' ')
