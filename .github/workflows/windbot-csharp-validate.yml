@@ -44,24 +44,40 @@ jobs:
           set -euo pipefail
           mapfile -t SOURCES < <(find "$RUNNER_TEMP/windbot-subset/src" -type f -name '*.cs' | sort)
           printf 'Compiling %s C# files\n' "${#SOURCES[@]}"
-          mcs             -unsafe             -langversion:latest             -target:library             -optimize+             -out:"$RUNNER_TEMP/windbot-subset/KoishiWindBotMultiDeck.dll"             -r:System.Core             -r:System.Data             -r:System.Runtime.Serialization             -r:Mono.Data.Sqlite             "${SOURCES[@]}"
+          mcs \
+            -unsafe \
+            -langversion:latest \
+            -target:library \
+            -optimize+ \
+            -out:"$RUNNER_TEMP/windbot-subset/KoishiWindBotMultiDeck.dll" \
+            -r:System.Core \
+            -r:System.Data \
+            -r:System.Runtime.Serialization \
+            -r:Mono.Data.Sqlite \
+            "${SOURCES[@]}"
           test -s "$RUNNER_TEMP/windbot-subset/KoishiWindBotMultiDeck.dll"
           monodis --assembly "$RUNNER_TEMP/windbot-subset/KoishiWindBotMultiDeck.dll"
 
-      - name: Verify proof payload
+      - name: Verify multi-deck payload
         shell: bash
         run: |
           set -euo pipefail
+          CATALOG="$RUNNER_TEMP/windbot-subset/data/deck-catalog.tsv"
           test -s "$RUNNER_TEMP/windbot-subset/data/Decks/AI_RadiantTyphoon.ydk"
           test -s "$RUNNER_TEMP/windbot-subset/data/Decks/AI_BlueEyes.ydk"
-          test -s "$RUNNER_TEMP/windbot-subset/data/deck-catalog.tsv"
+          test -s "$CATALOG"
           test -s "$RUNNER_TEMP/windbot-subset/data/Dialogs/wof-Kasumisawa-Haruma.json"
           test -s "$RUNNER_TEMP/windbot-subset/windbot-revision.txt"
           grep -R -q 'class RadiantTyphoonExecutor' "$RUNNER_TEMP/windbot-subset/src"
           grep -R -q 'class BlueEyesExecutor' "$RUNNER_TEMP/windbot-subset/src"
           grep -R -q 'class RyzealExecutor' "$RUNNER_TEMP/windbot-subset/src"
           grep -R -q 'explicit iOS registry' "$RUNNER_TEMP/windbot-subset/src"
-          grep -q 
+          awk -F '\t' '$1=="Blue-Eyes" && $2=="AI_BlueEyes" { found=1 } END { exit(found ? 0 : 1) }' "$CATALOG"
+          awk -F '\t' '$1=="RadiantTyphoon" && $2=="AI_RadiantTyphoon" { found=1 } END { exit(found ? 0 : 1) }' "$CATALOG"
+          deck_count=$(tail -n +2 "$CATALOG" | wc -l | tr -d ' ')
+          echo "registered WindBot decks=$deck_count"
+          test "$deck_count" -gt 20
+
       - name: Upload compile proof
         uses: actions/upload-artifact@v4
         with:
@@ -72,37 +88,6 @@ jobs:
             ${{ runner.temp }}/windbot-subset/data/deck-catalog.tsv
             ${{ runner.temp }}/windbot-subset/data/Decks/AI_RadiantTyphoon.ydk
             ${{ runner.temp }}/windbot-subset/data/Decks/AI_BlueEyes.ydk
-            ${{ runner.temp }}/windbot-subset/data/Dialogs/wof-Kasumisawa-Haruma.json
-            ${{ runner.temp }}/windbot-subset/WindBot-LICENSE.txt
-          if-no-files-found: error
-          retention-days: 2
-^Blue-Eyes\\tAI_BlueEyes\\t' "$RUNNER_TEMP/windbot-subset/data/deck-catalog.tsv"
-          grep -q 
-      - name: Upload compile proof
-        uses: actions/upload-artifact@v4
-        with:
-          name: WindBot-RadiantTyphoon-CSharp-proof
-          path: |
-            ${{ runner.temp }}/windbot-subset/KoishiWindBotMultiDeck.dll
-            ${{ runner.temp }}/windbot-subset/windbot-revision.txt
-            ${{ runner.temp }}/windbot-subset/data/Decks/AI_RadiantTyphoon.ydk
-            ${{ runner.temp }}/windbot-subset/data/Dialogs/wof-Kasumisawa-Haruma.json
-            ${{ runner.temp }}/windbot-subset/WindBot-LICENSE.txt
-          if-no-files-found: error
-          retention-days: 2
-^RadiantTyphoon\\tAI_RadiantTyphoon\\t' "$RUNNER_TEMP/windbot-subset/data/deck-catalog.tsv"
-          deck_count=$(tail -n +2 "$RUNNER_TEMP/windbot-subset/data/deck-catalog.tsv" | wc -l | tr -d ' ')
-          echo "registered WindBot decks=$deck_count"
-          test "$deck_count" -gt 20
-
-      - name: Upload compile proof
-        uses: actions/upload-artifact@v4
-        with:
-          name: WindBot-RadiantTyphoon-CSharp-proof
-          path: |
-            ${{ runner.temp }}/windbot-subset/KoishiWindBotMultiDeck.dll
-            ${{ runner.temp }}/windbot-subset/windbot-revision.txt
-            ${{ runner.temp }}/windbot-subset/data/Decks/AI_RadiantTyphoon.ydk
             ${{ runner.temp }}/windbot-subset/data/Dialogs/wof-Kasumisawa-Haruma.json
             ${{ runner.temp }}/windbot-subset/WindBot-LICENSE.txt
           if-no-files-found: error
