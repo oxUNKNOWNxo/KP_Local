@@ -51,47 +51,6 @@ jobs:
           fi
           test "$(git -C source rev-parse HEAD)" = "$SOURCE_COMMIT"
 
-      - name: Inspect AI room controls and first-turn selection
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p inspection
-          echo '=== Room first-turn selection core ===' | tee inspection/room-first-turn.txt
-          sed -n '600,780p' source/Assets/SibylSystem/Room/Room.cs | tee -a inspection/room-first-turn.txt
-          echo '=== AI room prefab object names / labels ===' | tee inspection/ai-room-prefab.txt
-          grep -n -B18 -A50 -E 'm_Name: (aideck_|rank_|life_|mr4_|unrand_|first_|god_)|mText:|m_Text:' source/Assets/ArtSystem/Room/new_room_ai.prefab | tee -a inspection/ai-room-prefab.txt || true
-          python3 - <<'PY' | tee inspection/ai-first-turn-ui.txt
-          from pathlib import Path
-
-          root = Path('source/Assets')
-          keys = [
-              'unrand_', 'mr4_', 'god_', 'life_', 'first_', 'aideck_', 'rank_',
-              'rock', 'paper', 'scissor', 'rps', 'janken', 'guess',
-              '先攻', '後攻', '先手', '后手', '石头', '石頭', '剪刀', '布', '猜拳',
-              'select first', 'first player', 'second player'
-          ]
-
-          for path in sorted(root.rglob('*')):
-              if not path.is_file() or path.suffix.lower() not in {'.cs','.prefab','.unity','.asset','.txt','.json'}:
-                  continue
-              try:
-                  text = path.read_text(encoding='utf-8-sig', errors='replace')
-              except Exception:
-                  continue
-              rows = text.splitlines()
-              matches = [i for i,row in enumerate(rows) if any(k.lower() in row.lower() for k in keys)]
-              if not matches:
-                  continue
-              print('===== ' + str(path) + ' =====')
-              shown=set()
-              for i in matches[:300]:
-                  for j in range(max(0,i-16), min(len(rows),i+30)):
-                      if j in shown:
-                          continue
-                      shown.add(j)
-                      print(f'{j+1}: {rows[j]}')
-          PY
-
       - name: Inspect fixed and current upstream script layouts
         shell: bash
         run: |
