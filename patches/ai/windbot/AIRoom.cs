@@ -5,14 +5,23 @@ using UnityEngine;
 
 public class AIRoom : WindowServantSP
 {
+    const int DefaultLife = 8000;
+    const int AiDecksPerPage = 8;
+    const string LocalRpsHash = "WindBot_LocalRps";
+    const string LocalTurnChoiceHash = "WindBot_LocalTurnChoice";
+
     UIselectableList superScrollView = null;
     string sort = "sortByTimeDeck";
     UIPopupList list_aideck;
     UIPopupList list_airank;
     KoishiWindBotBridge windbot;
     string[] aiDeckNames = new string[0];
-    const int AiDecksPerPage = 8;
     int aiDeckPage = 0;
+
+    bool pregamePending;
+    string pendingPlayerDeck;
+    string pendingAiDeck;
+    bool pendingNoShuffle;
 
     public override void initialize()
     {
@@ -21,6 +30,9 @@ public class AIRoom : WindowServantSP
         superScrollView.selectedAction = onSelected;
         list_aideck = UIHelper.getByName<UIPopupList>(gameObject, "aideck_");
         list_airank = UIHelper.getByName<UIPopupList>(gameObject, "rank_");
+
+        SimplifyWindBotOptions();
+
         UIHelper.registEvent(gameObject, "aideck_", onSave);
         UIHelper.registEvent(gameObject, "rank_", onSave);
         UIHelper.registEvent(gameObject, "start_", onStart);
@@ -34,6 +46,62 @@ public class AIRoom : WindowServantSP
             superScrollView.mod.transform.localPosition = prototypePosition;
         }
         SetActiveFalse();
+    }
+
+    Transform FindControl(string name)
+    {
+        Transform[] children = gameObject.GetComponentsInChildren<Transform>(true);
+        for (int i = 0; i < children.Length; ++i)
+            if (children[i].name == name)
+                return children[i];
+        return null;
+    }
+
+    void SetControlLabel(string name, string text)
+    {
+        Transform control = FindControl(name);
+        if (control == null)
+            return;
+
+        UILabel label = control.GetComponent<UILabel>();
+        if (label == null)
+            label = control.GetComponentInChildren<UILabel>(true);
+        if (label != null)
+            label.text = text;
+    }
+
+    void HideControl(string name)
+    {
+        Transform control = FindControl(name);
+        if (control != null)
+            control.gameObject.SetActive(false);
+    }
+
+    void SimplifyWindBotOptions()
+    {
+        Transform life = FindControl("life_");
+        Transform unrand = FindControl("unrand_");
+        Transform first = FindControl("first_");
+
+        if (life != null && unrand != null && first != null)
+        {
+            float spacing = first.localPosition.y - unrand.localPosition.y;
+
+            Vector3 p = unrand.localPosition;
+            p.y = life.localPosition.y;
+            unrand.localPosition = p;
+
+            p = first.localPosition;
+            p.y = life.localPosition.y + spacing;
+            first.localPosition = p;
+        }
+
+        HideControl("life_");
+        HideControl("mr4_");
+        HideControl("god_");
+
+        SetControlLabel("unrand_", "シャッフルしない");
+        SetControlLabel("first_", "自分が先攻（OFFでじゃんけん）");
     }
 
     void onSelected()
@@ -128,30 +196,150 @@ public class AIRoom : WindowServantSP
 
     void onStart()
     {
-        if (!isShowed)
+        if (!isShowed || pregamePending)
             return;
 
-        int life = 8000;
+        pendingPlayerDeck = "deck/" + Config.Get("deckInUse", "miaowu") + ".ydk";
+        pendingAiDeck = list_aideck == null ? "" : list_aideck.value;
+        if (String.IsNullOrWhiteSpace(pendingAiDeck))
+            pendingAiDeck = Config.Get("list_aideck", "RadiantTyphoon");
+
+        pendingNoShuffle = UIHelper.getByName<UIToggle>(gameObject, "unrand_").value;
+        bool forcePlayerFirst = UIHelper.getByName<UIToggle>(gameObject, "first_").value;
+
+        pregamePending = true;
+        if (forcePlayerFirst)
+            StartPendingDuel(true);
+        else
+            ShowLocalRockPaperScissors();
+    }
+
+    void ShowLocalRockPaperScissors()
+    {
+        if (!pregamePending)
+            return;
+
+        RMSshow_tp(
+            LocalRpsHash,
+            new messageSystemValue { hint = "jiandao", value = "1" },
+            new messageSystemValue { hint = "shitou", value = "2" },
+            new messageSystemValue { hint = "bu", value = "3" }
+        );
+    }
+
+    void ShowLocalHandResult(int playerHand, int aiHand)
+    {
+        Program.I().new_ui_handShower.GetComponent<handShower>().me = playerHand - 1;
+        Program.I().new_ui_handShower.GetComponent<handShower>().op = aiHand - 1;
+        GameObject result = create(
+            Program.I().new_ui_handShower,
+            Vector3.zero,
+            Vector3.zero,
+            false,
+            Program.I().ui_main_2d
+        );
+        destroy(result, 2f);
+    }
+
+    static int RockPaperScissorsWinner(int playerHand, int aiHand)
+    {
+        if (playerHand == aiHand)
+            return 0;
+        if ((playerHand == 1 && aiHand == 3)
+            || (playerHand == 2 && aiHand == 1)
+            || (playerHand == 3 && aiHand == 2))
+            return 1;
+        return -1;
+    }
+
+    void ResolveLocalRockPaperScissors(int playerHand)
+    {
+        int aiHand;
+        bool aiWantsFirst;
         try
         {
-            life = int.Parse(UIHelper.getByName<UIInput>(gameObject, "life_").value);
+            KoishiWindBotBridge.GetAiPregameChoices(pendingAiDeck, out aiHand, out aiWantsFirst);
         }
-        catch (Exception) { }
+        catch (Exception e)
+        {
+            pregamePending = false;
+            Program.DEBUGLOG("[WindBot] pregame failed: " + e);
+            RMSshow_none("WindBotのじゃんけん準備に失敗しました。\n" + e.Message);
+            return;
+        }
 
-        string playerDeck = "deck/" + Config.Get("deckInUse", "miaowu") + ".ydk";
-        string aiDeck = list_aideck == null ? "" : list_aideck.value;
-        if (String.IsNullOrWhiteSpace(aiDeck))
-            aiDeck = Config.Get("list_aideck", "RadiantTyphoon");
+        ShowLocalHandResult(playerHand, aiHand);
+        int winner = RockPaperScissorsWinner(playerHand, aiHand);
 
-        bool playerGoFirst = UIHelper.getByName<UIToggle>(gameObject, "first_").value;
-        bool noShuffle = UIHelper.getByName<UIToggle>(gameObject, "unrand_").value;
+        if (winner == 0)
+        {
+            Program.go(1300, () =>
+            {
+                if (pregamePending)
+                    ShowLocalRockPaperScissors();
+            });
+            return;
+        }
+
+        if (winner > 0)
+        {
+            Program.go(1300, () =>
+            {
+                if (!pregamePending)
+                    return;
+                RMSshow_FS(
+                    LocalTurnChoiceHash,
+                    new messageSystemValue { hint = "先攻", value = "first" },
+                    new messageSystemValue { hint = "後攻", value = "second" }
+                );
+            });
+            return;
+        }
+
+        bool humanFirst = !aiWantsFirst;
+        Program.go(1300, () =>
+        {
+            if (pregamePending)
+                StartPendingDuel(humanFirst);
+        });
+    }
+
+    void StartPendingDuel(bool playerGoFirst)
+    {
+        if (!pregamePending)
+            return;
 
         if (windbot != null)
             windbot.Dispose();
         windbot = new KoishiWindBotBridge();
 
-        if (windbot.StartAI(playerDeck, aiDeck, playerGoFirst, noShuffle, life))
-            RMSshow_none("WindBot: " + aiDeck + " で開始します。");
+        pregamePending = false;
+        if (windbot.StartAI(pendingPlayerDeck, pendingAiDeck, playerGoFirst, pendingNoShuffle, DefaultLife))
+            RMSshow_none("WindBot: " + pendingAiDeck + " で開始します。");
+    }
+
+    public override void ES_RMS(string hashCode, List<messageSystemValue> result)
+    {
+        base.ES_RMS(hashCode, result);
+
+        if (!pregamePending || result == null || result.Count == 0)
+            return;
+
+        if (hashCode == LocalRpsHash)
+        {
+            int hand;
+            if (Int32.TryParse(result[0].value, out hand) && hand >= 1 && hand <= 3)
+                ResolveLocalRockPaperScissors(hand);
+            return;
+        }
+
+        if (hashCode == LocalTurnChoiceHash)
+        {
+            if (result[0].value == "first")
+                StartPendingDuel(true);
+            else if (result[0].value == "second")
+                StartPendingDuel(false);
+        }
     }
 
     void printFile()
@@ -202,6 +390,7 @@ public class AIRoom : WindowServantSP
 
     public override void show()
     {
+        pregamePending = false;
         if (windbot != null)
         {
             windbot.Dispose();
