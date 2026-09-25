@@ -170,7 +170,7 @@ TrollStore IPA
 
 - ローカルWindBot起動
 - 複数AIデッキ選択
-- AI一覧のページ送り
+- 既存 `UIselectableList` を自分/AIデッキで切り替えるスクロール一覧
 - player deck選択
 - 「シャッフルしない」設定
 - 固定8000LP / Master Rule 2020
@@ -182,7 +182,9 @@ KoishiPro2更新時は**新しい上流AIRoomと独自AIRoomを必ず比較**し
 現在は通常対戦側のじゃんけんUIを再利用するため、固定KoishiPro2の
 `Room.cs` / `Servant.cs` にある `RMSshow_tp`, `RMSshow_FS`,
 `new_ui_handShower`, `Program.go` にも依存する。
-上流更新時はこのUI APIも比較する。
+また、AI/プレイヤーデッキ一覧は `transUI/UIselectableList.cs` と
+`UIselectableListItem.cs` の45px行スクロール実装を共用する。
+上流更新時はこれらのUI API/テンプレートも比較する。
 
 ### 4.4 中リスク — `KoishiWindBotBridge.cs`
 
