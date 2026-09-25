@@ -1,0 +1,35 @@
+name: Koishi AI list UI inspection
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/ai-list-ui-inspect.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SOURCE_COMMIT: c1850e1120df6a5885692eadacad8ad114a3cf11
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: control
+      - uses: actions/cache/restore@v4
+        with:
+          path: source
+          key: koishipro2-source-${{ env.SOURCE_COMMIT }}-v1
+      - name: Inspect selectable list and AI prefab
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d source/Assets
+          echo '===== UIselectableList definitions ====='
+          grep -RniE -C 12 --include='*.cs' 'class UIselectableList|UIselectableList' source/Assets/SibylSystem source/Assets 2>/dev/null | head -3000 || true
+          echo '===== AI room prefab relevant controls ====='
+          grep -n -B25 -A80 -E 'm_Name: (aideck_|rank_|life_|mr4_|unrand_|first_|god_)|m_Name: .*list|m_Name: .*scroll|mText:|fontSize:|mFontSize:|width:|height:' source/Assets/ArtSystem/Room/new_room_ai.prefab | head -5000 || true
