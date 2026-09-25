@@ -69,7 +69,7 @@ public sealed class KoishiWindBotBridge
         {
             Code = (uint)card.Id,
             Alias = (uint)card.Alias,
-            Setcode = card.Setcode,
+            Setcode = unchecked((ulong)card.Setcode),
             Type = (uint)card.Type,
             Level = (uint)card.Level,
             Attribute = (uint)card.Attribute,
@@ -79,7 +79,7 @@ public sealed class KoishiWindBotBridge
             LScale = (uint)card.LScale,
             RScale = (uint)card.RScale,
             LinkMarker = (uint)card.LinkMarker,
-            RuleCode = (uint)card.RuleCode
+            RuleCode = 0
         };
     }
 
