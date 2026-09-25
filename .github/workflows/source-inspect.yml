@@ -55,6 +55,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p inspection
+          echo '=== Room first-turn selection core ===' | tee inspection/room-first-turn.txt
+          sed -n '600,780p' source/Assets/SibylSystem/Room/Room.cs | tee -a inspection/room-first-turn.txt
+          echo '=== AI room prefab object names / labels ===' | tee inspection/ai-room-prefab.txt
+          grep -n -B18 -A50 -E 'm_Name: (aideck_|rank_|life_|mr4_|unrand_|first_|god_)|mText:|m_Text:' source/Assets/ArtSystem/Room/new_room_ai.prefab | tee -a inspection/ai-room-prefab.txt || true
           python3 - <<'PY' | tee inspection/ai-first-turn-ui.txt
           from pathlib import Path
 
