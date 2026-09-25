@@ -95,7 +95,7 @@ for path in root.rglob("*.cs"):
 # than the bundled cards.cdb retain their real type/stats in the local duel.
 cards_mgr = root / "YGOSharp.OCGWrapper/CardsManager.cs"
 text = cards_mgr.read_text(encoding="utf-8")
-text = text.replace("using System.Data;\\n", "using System.Data;\\nusing System;\\nusing System.IO;\\n")
+text = text.replace("using System.Data;\n", "using System.Data;\nusing System;\nusing System.IO;\n")
 old = """        internal static void Init(string databaseFullPath)
         {
             _cards = new Dictionary<int, Card>();
