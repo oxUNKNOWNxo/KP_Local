@@ -16,6 +16,17 @@ namespace KoishiWindBot.Local
         private readonly int _aiPlayer;
 
         public RadiantTyphoonLocalDuel(string dataRoot, string cardsDatabase, Action<byte[]> humanGameMessage, Action<string> log, bool humanFirst)
+            : this(dataRoot, cardsDatabase, humanGameMessage, log, null, humanFirst)
+        {
+        }
+
+        public RadiantTyphoonLocalDuel(
+            string dataRoot,
+            string cardsDatabase,
+            Action<byte[]> humanGameMessage,
+            Action<string> log,
+            LocalDuelNative.CardProvider externalCardProvider,
+            bool humanFirst)
         {
             _humanPlayer = humanFirst ? 0 : 1;
             _aiPlayer = 1 - _humanPlayer;
@@ -34,24 +45,31 @@ namespace KoishiWindBot.Local
                 code =>
                 {
                     Card card = Card.Get((int)code);
-                    if (card == null)
-                        return null;
-                    return new CardRecord
+                    if (card != null)
                     {
-                        Code = (uint)card.Id,
-                        Alias = (uint)card.Alias,
-                        Setcode = unchecked((ulong)card.Setcode),
-                        Type = (uint)card.Type,
-                        Level = (uint)card.Level,
-                        Attribute = (uint)card.Attribute,
-                        Race = (uint)card.Race,
-                        Attack = card.Attack,
-                        Defense = card.Defense,
-                        LScale = (uint)card.LScale,
-                        RScale = (uint)card.RScale,
-                        LinkMarker = (uint)card.LinkMarker,
-                        RuleCode = 0
-                    };
+                        return new CardRecord
+                        {
+                            Code = (uint)card.Id,
+                            Alias = (uint)card.Alias,
+                            Setcode = unchecked((ulong)card.Setcode),
+                            Type = (uint)card.Type,
+                            Level = (uint)card.Level,
+                            Attribute = (uint)card.Attribute,
+                            Race = (uint)card.Race,
+                            Attack = card.Attack,
+                            Defense = card.Defense,
+                            LScale = (uint)card.LScale,
+                            RScale = (uint)card.RScale,
+                            LinkMarker = (uint)card.LinkMarker,
+                            RuleCode = 0
+                        };
+                    }
+
+                    // WindBot's bundled cards.cdb intentionally stays isolated.
+                    // For cards newer than that snapshot, reuse KoishiPro2's
+                    // already-merged card data instead of re-reading expansion
+                    // CDBs and risking duplicate IDs.
+                    return externalCardProvider == null ? null : externalCardProvider(code);
                 },
                 log);
 
