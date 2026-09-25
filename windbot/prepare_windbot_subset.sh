@@ -97,7 +97,7 @@ for path in root.rglob("*.cs"):
 # server protocol, so KoishiPro2 can reuse its local RPS UI without a room.
 behavior = root / "Game/GameBehavior.cs"
 behavior_text = behavior.read_text(encoding="utf-8")
-behavior_anchor = "        public int GetLocalPlayer(int player)\\n"
+behavior_anchor = "        public int GetLocalPlayer(int player)\n"
 if behavior_anchor not in behavior_text:
     raise SystemExit("GameBehavior pregame-choice anchor not found")
 behavior_methods = """        public int ChooseRockPaperScissors()
