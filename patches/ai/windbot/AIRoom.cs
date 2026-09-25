@@ -22,11 +22,8 @@ public class AIRoom : WindowServantSP
         UIHelper.registEvent(gameObject, "rank_", onSave);
         UIHelper.registEvent(gameObject, "start_", onStart);
         UIHelper.registEvent(gameObject, "exit_", () => { Program.I().shiftToServant(Program.I().menu); });
-        UIHelper.trySetLableText(gameObject, "percyHint", "WindBot AIモード（実証版：絢嵐）");
+        UIHelper.trySetLableText(gameObject, "percyHint", "WindBot AIモード");
         superScrollView.install();
-        // The restored AI prefab leaves the list's prototype row inside the
-        // clipped panel on some iOS layouts. Keep it available for cloning,
-        // but park the prototype itself well outside the visible area.
         if (superScrollView.mod != null)
         {
             Vector3 prototypePosition = superScrollView.mod.transform.localPosition;
@@ -43,7 +40,8 @@ public class AIRoom : WindowServantSP
 
     void onSave()
     {
-        Config.Set("list_aideck", "RadiantTyphoon");
+        if (list_aideck != null && !String.IsNullOrWhiteSpace(list_aideck.value))
+            Config.Set("list_aideck", list_aideck.value);
         Config.Set("list_airank", "WindBot");
     }
 
@@ -60,6 +58,10 @@ public class AIRoom : WindowServantSP
         catch (Exception) { }
 
         string playerDeck = "deck/" + Config.Get("deckInUse", "miaowu") + ".ydk";
+        string aiDeck = list_aideck == null ? "" : list_aideck.value;
+        if (String.IsNullOrWhiteSpace(aiDeck))
+            aiDeck = Config.Get("list_aideck", "RadiantTyphoon");
+
         bool playerGoFirst = UIHelper.getByName<UIToggle>(gameObject, "first_").value;
         bool noShuffle = UIHelper.getByName<UIToggle>(gameObject, "unrand_").value;
 
@@ -67,8 +69,8 @@ public class AIRoom : WindowServantSP
             windbot.Dispose();
         windbot = new KoishiWindBotBridge();
 
-        if (windbot.StartAI(playerDeck, playerGoFirst, noShuffle, life))
-            RMSshow_none("WindBot実証版：絢嵐デッキで開始します。");
+        if (windbot.StartAI(playerDeck, aiDeck, playerGoFirst, noShuffle, life))
+            RMSshow_none("WindBot: " + aiDeck + " で開始します。");
     }
 
     void printFile()
@@ -103,9 +105,26 @@ public class AIRoom : WindowServantSP
                 superScrollView.add(deckNames[i]);
         }
 
+        WindBot.Game.AI.DecksManager.Init();
+        string[] aiDecks = WindBot.Game.AI.DecksManager.GetDeckNames();
+        string selectedAiDeck = Config.Get("list_aideck", "RadiantTyphoon");
+        bool selectedExists = false;
+
         list_aideck.Clear();
-        list_aideck.AddItem("RadiantTyphoon");
-        list_aideck.value = "RadiantTyphoon";
+        for (int i = 0; i < aiDecks.Length; ++i)
+        {
+            list_aideck.AddItem(aiDecks[i]);
+            if (String.Equals(aiDecks[i], selectedAiDeck, StringComparison.Ordinal))
+                selectedExists = true;
+        }
+
+        if (!selectedExists)
+            selectedAiDeck = aiDecks.Length > 0 ? aiDecks[0] : "";
+        if (!String.IsNullOrEmpty(selectedAiDeck))
+        {
+            list_aideck.value = selectedAiDeck;
+            Config.Set("list_aideck", selectedAiDeck);
+        }
 
         list_airank.Clear();
         list_airank.AddItem("WindBot");

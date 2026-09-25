@@ -19,6 +19,11 @@ public sealed class KoishiWindBotBridge
 
     public bool StartAI(string playerDeckPath, bool playerGoFirst, bool noShuffle, int life)
     {
+        return StartAI(playerDeckPath, "RadiantTyphoon", playerGoFirst, noShuffle, life);
+    }
+
+    public bool StartAI(string playerDeckPath, string aiDeckName, bool playerGoFirst, bool noShuffle, int life)
+    {
         if (Program.I().ocgcore.isShowed)
             return false;
 
@@ -28,6 +33,11 @@ public sealed class KoishiWindBotBridge
             List<int> extra = new List<int>();
             LoadPlayerDeck(playerDeckPath, main, extra);
 
+            WindBot.Game.AI.DecksManager.Init();
+            string aiDeckFile = WindBot.Game.AI.DecksManager.GetDeckFile(aiDeckName);
+            if (String.IsNullOrEmpty(aiDeckFile))
+                throw new InvalidOperationException("WindBot AI deck is not registered: " + aiDeckName);
+
             string dbPath = File.Exists("cdb/cards.cdb") ? "cdb/cards.cdb" : "cards.cdb";
             if (!File.Exists(dbPath))
                 throw new FileNotFoundException("cards.cdb not found", dbPath);
@@ -36,11 +46,13 @@ public sealed class KoishiWindBotBridge
             if (!Directory.Exists(dataRoot))
                 throw new DirectoryNotFoundException("WindBotData not found: " + dataRoot);
 
-            PrepareOcgcore(playerGoFirst, life);
+            PrepareOcgcore(aiDeckName, playerGoFirst, life);
 
             duel = new RadiantTyphoonLocalDuel(
                 dataRoot,
                 dbPath,
+                aiDeckName,
+                aiDeckFile,
                 ReceiveHumanGameMessage,
                 message => Program.DEBUGLOG("[WindBot] " + message),
                 ReadHostCard,
@@ -83,7 +95,7 @@ public sealed class KoishiWindBotBridge
         };
     }
 
-    private void PrepareOcgcore(bool playerGoFirst, int life)
+    private void PrepareOcgcore(string aiDeckName, bool playerGoFirst, int life)
     {
         Program.I().room.mode = 0;
         Program.I().ocgcore.MasterRule = 5;
@@ -92,7 +104,7 @@ public sealed class KoishiWindBotBridge
         Program.I().ocgcore.returnServant = Program.I().aiRoom;
         Program.I().ocgcore.name_0 = Config.Get("name", "Player");
         Program.I().ocgcore.name_0_c = Program.I().ocgcore.name_0;
-        Program.I().ocgcore.name_1 = "WindBot - Radiant Typhoon";
+        Program.I().ocgcore.name_1 = "WindBot - " + aiDeckName;
         Program.I().ocgcore.name_1_c = Program.I().ocgcore.name_1;
         Program.I().ocgcore.name_0_tag = "---";
         Program.I().ocgcore.name_1_tag = "---";
@@ -120,7 +132,7 @@ public sealed class KoishiWindBotBridge
     private void ReceiveHumanGameMessage(byte[] gameMessage)
     {
         byte[] framed = new byte[gameMessage.Length + 1];
-        framed[0] = 1; // STOC_GAME_MSG
+        framed[0] = 1;
         Buffer.BlockCopy(gameMessage, 0, framed, 1, gameMessage.Length);
         TcpHelper.addDateJumoLine(framed);
     }

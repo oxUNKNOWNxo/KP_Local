@@ -29,10 +29,15 @@ cp "$WORK/subset/WindBot-LICENSE.txt" "$DATA/licenses/WindBot-LICENSE.txt"
 cp "$WORK/subset/windbot-revision.txt" "$DATA/windbot-revision.txt"
 
 test -s "$MANAGED/Game/AI/Decks/RadiantTyphoonExecutor.cs"
+test -s "$MANAGED/Game/AI/Decks/BlueEyesExecutor.cs"
 test -s "$MANAGED/LocalRuntime/LocalDuelNative.cs"
 test -s "$MANAGED/LocalRuntime/LocalDuelRouter.cs"
 test -s "$DATA/Decks/AI_RadiantTyphoon.ydk"
+test -s "$DATA/Decks/AI_BlueEyes.ydk"
+test -s "$DATA/deck-catalog.tsv"
 test -s "$DATA/Dialogs/wof-Kasumisawa-Haruma.json"
+test "$(find "$MANAGED/Game/AI/Decks" -maxdepth 1 -type f -name '*.cs' | wc -l | tr -d ' ')" -gt 20
+test "$(find "$DATA/Decks" -maxdepth 1 -type f -name '*.ydk' | wc -l | tr -d ' ')" -gt 20
 
 echo "Prepared WindBot managed runtime: $MANAGED"
 echo "Prepared WindBot data: $DATA"

@@ -14,9 +14,11 @@ namespace KoishiWindBot.Local
         private readonly LocalDuelRouter _router;
         private readonly int _humanPlayer;
         private readonly int _aiPlayer;
+        private readonly string _aiDeckName;
+        private readonly string _aiDeckFile;
 
         public RadiantTyphoonLocalDuel(string dataRoot, string cardsDatabase, Action<byte[]> humanGameMessage, Action<string> log, bool humanFirst)
-            : this(dataRoot, cardsDatabase, humanGameMessage, log, null, humanFirst)
+            : this(dataRoot, cardsDatabase, "RadiantTyphoon", "AI_RadiantTyphoon", humanGameMessage, log, null, humanFirst)
         {
         }
 
@@ -27,13 +29,35 @@ namespace KoishiWindBot.Local
             Action<string> log,
             LocalDuelNative.CardProvider externalCardProvider,
             bool humanFirst)
+            : this(dataRoot, cardsDatabase, "RadiantTyphoon", "AI_RadiantTyphoon", humanGameMessage, log, externalCardProvider, humanFirst)
         {
+        }
+
+        public RadiantTyphoonLocalDuel(
+            string dataRoot,
+            string cardsDatabase,
+            string aiDeckName,
+            string aiDeckFile,
+            Action<byte[]> humanGameMessage,
+            Action<string> log,
+            LocalDuelNative.CardProvider externalCardProvider,
+            bool humanFirst)
+        {
+            if (string.IsNullOrEmpty(aiDeckName))
+                throw new ArgumentException("AI deck name is required.", "aiDeckName");
+            if (string.IsNullOrEmpty(aiDeckFile))
+                throw new ArgumentException("AI deck file is required.", "aiDeckFile");
+
+            _aiDeckName = aiDeckName;
+            _aiDeckFile = aiDeckFile;
             _humanPlayer = humanFirst ? 0 : 1;
             _aiPlayer = 1 - _humanPlayer;
             LocalDuelRouter routerRef = null;
             _windBot = new WindBotLocalRuntime(
                 dataRoot,
                 cardsDatabase,
+                aiDeckName,
+                aiDeckFile,
                 packet =>
                 {
                     if (routerRef != null)
@@ -65,10 +89,6 @@ namespace KoishiWindBot.Local
                         };
                     }
 
-                    // WindBot's bundled cards.cdb intentionally stays isolated.
-                    // For cards newer than that snapshot, reuse KoishiPro2's
-                    // already-merged card data instead of re-reading expansion
-                    // CDBs and risking duplicate IDs.
                     return externalCardProvider == null ? null : externalCardProvider(code);
                 },
                 log);
@@ -85,9 +105,9 @@ namespace KoishiWindBot.Local
             if (humanExtra == null)
                 humanExtra = new List<int>();
 
-            Deck aiDeck = Deck.Load("AI_RadiantTyphoon");
+            Deck aiDeck = Deck.Load(_aiDeckFile);
             if (aiDeck == null)
-                throw new InvalidOperationException("Could not load AI_RadiantTyphoon.ydk.");
+                throw new InvalidOperationException("Could not load WindBot deck " + _aiDeckFile + ".ydk.");
 
             uint[] seed = LocalDuelNative.CreateSeedSequence();
             _native.Create(seed);
@@ -97,8 +117,8 @@ namespace KoishiWindBot.Local
             _native.SetRegistry("start_lp", life.ToString());
             _native.SetRegistry("start_hand", startHand.ToString());
             _native.SetRegistry("draw_count", drawCount.ToString());
-            _native.SetRegistry("player_name_0", _humanPlayer == 0 ? "Player" : "WindBot");
-            _native.SetRegistry("player_name_1", _humanPlayer == 1 ? "Player" : "WindBot");
+            _native.SetRegistry("player_name_0", _humanPlayer == 0 ? "Player" : "WindBot - " + _aiDeckName);
+            _native.SetRegistry("player_name_1", _humanPlayer == 1 ? "Player" : "WindBot - " + _aiDeckName);
             _native.SetRegistry("player_type_0", _aiPlayer == 0 ? "1" : "0");
             _native.SetRegistry("player_type_1", _aiPlayer == 1 ? "1" : "0");
 
@@ -116,7 +136,7 @@ namespace KoishiWindBot.Local
             _router.SendInitialState(life, duelRule);
             uint options = unchecked((uint)duelRule << 16);
             if (noShuffle)
-                options |= 0x10u; // DUEL_PSEUDO_SHUFFLE
+                options |= 0x10u;
             _native.Start(options);
             _router.Pump();
         }

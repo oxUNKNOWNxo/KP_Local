@@ -41,7 +41,9 @@ while IFS= read -r path; do
   copy_file "$path"
 done < <(find "$WORK/src/Game/AI/Enums" -maxdepth 1 -type f -name '*.cs' | sed "s#^$WORK/src/##" | sort)
 
-copy_file Game/AI/Decks/RadiantTyphoonExecutor.cs
+while IFS= read -r path; do
+  copy_file "$path"
+done < <(find "$WORK/src/Game/AI/Decks" -maxdepth 1 -type f -name '*.cs' | sed "s#^$WORK/src/##" | sort)
 
 for path in   YGOSharp.OCGWrapper/Card.cs   YGOSharp.OCGWrapper/CardsManager.cs   YGOSharp.OCGWrapper/NamedCard.cs   YGOSharp.OCGWrapper/NamedCardsManager.cs; do
   copy_file "$path"
@@ -56,7 +58,9 @@ while IFS= read -r path; do
 done < <(find "$WORK/src/YGOSharp.Network/Enums" -maxdepth 1 -type f -name '*.cs' | sed "s#^$WORK/src/##" | sort)
 copy_file YGOSharp.Network/Utils/BinaryExtensions.cs
 
-cp "$WORK/src/Decks/AI_RadiantTyphoon.ydk" "$OUT/data/Decks/"
+while IFS= read -r path; do
+  cp "$path" "$OUT/data/Decks/"
+done < <(find "$WORK/src/Decks" -maxdepth 1 -type f -name '*.ydk' | sort)
 if [ -f "$WORK/src/Dialogs/wof-Kasumisawa-Haruma.json" ]; then
   cp "$WORK/src/Dialogs/wof-Kasumisawa-Haruma.json" "$OUT/data/Dialogs/"
 else
@@ -91,40 +95,156 @@ for path in root.rglob("*.cs"):
 
 
 
+import re
+
+deck_sources = sorted((root / "Game/AI/Decks").glob("*.cs"))
+deck_data_root = root.parent / "data" / "Decks"
+pattern = re.compile(
+    r'\[Deck\(\s*"([^"]+)"'
+    r'(?:\s*,\s*"([^"]*)")?'
+    r'(?:\s*,\s*"([^"]*)")?'
+    r'\s*\)\]\s*'
+    r'(?:(?:public|internal|sealed|abstract|partial)\s+)*'
+    r'class\s+([A-Za-z_][A-Za-z0-9_]*)',
+    re.S,
+)
+
+entries = []
+seen_names = set()
+for source in deck_sources:
+    source_text = source.read_text(encoding="utf-8-sig")
+    for match in pattern.finditer(source_text):
+        name, deck_file, level, class_name = match.groups()
+        deck_file = deck_file or name
+        level = level or "Normal"
+        if name in seen_names:
+            raise SystemExit("Duplicate WindBot deck name: " + name)
+        if not (deck_data_root / (deck_file + ".ydk")).is_file():
+            print("Skipping executor without bundled YDK: " + name + " -> " + deck_file)
+            continue
+        seen_names.add(name)
+        entries.append((name, deck_file, level, class_name))
+
+if len(entries) < 2:
+    raise SystemExit("Expected multiple WindBot AI decks, found " + str(len(entries)))
+
+entries.sort(key=lambda item: item[0].lower())
+
+def cs(value):
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
 deck_mgr = root / "Game/AI/DecksManager.cs"
 text = deck_mgr.read_text(encoding="utf-8")
 text = text.replace("using System.Reflection;\n", "")
 start = text.index("        public static void Init()")
 end = text.index("\n        public static Executor Instantiate", start)
+register_lines = []
+for name, deck_file, level, class_name in entries:
+    register_lines.append(
+        '            _decks.Add("' + cs(name) + '", new DeckInstance("' +
+        cs(deck_file) + '", typeof(WindBot.Game.AI.Decks.' + class_name + '), "' +
+        cs(level) + '"));'
+    )
 replacement = """        public static void Init()
         {
             _decks = new Dictionary<string, DeckInstance>();
             _rand = new Random();
 
-            Type type = typeof(WindBot.Game.AI.Decks.RadiantTyphoonExecutor);
-            _decks.Add(
-                \"RadiantTyphoon\",
-                new DeckInstance(\"AI_RadiantTyphoon\", type, \"Normal\"));
+""" + "\n".join(register_lines) + """
 
             _list = new List<DeckInstance>();
             _list.AddRange(_decks.Values);
-            Logger.WriteLine(\"Decks initialized, explicit iOS proof registry: \" + _decks.Count);
+            Logger.WriteLine("Decks initialized, explicit iOS registry: " + _decks.Count);
         }
 """
 text = text[:start] + replacement + text[end:]
-old = """            Executor executor = (Executor)Activator.CreateInstance(infos.Type, ai, duel);
-            executor.Deck = infos.Deck;
-            return executor;"""
-new = """            Executor executor;
-            if (infos.Type == typeof(WindBot.Game.AI.Decks.RadiantTyphoonExecutor))
-                executor = new WindBot.Game.AI.Decks.RadiantTyphoonExecutor(ai, duel);
+
+instantiate_start = text.index("        public static Executor Instantiate")
+instantiate_end = text.index("\n        public static bool HasDeck", instantiate_start)
+factory_lines = []
+for index, (name, deck_file, level, class_name) in enumerate(entries):
+    prefix = "if" if index == 0 else "else if"
+    factory_lines.append(
+        "            " + prefix + " (infos.Type == typeof(WindBot.Game.AI.Decks." +
+        class_name + "))\n                executor = new WindBot.Game.AI.Decks." +
+        class_name + "(ai, duel);"
+    )
+instantiate = """        public static Executor Instantiate(GameAI ai, Duel duel)
+        {
+            if (_decks == null)
+                Init();
+
+            DeckInstance infos;
+            string deck = ai.Game.Deck;
+
+            if (deck != null && _decks.ContainsKey(deck))
+                infos = _decks[deck];
             else
-                throw new NotSupportedException(\"Executor is not registered for the iOS proof build: \" + infos.Type.FullName);
+            {
+                do
+                {
+                    infos = _list[_rand.Next(_list.Count)];
+                }
+                while (infos.Level != "Normal");
+            }
+
+            Executor executor;
+""" + "\n".join(factory_lines) + """
+            else
+                throw new NotSupportedException("Executor is not registered for the iOS build: " + infos.Type.FullName);
+
             executor.Deck = infos.Deck;
-            return executor;"""
-if old not in text:
-    raise SystemExit("DecksManager Instantiate anchor not found")
-text = text.replace(old, new)
+            return executor;
+        }
+
+        public static string[] GetDeckNames()
+        {
+            if (_decks == null)
+                Init();
+            List<string> names = new List<string>(_decks.Keys);
+            names.Sort(StringComparer.OrdinalIgnoreCase);
+            return names.ToArray();
+        }
+
+        public static string GetDeckFile(string name)
+        {
+            if (_decks == null)
+                Init();
+            DeckInstance infos;
+            return name != null && _decks.TryGetValue(name, out infos) ? infos.Deck : null;
+        }
+
+        public static string GetDeckLevel(string name)
+        {
+            if (_decks == null)
+                Init();
+            DeckInstance infos;
+            return name != null && _decks.TryGetValue(name, out infos) ? infos.Level : null;
+        }
+"""
+text = text[:instantiate_start] + instantiate + text[instantiate_end:]
+text = text.replace(
+"""        public static bool HasDeck(string name)
+        {
+            return _decks.ContainsKey(name);
+        }""",
+"""        public static bool HasDeck(string name)
+        {
+            if (_decks == null)
+                Init();
+            return name != null && _decks.ContainsKey(name);
+        }"""
+)
+deck_mgr.write_text(text, encoding="utf-8")
+
+catalog = root.parent / "data" / "deck-catalog.tsv"
+catalog.write_text(
+    "name\tfile\tlevel\texecutor\n" +
+    "".join(name + "\t" + deck_file + "\t" + level + "\t" + class_name + "\n"
+            for name, deck_file, level, class_name in entries),
+    encoding="utf-8",
+)
+print("Generated explicit iOS WindBot registry: " + str(len(entries)) + " decks")
 deck_mgr.write_text(text, encoding="utf-8")
 PY
 
@@ -235,8 +355,15 @@ namespace WindBot.Game
         public string CurrentSTOCMessage { get; private set; }
 
         public GameClient(YGOClient connection)
+            : this(connection, "RadiantTyphoon", "AI_RadiantTyphoon")
+        {
+        }
+
+        public GameClient(YGOClient connection, string deck, string deckFile)
         {
             Connection = connection;
+            Deck = deck;
+            DeckFile = deckFile;
         }
 
         internal void SetDeckContext(string executorName)
@@ -279,6 +406,16 @@ namespace WindBot.Local
         private readonly GameBehavior _behavior;
 
         public WindBotLocalRuntime(string dataRoot, string cardsDatabase, Action<byte[]> onClientPacket)
+            : this(dataRoot, cardsDatabase, "RadiantTyphoon", "AI_RadiantTyphoon", onClientPacket)
+        {
+        }
+
+        public WindBotLocalRuntime(
+            string dataRoot,
+            string cardsDatabase,
+            string aiDeckName,
+            string aiDeckFile,
+            Action<byte[]> onClientPacket)
         {
             Program.DataRoot = dataRoot;
             CardsManager.Init(cardsDatabase);
@@ -287,7 +424,7 @@ namespace WindBot.Local
 
             _connection = new YGOClient();
             _connection.Sent = onClientPacket;
-            _client = new GameClient(_connection);
+            _client = new GameClient(_connection, aiDeckName, aiDeckFile);
             _behavior = new GameBehavior(_client);
         }
 
