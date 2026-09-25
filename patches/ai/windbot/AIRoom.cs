@@ -10,6 +10,9 @@ public class AIRoom : WindowServantSP
     UIPopupList list_aideck;
     UIPopupList list_airank;
     KoishiWindBotBridge windbot;
+    string[] aiDeckNames = new string[0];
+    const int AiDecksPerPage = 12;
+    int aiDeckPage = 0;
 
     public override void initialize()
     {
@@ -40,9 +43,78 @@ public class AIRoom : WindowServantSP
 
     void onSave()
     {
+        if (list_airank != null && !String.IsNullOrWhiteSpace(list_airank.value))
+        {
+            int selectedPage = ParseAiDeckPage(list_airank.value);
+            if (selectedPage != aiDeckPage)
+            {
+                aiDeckPage = selectedPage;
+                Config.Set("list_airank", FormatAiDeckPage(aiDeckPage));
+                RebuildAiDeckPage();
+                return;
+            }
+        }
+
         if (list_aideck != null && !String.IsNullOrWhiteSpace(list_aideck.value))
             Config.Set("list_aideck", list_aideck.value);
-        Config.Set("list_airank", "WindBot");
+    }
+
+    int AiDeckPageCount()
+    {
+        return Math.Max(1, (aiDeckNames.Length + AiDecksPerPage - 1) / AiDecksPerPage);
+    }
+
+    string FormatAiDeckPage(int page)
+    {
+        return "AI " + (page + 1) + "/" + AiDeckPageCount();
+    }
+
+    int ParseAiDeckPage(string value)
+    {
+        if (String.IsNullOrEmpty(value))
+            return 0;
+
+        int slash = value.IndexOf('/');
+        int space = value.LastIndexOf(' ', slash >= 0 ? slash : value.Length - 1);
+        if (slash <= 0 || space < 0)
+            return 0;
+
+        int page;
+        if (!Int32.TryParse(value.Substring(space + 1, slash - space - 1), out page))
+            return 0;
+
+        return Math.Max(0, Math.Min(AiDeckPageCount() - 1, page - 1));
+    }
+
+    void RebuildAiDeckPage()
+    {
+        if (list_aideck == null)
+            return;
+
+        string selectedAiDeck = Config.Get("list_aideck", "RadiantTyphoon");
+        int totalPages = AiDeckPageCount();
+        aiDeckPage = Math.Max(0, Math.Min(totalPages - 1, aiDeckPage));
+
+        int start = aiDeckPage * AiDecksPerPage;
+        int end = Math.Min(aiDeckNames.Length, start + AiDecksPerPage);
+
+        list_aideck.Clear();
+        bool selectedExists = false;
+        for (int i = start; i < end; ++i)
+        {
+            list_aideck.AddItem(aiDeckNames[i]);
+            if (String.Equals(aiDeckNames[i], selectedAiDeck, StringComparison.Ordinal))
+                selectedExists = true;
+        }
+
+        if (!selectedExists && start < end)
+            selectedAiDeck = aiDeckNames[start];
+
+        if (!String.IsNullOrEmpty(selectedAiDeck))
+        {
+            list_aideck.value = selectedAiDeck;
+            Config.Set("list_aideck", selectedAiDeck);
+        }
     }
 
     void onStart()
@@ -106,29 +178,22 @@ public class AIRoom : WindowServantSP
         }
 
         WindBot.Game.AI.DecksManager.Init();
-        string[] aiDecks = WindBot.Game.AI.DecksManager.GetDeckNames();
+        aiDeckNames = WindBot.Game.AI.DecksManager.GetDeckNames();
         string selectedAiDeck = Config.Get("list_aideck", "RadiantTyphoon");
-        bool selectedExists = false;
 
-        list_aideck.Clear();
-        for (int i = 0; i < aiDecks.Length; ++i)
-        {
-            list_aideck.AddItem(aiDecks[i]);
-            if (String.Equals(aiDecks[i], selectedAiDeck, StringComparison.Ordinal))
-                selectedExists = true;
-        }
-
-        if (!selectedExists)
-            selectedAiDeck = aiDecks.Length > 0 ? aiDecks[0] : "";
-        if (!String.IsNullOrEmpty(selectedAiDeck))
-        {
-            list_aideck.value = selectedAiDeck;
-            Config.Set("list_aideck", selectedAiDeck);
-        }
+        int selectedIndex = Array.IndexOf(aiDeckNames, selectedAiDeck);
+        if (selectedIndex >= 0)
+            aiDeckPage = selectedIndex / AiDecksPerPage;
+        else
+            aiDeckPage = 0;
 
         list_airank.Clear();
-        list_airank.AddItem("WindBot");
-        list_airank.value = "WindBot";
+        for (int page = 0; page < AiDeckPageCount(); ++page)
+            list_airank.AddItem(FormatAiDeckPage(page));
+        list_airank.value = FormatAiDeckPage(aiDeckPage);
+        Config.Set("list_airank", list_airank.value);
+
+        RebuildAiDeckPage();
     }
 
     public override void show()
