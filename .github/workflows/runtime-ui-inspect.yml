@@ -119,6 +119,53 @@ jobs:
             done
           fi
 
+      - name: Inspect first-turn and rock-paper-scissors flow
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          root = Path('source/Assets')
+          keys = [
+              'rock', 'paper', 'scissor', 'rps', 'janken', 'guess',
+              'first', 'second', '先攻', '後攻', '先手', '后手',
+              '石头', '石頭', '剪刀', '布', '猜拳', '拳',
+              'MSG_ROCK', 'MSG_HAND', 'hand result', 'select first'
+          ]
+          out = Path('first-turn-ui-report.txt')
+          lines = []
+          for path in root.rglob('*'):
+              if not path.is_file():
+                  continue
+              if path.suffix.lower() not in {'.cs', '.prefab', '.unity', '.asset', '.txt', '.json'}:
+                  continue
+              try:
+                  text = path.read_text(encoding='utf-8-sig', errors='replace')
+              except Exception:
+                  continue
+              lower = text.lower()
+              if not any(k.lower() in lower for k in keys):
+                  continue
+              rows = text.splitlines()
+              matched = []
+              for i,row in enumerate(rows):
+                  if any(k.lower() in row.lower() for k in keys):
+                      matched.append(i)
+              if not matched:
+                  continue
+              lines.append(f'===== {path} =====')
+              shown=set()
+              for i in matched[:200]:
+                  for j in range(max(0,i-8), min(len(rows),i+12)):
+                      if j in shown:
+                          continue
+                      shown.add(j)
+                      lines.append(f'{j+1}: {rows[j]}')
+          out.write_text('\n'.join(lines)+'\n', encoding='utf-8')
+          print(out.read_text(encoding='utf-8')[:120000])
+          PY
+
       - name: Upload UI inspection
         uses: actions/upload-artifact@v4
         with:
@@ -126,5 +173,6 @@ jobs:
           path: |
             runtime-ui-report.txt
             pre-removal-report.txt
+            first-turn-ui-report.txt
           if-no-files-found: error
           retention-days: 1
