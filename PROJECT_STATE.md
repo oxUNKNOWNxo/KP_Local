@@ -1,0 +1,423 @@
+# KoishiPro2 iOS / WindBot プロジェクト状態
+
+最終更新: 2026-09-26  
+対象リポジトリ: `oxUNKNOWNxo/KP_Local`  
+対象ブランチ: `main`
+
+> **次のチャットで最初に読むこと。**
+> このファイルは、KoishiPro2 iOS版のローカルWindBot統合、iPhone X画面対応、超先行カード用 `expansions` 対応について、現在の正常基準と過去の失敗経路を記録する引き継ぎ文書。
+> 新しいチャットでは、実装を変更する前にこのファイルと記載された主要ファイルを確認し、既に解決済みの方式へ逆戻りしないこと。
+
+---
+
+## 1. 現在の正常基準
+
+2026-09-26 時点で、ユーザー実機にて以下を確認済み。
+
+- **AI対戦が正常に開始・進行する**
+- 相手AIとして WindBot / Radiant Typhoon が正常稼働する
+- **`expansions/*.cdb` にのみ存在する追加カードが正常なカード種別で扱われる**
+- **`expansions/scripts/c<ID>.lua` に置いた追加カードLuaが正常に利用される**
+- 既存カードの標準Luaは、`expansions/scripts` によって不用意に上書きされない
+- 画面の縦横比は実機で想定どおり
+- iPhone X横画面のノッチ側余白は、左右方向の誤りを修正済み
+- AI選択画面の不要な空行問題は修正済み
+
+正常基準の主なCI:
+
+- **KoishiPro2 iOS cloud build #106: success**
+  - run ID: `36147091332`
+  - head: `afc519d97aa2255db0a682c5c45997f51b7974dc`
+- **KoishiPro2 WindBot integration validation #59: success**
+  - run ID: `36147091345`
+- **WindBot local duel smoke test #15: success**
+  - run ID: `36127534383`
+
+実機でも build #106 相当で **AI対戦および追加カードの正常動作を確認済み**。
+今後、不具合が出た場合はまずこの状態との差分を見ること。
+
+---
+
+## 2. プロジェクトの目的
+
+KoishiPro2のiOS版をTrollStore環境で利用しつつ、以下を成立させる。
+
+1. 外部サーバーに依存せず、端末内ocgcore + WindBotでAI対戦する
+2. WindBotは現在のRadiant Typhoon AIを利用する
+3. KoishiPro2本体の操作感・画面構成を壊さない
+4. 超先行カードを、公式側やバンドル済みスクリプト更新前でも利用可能にする
+5. 追加カードは通常の `expansions` 運用に近い形で管理できるようにする
+6. GitHub Actionsで再現可能なiOS IPAビルドを維持する
+
+---
+
+## 3. 超先行カードの現在仕様【重要】
+
+### 3.1 CDB
+
+追加カード情報はユーザーが通常どおり
+
+```
+expansions/
+  example.cdb
+```
+
+のように配置する。
+
+**重要: WindBot側で `expansions/*.cdb` を再読込してはいけない。**
+
+一度この方式を実装したが、実機でAI対戦開始時に
+
+```
+An item with the same key has already been added. Key: 572850
+```
+
+が発生した。
+
+原因は、KoishiPro2本体ですでに統合されているカードを、WindBot側の独立辞書にも追加CDBから再登録しようとしたため。
+
+### 3.2 現在の正しいカードデータ経路
+
+WindBotのバンドル済み `cards.cdb` は**独立したまま保持する**。
+
+ocgcoreがカードデータを要求した場合:
+
+```
+WindBot側の標準 cards.cdb にカードがある
+    ↓ YES
+標準WindBotカードデータを使用
+
+    ↓ NO
+
+KoishiPro2本体の YGOSharp.CardsManager に問い合わせる
+    ↓
+本体が expansions/*.cdb から既に読み込んだカード情報を使用
+```
+
+この方式により、
+
+- 標準WindBotカードDBを汚さない
+- 同一IDの二重登録を避ける
+- 超先行カードのみ本体側から補完できる
+
+という状態になっている。
+
+### 3.3 Luaスクリプト
+
+追加Luaは
+
+```
+expansions/scripts/c12345678.lua
+```
+
+形式。
+
+ocgcoreが
+
+```
+./script/c12345678.lua
+```
+
+を要求した際のルール:
+
+1. まず通常のバンドル済み標準スクリプトを探す
+2. 標準側に存在する場合はそれを使う
+3. **標準側に存在しないカードスクリプトの場合のみ**
+   `expansions/scripts/c<ID>.lua` を探す
+4. 見つかればそれを使用
+
+つまり `expansions/scripts` は「既存カードLuaのMOD上書き機構」ではなく、
+**まだ標準スクリプトに入っていない超先行カードを補完するための機構**として扱う。
+
+`utility.lua`, `procedure.lua`, `constant.lua` などの共通スクリプトを
+`expansions/scripts` から任意に差し替える設計にはしない。
+
+---
+
+## 4. AI対戦の現在構成
+
+ローカルAI対戦は以下の構成。
+
+```
+KoishiPro2 UI
+    ↓
+KoishiWindBotBridge
+    ↓
+RadiantTyphoonLocalDuel
+    ↓
+LocalDuelRouter
+    ↓
+LocalDuelNative
+    ↓
+iOS内蔵 koishi_ocgcore
+    ↕
+WindBot managed runtime
+```
+
+サーバー対戦ではなく、端末内で完結する。
+
+主要ファイル:
+
+- `patches/ai/windbot/KoishiWindBotBridge.cs`
+  - KoishiPro2本体とローカルWindBotの接続
+  - 本体側カードデータのフォールバック供給
+- `windbot/runtime/RadiantTyphoonLocalDuel.cs`
+  - ローカルデュエル組み立て
+  - WindBot標準カードDB → 本体カードデータのフォールバック
+- `windbot/runtime/LocalDuelNative.cs`
+  - ocgcore P/Invoke
+  - カードデータreader
+  - Lua script reader
+  - `expansions/scripts` フォールバック
+- `windbot/runtime/LocalDuelRouter.cs`
+  - ocgcoreメッセージとWindBot/人間クライアント間のルーティング
+- `windbot/prepare_windbot_subset.sh`
+  - iOS向けWindBot managed subset生成
+- `patches/prepare_windbot_runtime.sh`
+  - KoishiPro2へWindBotランタイムを配置
+
+---
+
+## 5. 過去に重要だったAI修正
+
+### Radiant Typhoon Chant
+
+カード:
+- 絢嵐たる献詠 / Radiant Typhoon Chant
+- ID: `67115133`
+
+以前、AIがこのカードを使用した際に進行停止が起きていた。
+
+現在はocgcoreのメッセージ境界・`MSG_SET` payload処理などを現行coreに合わせて修正し、
+AIターン完走スモークが成功している。
+
+関連コミット:
+
+- `d45d4f9465ecbf43e13b3b52ad92283b7ed6da9a`
+  - process loopを現行Koishi coreに合わせる
+- `69e3b3f1c70c648eeb54f67039abe78edf558d52`
+  - router message boundary trace
+- `36efacba7079090f660001f0b68b23353e79e8ea`
+  - current core `MSG_SET` payload対応
+
+**これらの処理を古いYGOPro/WindBotプロトコルへ戻さないこと。**
+
+---
+
+## 6. 追加カード対応の経緯と禁止事項
+
+### 最初のLua対応
+
+コミット:
+- `718569735e446ab4495b8aee970cb8f9e5684658`
+  - 標準に無いカードLuaを `expansions/scripts` から補完
+
+これは現在も有効な方向性。
+
+### 一度採用して失敗したCDB方式
+
+コミット:
+- `63e4520f27cd0459bea7e7966add0f21f2d02aa9`
+  - WindBotが `expansions/*.cdb` を直接再読込する方式
+
+この方式は最終的に**撤回**。
+
+実機で重複キー例外:
+```
+An item with the same key has already been added. Key: 572850
+```
+
+が発生したため、今後復活させない。
+
+### 現在の方式
+
+関連コミット:
+
+- `1a69596d36d009134b938909054dae49117000da`
+  - expansion-only card用にhost card provider導入
+- `4ee070094c38dc6af9c0f2298f4b9c2244cdf36f`
+  - Koishi本体カード情報をlocal ocgcoreへ供給
+- `a2cd01fe6953b0334693b172e4a93365ca66dee4`
+  - WindBotカードDBの独立性を復元
+- `17f9cbe5c50129a1883449f366c3d7ff84a311c6`
+  - host fallback + expansion script fallbackのスモーク
+- `afc519d97aa2255db0a682c5c45997f51b7974dc`
+  - Koishi固定ソースとの型差異を修正
+
+`afc519...` では以下を修正:
+
+```csharp
+Setcode = unchecked((ulong)card.Setcode),
+RuleCode = 0
+```
+
+固定KoishiPro2ソース側の `YGOSharp.Card` は
+WindBot側カード型と完全一致しないため、型を混同しないこと。
+
+---
+
+## 7. iPhone X 画面対応
+
+対象:
+- `patches/prepare_notch_compat.py`
+
+目的:
+- 古い16:9互換キャンバスではなく、iPhone X実画面幅を活用
+- ノッチ側のみ余白を確保
+- 反対側は物理画面端まで利用
+
+過去の問題:
+- 横向き時、余白を作る左右が逆だった
+
+修正:
+- LandscapeLeft / LandscapeRight の扱いを実機挙動に合わせて反転
+
+関連コミット:
+- `ba99f6691bd7bfe8c75034f1f65c375fea677905`
+
+さらに、safeAreaInsetsの44ptをそのまま使うと
+ノッチとゲーム画面の間にわずかに余分な隙間が見えたため、
+現在は概ね以下の補正を入れている。
+
+```
+cutout = MAX(30.0, cutout - 12.0)
+```
+
+関連コミット:
+- `3a48e28395d39a3e2e802c47c16e4a2fd738c767`
+
+ユーザー実機で**縦横比は正常確認済み**。
+ノッチ余白についてさらに微調整する場合も、
+まず現在値との差分で行い、旧16:9固定方式へ戻さないこと。
+
+---
+
+## 8. AIデッキ一覧の空行
+
+AI選択画面に、先頭に空のデッキ項目が見える問題があった。
+
+現在は `AIRoom.cs` 側で
+
+- prototype rowを画面外へ移動
+- 空文字デッキ名を除外
+- 重複名を除外
+
+している。
+
+この修正は正常動作確認済みなので、
+UI一覧ロジックを触る場合は再発に注意。
+
+---
+
+## 9. CI / テスト
+
+主要workflow:
+
+- `.github/workflows/ios-cloud-build.yml`
+  - 実際のiOS IPAビルド
+  - Unity認証が必要な場合あり
+- `.github/workflows/ai-integration-validate.yml`
+  - KoishiPro2へWindBot統合後の静的/ネイティブ検証
+- `.github/workflows/windbot-csharp-validate.yml`
+  - WindBot subsetのC#コンパイル検証
+- `.github/workflows/windbot-duel-smoke.yml`
+  - host ocgcore + WindBotの実デュエルスモーク
+
+### expansion-onlyカードのスモーク
+
+スモークではテスト専用ID `19999999` を使い、
+
+- 標準 `cards.cdb` には存在しない
+- host側カードデータfallbackでモンスター情報を供給
+- `expansions/scripts/c19999999.lua` を補完
+- AIターンを完走
+
+まで確認する。
+
+実運用のユーザーCDB自体をCIに保存するわけではない。
+
+---
+
+## 10. Unityビルド時の注意
+
+Unity CLI認証が必要な場合、
+GitHub Actionsの `Sign in to Unity account` でワンタイムURLが表示される。
+
+ユーザーはChatGPTアプリ版を利用する場合があるため、
+作業中にUnity認証ステップへ入ったらチャット内で明示的に通知する。
+
+### 過去の #105 コンパイルエラー
+
+build #105では以下が発生:
+
+```
+KoishiWindBotBridge.cs(...): error CS0266
+Cannot implicitly convert type 'long' to 'ulong'
+
+KoishiWindBotBridge.cs(...): error CS1061
+'Card' does not contain a definition for 'RuleCode'
+```
+
+これを `afc519...` で修正し、
+**build #106 は成功**。
+
+また、`ios-cloud-build.yml` は今後
+Unity失敗時に `error CSxxxx` をログへ直接出すよう修正済み。
+
+---
+
+## 11. 固定KoishiPro2ソース
+
+iOS cloud buildで利用しているKoishiPro2ソース:
+
+- repository: `https://code.moenext.com/hex/ygopro2.git`
+- commit: `c1850e1120df6a5885692eadacad8ad114a3cf11`
+
+この固定ソースの型・APIを基準にiOS統合コードを書くこと。
+
+「現在の別フォークでは存在するプロパティ」が
+この固定コミットにも存在するとは限らない。
+今回の `RuleCode` 問題がその例。
+
+---
+
+## 12. 次のチャットでの作業開始手順
+
+新しいチャットでこのプロジェクトを継続する場合:
+
+1. この `PROJECT_STATE.md` を最初に読む
+2. `main` の最新commitと最新成功CIを確認
+3. 正常基準は build #106 / commit `afc519...` 以降
+4. 追加カード問題の場合は、
+   **WindBot側でCDBを再読込しない**ことを最初に確認
+5. Lua問題の場合は、
+   「標準Luaが無い時だけ `expansions/scripts/c<ID>.lua`」
+   という現在仕様を維持
+6. AI進行停止の場合は、
+   `LocalDuelRouter.cs` と current-core message parsing の回帰を疑う
+7. iOSビルドエラーの場合は、
+   GitHub ActionsのUnity compiler error行を直接確認
+8. 実機で正常だった既存機能を壊さないよう、
+   修正はなるべく局所的に行う
+9. 修正後は最低でも
+   C# validation / integration validation / duel smoke
+   を確認してからiOS実機版へ進む
+
+---
+
+## 13. 現時点の結論
+
+このプロジェクトは現在、
+
+- KoishiPro2 iOS
+- 内蔵ocgcore
+- ローカルWindBot
+- Radiant Typhoon AI
+- `expansions/*.cdb` の超先行カード
+- `expansions/scripts/c<ID>.lua` の超先行カード効果
+
+を同時に利用できる状態まで到達している。
+
+**ユーザー実機でAI対戦と追加カードの正常動作を確認済み。**
+
+今後の変更では、この状態を「動作基準」として扱うこと。
