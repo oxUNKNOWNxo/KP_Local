@@ -116,13 +116,15 @@ container_class = r'''
     UIInterfaceOrientation orientation = [self koishiInterfaceOrientation];
     if (orientation == UIInterfaceOrientationLandscapeLeft)
     {
-        // Portrait top/notch rotates to the left.
-        frame.origin.x = cutout;
+        // Unity/iOS reports the opposite landscape label from the physical
+        // notch side observed on this KoishiPro2 build. Reserve the right
+        // edge for LandscapeLeft.
+        frame.origin.x = 0.0;
     }
     else if (orientation == UIInterfaceOrientationLandscapeRight)
     {
-        // Portrait top/notch rotates to the right.
-        frame.origin.x = 0.0;
+        // Reserve the left edge for LandscapeRight.
+        frame.origin.x = cutout;
     }
     else
     {
@@ -191,4 +193,4 @@ view_path.write_text(text, encoding="utf-8")
 
 print(f"Enabled native iPhone launch viewport with: {launch_name}")
 print(f"Patched notch-aware maximum-width Unity viewport: {view_path}")
-print("LandscapeLeft reserves the left edge; LandscapeRight reserves the right edge.")
+print("LandscapeLeft reserves the right edge; LandscapeRight reserves the left edge.")
