@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 using KoishiWindBot.Local;
+using WindBot.Local;
 
 public sealed class KoishiWindBotBridge
 {
@@ -33,18 +34,10 @@ public sealed class KoishiWindBotBridge
             List<int> extra = new List<int>();
             LoadPlayerDeck(playerDeckPath, main, extra);
 
-            WindBot.Game.AI.DecksManager.Init();
-            string aiDeckFile = WindBot.Game.AI.DecksManager.GetDeckFile(aiDeckName);
-            if (String.IsNullOrEmpty(aiDeckFile))
-                throw new InvalidOperationException("WindBot AI deck is not registered: " + aiDeckName);
-
-            string dbPath = File.Exists("cdb/cards.cdb") ? "cdb/cards.cdb" : "cards.cdb";
-            if (!File.Exists(dbPath))
-                throw new FileNotFoundException("cards.cdb not found", dbPath);
-
-            string dataRoot = Path.Combine(Application.streamingAssetsPath, "WindBotData");
-            if (!Directory.Exists(dataRoot))
-                throw new DirectoryNotFoundException("WindBotData not found: " + dataRoot);
+            string aiDeckFile;
+            string dbPath;
+            string dataRoot;
+            ResolveWindBotPaths(aiDeckName, out aiDeckFile, out dbPath, out dataRoot);
 
             PrepareOcgcore(aiDeckName, playerGoFirst, life);
 
@@ -69,6 +62,43 @@ public sealed class KoishiWindBotBridge
             Dispose();
             return false;
         }
+    }
+
+    public static void GetAiPregameChoices(string aiDeckName, out int hand, out bool aiWantsFirst)
+    {
+        string aiDeckFile;
+        string dbPath;
+        string dataRoot;
+        ResolveWindBotPaths(aiDeckName, out aiDeckFile, out dbPath, out dataRoot);
+
+        WindBotLocalRuntime runtime = new WindBotLocalRuntime(
+            dataRoot,
+            dbPath,
+            aiDeckName,
+            aiDeckFile,
+            packet => { });
+
+        hand = runtime.ChooseRockPaperScissors();
+        aiWantsFirst = runtime.ChooseFirst();
+
+        if (hand < 1 || hand > 3)
+            throw new InvalidDataException("WindBot returned an invalid rock-paper-scissors value: " + hand);
+    }
+
+    private static void ResolveWindBotPaths(string aiDeckName, out string aiDeckFile, out string dbPath, out string dataRoot)
+    {
+        WindBot.Game.AI.DecksManager.Init();
+        aiDeckFile = WindBot.Game.AI.DecksManager.GetDeckFile(aiDeckName);
+        if (String.IsNullOrEmpty(aiDeckFile))
+            throw new InvalidOperationException("WindBot AI deck is not registered: " + aiDeckName);
+
+        dbPath = File.Exists("cdb/cards.cdb") ? "cdb/cards.cdb" : "cards.cdb";
+        if (!File.Exists(dbPath))
+            throw new FileNotFoundException("cards.cdb not found", dbPath);
+
+        dataRoot = Path.Combine(Application.streamingAssetsPath, "WindBotData");
+        if (!Directory.Exists(dataRoot))
+            throw new DirectoryNotFoundException("WindBotData not found: " + dataRoot);
     }
 
     private static CardRecord ReadHostCard(uint code)
