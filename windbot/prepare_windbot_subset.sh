@@ -93,6 +93,26 @@ for path in root.rglob("*.cs"):
         text = text.replace(old, new)
     path.write_text(text, encoding="utf-8")
 
+# Expose the same pre-duel choices WindBot normally returns through the
+# server protocol, so KoishiPro2 can reuse its local RPS UI without a room.
+behavior = root / "Game/GameBehavior.cs"
+behavior_text = behavior.read_text(encoding="utf-8")
+behavior_anchor = "        public int GetLocalPlayer(int player)\\n"
+if behavior_anchor not in behavior_text:
+    raise SystemExit("GameBehavior pregame-choice anchor not found")
+behavior_methods = """        public int ChooseRockPaperScissors()
+        {
+            return _ai.OnRockPaperScissors();
+        }
+
+        public bool ChooseFirst()
+        {
+            return _ai.OnSelectHand();
+        }
+
+"""
+behavior_text = behavior_text.replace(behavior_anchor, behavior_methods + behavior_anchor, 1)
+behavior.write_text(behavior_text, encoding="utf-8")
 
 
 import re
@@ -433,6 +453,16 @@ namespace WindBot.Local
             using (MemoryStream stream = new MemoryStream(packet, false))
             using (BinaryReader reader = new BinaryReader(stream))
                 _behavior.OnPacket(reader);
+        }
+
+        public int ChooseRockPaperScissors()
+        {
+            return _behavior.ChooseRockPaperScissors();
+        }
+
+        public bool ChooseFirst()
+        {
+            return _behavior.ChooseFirst();
         }
 
         public string ExecutorName
