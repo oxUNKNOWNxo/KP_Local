@@ -109,6 +109,14 @@ namespace KoishiWindBot.Local
             if (aiDeck == null)
                 throw new InvalidOperationException("Could not load WindBot deck " + _aiDeckFile + ".ydk.");
 
+            // Legacy Koishi/Percy explicitly randomized the player's main deck
+            // before inserting cards into ocgcore. The WindBot port had
+            // accidentally dropped that step, so the checkbox appeared to do
+            // nothing. Restore the pre-duel shuffle here.
+            Random shuffleRandom = CreateShuffleRandom();
+            List<int> preparedHumanMain = PrepareMainDeck(humanMain, !noShuffle, shuffleRandom);
+            List<NamedCard> preparedAiMain = PrepareMainDeck(aiDeck.Cards, true, shuffleRandom);
+
             uint[] seed = LocalDuelNative.CreateSeedSequence();
             _native.Create(seed);
             _native.SetPlayerInfo(0, life, startHand, drawCount);
@@ -126,9 +134,9 @@ namespace KoishiWindBot.Local
             _native.Preload("./script/special.lua");
             _native.Preload("./script/init.lua");
 
-            LoadDeck(humanMain, (byte)_humanPlayer, LocalDuelNative.LocationDeck);
+            LoadDeck(preparedHumanMain, (byte)_humanPlayer, LocalDuelNative.LocationDeck);
             LoadDeck(humanExtra, (byte)_humanPlayer, LocalDuelNative.LocationExtra);
-            foreach (NamedCard card in aiDeck.Cards)
+            foreach (NamedCard card in preparedAiMain)
                 _native.AddCard((uint)card.Id, (byte)_aiPlayer, (byte)_aiPlayer, LocalDuelNative.LocationDeck);
             foreach (NamedCard card in aiDeck.ExtraCards)
                 _native.AddCard((uint)card.Id, (byte)_aiPlayer, (byte)_aiPlayer, LocalDuelNative.LocationExtra);
@@ -139,6 +147,27 @@ namespace KoishiWindBot.Local
                 options |= 0x10u;
             _native.Start(options);
             _router.Pump();
+        }
+
+        internal static List<T> PrepareMainDeck<T>(IEnumerable<T> cards, bool shuffle, Random random)
+        {
+            List<T> result = new List<T>(cards);
+            if (!shuffle)
+                return result;
+
+            for (int i = result.Count - 1; i > 0; --i)
+            {
+                int j = random.Next(i + 1);
+                T temp = result[i];
+                result[i] = result[j];
+                result[j] = temp;
+            }
+            return result;
+        }
+
+        private static Random CreateShuffleRandom()
+        {
+            return new Random(unchecked(Environment.TickCount ^ Guid.NewGuid().GetHashCode()));
         }
 
         public void SubmitHumanResponse(byte[] response)
