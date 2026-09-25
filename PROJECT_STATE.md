@@ -7,6 +7,9 @@
 > **次のチャットで最初に読むこと。**
 > このファイルは、KoishiPro2 iOS版のローカルWindBot統合、iPhone X画面対応、超先行カード用 `expansions` 対応について、現在の正常基準と過去の失敗経路を記録する引き継ぎ文書。
 > 新しいチャットでは、実装を変更する前にこのファイルと記載された主要ファイルを確認し、既に解決済みの方式へ逆戻りしないこと。
+>
+> **KoishiPro2本体・WindBot・ocgcore・script・Unityの更新を行う場合は、作業前に必ず `UPSTREAM_UPDATE.md` も読むこと。**
+> 上流更新の手順、衝突しやすい箇所、削除候補patch、必須CI、実機回帰項目はそちらを正とする。
 
 ---
 
@@ -386,20 +389,21 @@ iOS cloud buildで利用しているKoishiPro2ソース:
 新しいチャットでこのプロジェクトを継続する場合:
 
 1. この `PROJECT_STATE.md` を最初に読む
-2. `main` の最新commitと最新成功CIを確認
-3. 正常基準は build #106 / commit `afc519...` 以降
-4. 追加カード問題の場合は、
+2. **上流更新を伴う作業なら `UPSTREAM_UPDATE.md` を続けて読む**
+3. `main` の最新commitと最新成功CIを確認
+4. 正常基準は build #106 / commit `afc519...` 以降
+5. 追加カード問題の場合は、
    **WindBot側でCDBを再読込しない**ことを最初に確認
-5. Lua問題の場合は、
+6. Lua問題の場合は、
    「標準Luaが無い時だけ `expansions/script/c<ID>.lua`」
    という現在仕様を維持
-6. AI進行停止の場合は、
+7. AI進行停止の場合は、
    `LocalDuelRouter.cs` と current-core message parsing の回帰を疑う
-7. iOSビルドエラーの場合は、
+8. iOSビルドエラーの場合は、
    GitHub ActionsのUnity compiler error行を直接確認
-8. 実機で正常だった既存機能を壊さないよう、
+9. 実機で正常だった既存機能を壊さないよう、
    修正はなるべく局所的に行う
-9. 修正後は最低でも
+10. 修正後は最低でも
    C# validation / integration validation / duel smoke
    を確認してからiOS実機版へ進む
 
@@ -494,3 +498,16 @@ alias値自体は0に潰さない。カード名・同名判定などalias本来
 
 回帰テストでは、遠いaliasを持つ expansion-only カードにも本人IDのLuaを用意し、
 ログが `expansions/script/c<本人ID>.lua` を読むことを確認する。
+
+
+---
+
+## 18. 上流更新時の参照文書
+
+KoishiPro2本体、WindBot、ocgcore、script、Unityの更新・追従作業を行う場合は、
+**実装を変更する前に `UPSTREAM_UPDATE.md` を必ず読むこと。**
+
+`PROJECT_STATE.md` は「現在何が正常か・なぜ現在方式になったか」を記録し、
+`UPSTREAM_UPDATE.md` は「新しい上流へどう安全に移行するか」を記録する。
+
+上流更新時は両方をセットで参照する。
