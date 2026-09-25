@@ -29,7 +29,13 @@ jobs:
         run: |
           set -euo pipefail
           test -d source/Assets
-          echo '===== UIselectableList definitions ====='
-          grep -RniE -C 12 --include='*.cs' 'class UIselectableList|UIselectableList' source/Assets/SibylSystem source/Assets 2>/dev/null | head -3000 || true
+          echo '===== UIselectableList definition files ====='
+          grep -Rl --include='*.cs' 'class UIselectableList' source/Assets || true
+          while IFS= read -r file; do
+            echo "===== $file ====="
+            sed -n '1,320p' "$file"
+          done < <(grep -Rl --include='*.cs' 'class UIselectableList' source/Assets || true)
+          echo '===== UIselectableList references ====='
+          grep -RniE -C 10 --include='*.cs' 'UIselectableList' source/Assets/SibylSystem 2>/dev/null | head -1600 || true
           echo '===== AI room prefab relevant controls ====='
           grep -n -B25 -A80 -E 'm_Name: (aideck_|rank_|life_|mr4_|unrand_|first_|god_)|m_Name: .*list|m_Name: .*scroll|mText:|fontSize:|mFontSize:|width:|height:' source/Assets/ArtSystem/Room/new_room_ai.prefab | head -5000 || true
