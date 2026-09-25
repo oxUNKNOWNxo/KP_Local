@@ -95,7 +95,7 @@ public class AIRoom : WindowServantSP
 
     void SetSetupScreenVisible(bool visible)
     {
-        foreach (Transform child in transform)
+        foreach (Transform child in gameObject.transform)
             child.gameObject.SetActive(visible);
     }
 
