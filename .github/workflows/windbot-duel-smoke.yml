@@ -131,6 +131,41 @@ jobs:
           test -s "$ROOT/script/procedure.lua"
           test -s "$ROOT/script/patches/entry.lua"
 
+          # Expansion-only proof card: this ID is intentionally absent from
+          # the downloaded base cards.cdb. It verifies that local WindBot and
+          # ocgcore can consume data/scripts for newly announced cards from
+          # expansions without overriding the bundled database.
+          mkdir -p "$ROOT/expansions/scripts"
+          sqlite3 "$ROOT/expansions/early-card.cdb" <<'SQL'
+          CREATE TABLE datas (
+            id integer primary key,
+            ot integer,
+            alias integer,
+            setcode integer,
+            type integer,
+            atk integer,
+            def integer,
+            level integer,
+            race integer,
+            attribute integer,
+            category integer
+          );
+          CREATE TABLE texts (
+            id integer primary key,
+            name text,
+            desc text
+          );
+          INSERT INTO datas VALUES (19999999, 1, 0, 0, 33, 1200, 800, 4, 1, 1, 0);
+          INSERT INTO texts VALUES (19999999, 'Expansion Smoke Monster', 'Expansion-only smoke card.');
+          SQL
+          cat > "$ROOT/expansions/scripts/c19999999.lua" <<'LUA'
+          local s,id=GetID()
+          function s.initial_effect(c)
+          end
+          LUA
+          test "$(sqlite3 "$ROOT/cards.cdb" 'select count(*) from datas where id=19999999;')" -eq 0
+          test "$(sqlite3 "$ROOT/expansions/early-card.cdb" 'select count(*) from datas where id=19999999 and (type & 1) != 0;')" -eq 1
+
           missing=0
           while read -r id; do
             [ -z "$id" ] && continue
@@ -151,11 +186,13 @@ jobs:
           using System;
           using System.Collections.Generic;
           using System.IO;
+          using System.Reflection;
           using KoishiWindBot.Local;
 
           public static class Smoke
           {
               private const int Chant = 67115133;
+              private const int ExpansionMonster = 19999999;
               private const byte MsgSelectBattleCmd = 10;
               private const byte MsgSelectIdleCmd = 11;
               private const byte MsgSelectEffectYn = 12;
@@ -233,6 +270,7 @@ jobs:
                       List<int> extra;
                       LoadYdk(Path.Combine("Decks", "AI_RadiantTyphoon.ydk"), out main, out extra);
                       Console.WriteLine("proof deck main=" + main.Count + " extra=" + extra.Count);
+                      main.Add(ExpansionMonster);
 
                       using (var duel = new RadiantTyphoonLocalDuel(
                           Directory.GetCurrentDirectory(),
@@ -241,6 +279,29 @@ jobs:
                           log => Console.WriteLine(log),
                           false))
                       {
+                          var expansionCard = KoishiWindBot.OCGWrapper.Card.Get(ExpansionMonster);
+                          if (expansionCard == null || (expansionCard.Type & 1) == 0)
+                              throw new Exception("Expansion CDB monster data was not loaded into WindBot.");
+
+                          MethodInfo resolver = typeof(LocalDuelNative).GetMethod(
+                              "ResolveScriptPath",
+                              BindingFlags.NonPublic | BindingFlags.Static);
+                          string resolvedScript = (string)resolver.Invoke(
+                              null,
+                              new object[] { "./script/c" + ExpansionMonster + ".lua" });
+                          string expectedScript = Path.Combine(
+                              Directory.GetCurrentDirectory(),
+                              "expansions",
+                              "scripts",
+                              "c" + ExpansionMonster + ".lua");
+                          if (!string.Equals(
+                              Path.GetFullPath(resolvedScript),
+                              Path.GetFullPath(expectedScript),
+                              StringComparison.Ordinal))
+                              throw new Exception("Expansion card script fallback did not resolve correctly: " + resolvedScript);
+
+                          Console.WriteLine("SMOKE: expansion-only monster CDB and script fallback verified.");
+
                           // AI goes first and the deck is not shuffled. In the current
                           // WindBot YDK this puts Radiant Typhoon Chant in the opening
                           // hand, exercising the effect that stalled on iPhone.
@@ -342,6 +403,7 @@ jobs:
           ROOT="$RUNNER_TEMP/host-runtime"
           cd "$ROOT"
           LD_LIBRARY_PATH="$ROOT" mono "$ROOT/Smoke.exe" | tee "$ROOT/smoke.log"
+          grep -q 'SMOKE: expansion-only monster CDB and script fallback verified.' "$ROOT/smoke.log"
           grep -q 'WINDBOT_CHANT_TURN_SMOKE_OK' "$ROOT/smoke.log"
 
       - name: Upload smoke log
