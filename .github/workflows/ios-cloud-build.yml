@@ -375,6 +375,10 @@ jobs:
 
           if [ "$STATUS" -ne 0 ]; then
             echo "Unity iOS import failed with exit code $STATUS."
+            echo '--- Unity compiler errors ---'
+            grep -nE 'error CS[0-9]+|: error [A-Z]+[0-9]+|error [A-Z]+[0-9]+:' "$LOG" \
+              | sed -E '/[Ll]icen[sc]e|serial|machine.?id|access.?token|refresh.?token|oauth|services\.api\.unity\.com\/app-linking|Sign-in URL/d' \
+              | tail -120 || true
             safe_tail
             exit "$STATUS"
           fi
