@@ -106,6 +106,13 @@ container_class = r'''
     if (cutout < 1.0)
         cutout = 44.0;
 
+    // safeAreaInsets intentionally includes extra breathing room beyond the
+    // physical iPhone X notch. KoishiPro2 is already rendering edge-to-edge,
+    // so trim that conservative padding and keep only a small hardware margin.
+    // On iPhone X this turns the usual 44 pt safe inset into roughly the
+    // physical notch depth instead of leaving the visible extra strip.
+    cutout = MAX(30.0, cutout - 12.0);
+
     // Keep only the cutout side reserved. The opposite edge is intentionally
     // used all the way to the physical screen edge, giving KoishiPro2 a
     // substantially wider canvas than the old centred 16:9 letterbox.
