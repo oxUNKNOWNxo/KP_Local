@@ -272,16 +272,39 @@ jobs:
                       Console.WriteLine("proof deck main=" + main.Count + " extra=" + extra.Count);
                       main.Add(ExpansionMonster);
 
+                      LocalDuelNative.CardProvider hostCardProvider = code =>
+                      {
+                          if (code != ExpansionMonster)
+                              return null;
+                          return new CardRecord
+                          {
+                              Code = ExpansionMonster,
+                              Alias = 0,
+                              Setcode = 0,
+                              Type = 33,
+                              Level = 4,
+                              Attribute = 1,
+                              Race = 1,
+                              Attack = 1200,
+                              Defense = 800,
+                              LScale = 0,
+                              RScale = 0,
+                              LinkMarker = 0,
+                              RuleCode = 0
+                          };
+                      };
+
                       using (var duel = new RadiantTyphoonLocalDuel(
                           Directory.GetCurrentDirectory(),
                           Path.Combine(Directory.GetCurrentDirectory(), "cards.cdb"),
                           OnHumanMessage,
                           log => Console.WriteLine(log),
+                          hostCardProvider,
                           false))
                       {
-                          var expansionCard = KoishiWindBot.OCGWrapper.Card.Get(ExpansionMonster);
-                          if (expansionCard == null || (expansionCard.Type & 1) == 0)
-                              throw new Exception("Expansion CDB monster data was not loaded into WindBot.");
+                          var windBotExpansionCard = KoishiWindBot.OCGWrapper.Card.Get(ExpansionMonster);
+                          if (windBotExpansionCard != null)
+                              throw new Exception("Expansion-only card unexpectedly leaked into WindBot's bundled database.");
 
                           MethodInfo resolver = typeof(LocalDuelNative).GetMethod(
                               "ResolveScriptPath",
@@ -300,7 +323,7 @@ jobs:
                               StringComparison.Ordinal))
                               throw new Exception("Expansion card script fallback did not resolve correctly: " + resolvedScript);
 
-                          Console.WriteLine("SMOKE: expansion-only monster CDB and script fallback verified.");
+                          Console.WriteLine("SMOKE: host card-data fallback and expansion script fallback verified.");
 
                           // AI goes first and the deck is not shuffled. In the current
                           // WindBot YDK this puts Radiant Typhoon Chant in the opening
@@ -403,7 +426,7 @@ jobs:
           ROOT="$RUNNER_TEMP/host-runtime"
           cd "$ROOT"
           LD_LIBRARY_PATH="$ROOT" mono "$ROOT/Smoke.exe" | tee "$ROOT/smoke.log"
-          grep -q 'SMOKE: expansion-only monster CDB and script fallback verified.' "$ROOT/smoke.log"
+          grep -q 'SMOKE: host card-data fallback and expansion script fallback verified.' "$ROOT/smoke.log"
           grep -q 'WINDBOT_CHANT_TURN_SMOKE_OK' "$ROOT/smoke.log"
 
       - name: Upload smoke log
