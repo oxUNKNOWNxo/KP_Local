@@ -232,11 +232,13 @@ namespace KoishiWindBot.Local
         {
             if (string.IsNullOrEmpty(requested))
                 return null;
+
             string normalized = requested.Replace('\\', '/');
             while (normalized.StartsWith("./", StringComparison.Ordinal))
                 normalized = normalized.Substring(2);
             if (Path.IsPathRooted(normalized))
                 return normalized;
+
             string[] parts = normalized.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
             string path = _dataRoot;
             foreach (string part in parts)
@@ -245,7 +247,45 @@ namespace KoishiWindBot.Local
                     return null;
                 path = Path.Combine(path, part);
             }
+
+            // The bundled WindBotData scripts remain authoritative.  The
+            // expansions/scripts folder is only a fallback for card scripts
+            // that are not present in the bundled script snapshot, allowing
+            // newly announced cards to be tested before the bundled scripts
+            // catch up without overriding an existing standard script.
+            if (File.Exists(path))
+                return path;
+
+            string expansionPath = ResolveExpansionCardScriptPath(parts);
+            if (expansionPath != null && File.Exists(expansionPath))
+            {
+                _log?.Invoke("[WindBot/Core] using expansion card script: " + expansionPath);
+                return expansionPath;
+            }
+
             return path;
+        }
+
+        private static string ResolveExpansionCardScriptPath(string[] parts)
+        {
+            if (parts == null || parts.Length != 2 ||
+                !string.Equals(parts[0], "script", StringComparison.OrdinalIgnoreCase))
+                return null;
+
+            string fileName = parts[1];
+            if (fileName.Length < 6 ||
+                (fileName[0] != 'c' && fileName[0] != 'C') ||
+                !fileName.EndsWith(".lua", StringComparison.OrdinalIgnoreCase))
+                return null;
+
+            int digitsEnd = fileName.Length - 4;
+            for (int i = 1; i < digitsEnd; ++i)
+            {
+                if (fileName[i] < '0' || fileName[i] > '9')
+                    return null;
+            }
+
+            return Path.Combine("expansions", "scripts", fileName);
         }
 
 #if UNITY_IOS && !UNITY_EDITOR
