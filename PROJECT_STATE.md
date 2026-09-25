@@ -446,12 +446,19 @@ rank欄を「前のAI / AI x/y / 次のAI」のページ移動に利用する。
 
 ## 15. デッキシャッフル
 
-AI対戦UIの `unrand_` が「シャッフルなし」指定。
+AI対戦UIの `unrand_` は **「シャッフルしない」** と表示する。
 
-- OFF: 通常のocgcoreシャッフル
-- ON: `DUEL_PSEUDO_SHUFFLE (0x10)` を設定し、メインデッキのランダム化を抑止
+旧Percy AIでは対戦開始前にプレイヤーのMain DeckをC#側で明示シャッフルしていたが、
+WindBot移行時にこの処理が抜け、ON/OFFで初期デッキ順が変わらない回帰が発生した。
 
-したがって、OFFでも毎回同じ初手になる場合は仕様ではなく回帰として調査する。
+現在は:
+
+- OFF: プレイヤーMain Deckを対戦開始前にFisher-Yatesで明示シャッフルし、ocgcore通常シャッフルも許可
+- ON: YDK順を維持し、`DUEL_PSEUDO_SHUFFLE (0x10)` も設定
+- AI側Main Deckは旧実装と同様、対戦開始時に常にシャッフル
+- Extra Deckはシャッフルしない
+
+ローカルduel smokeで「順序維持」と「明示シャッフル」の両経路を回帰テストする。
 
 ## 16. expansion Luaフォルダ名
 
@@ -511,3 +518,36 @@ KoishiPro2本体、WindBot、ocgcore、script、Unityの更新・追従作業を
 `UPSTREAM_UPDATE.md` は「新しい上流へどう安全に移行するか」を記録する。
 
 上流更新時は両方をセットで参照する。
+
+
+---
+
+## 19. AI対戦UI簡素化と先後決定
+
+旧KoishiPro2/Percy用AI画面のうち、WindBot版では不要・無効だった項目を整理。
+
+非表示:
+
+- `life_` — 初期ライフ設定。WindBotローカル対戦は8000固定
+- `mr4_` — 旧「新マスタールール」切替。現在はMaster Rule 2020 / rule 5固定
+- `god_` — 旧Percyの相手非公開情報表示モード。WindBot版では使用しない
+
+残す:
+
+- AIデッキ選択
+- AIページ移動
+- `unrand_` — 「シャッフルしない」
+- `first_` — 「自分が先攻（OFFでじゃんけん）」
+
+`first_` がONならプレイヤー先攻で即開始。
+OFFなら、KoishiPro2が通常対戦で使用している `RMSshow_tp` のグー/チョキ/パーUIと
+`new_ui_handShower` の結果表示を再利用してWindBotとじゃんけんする。
+
+- WindBotの手は選択中Executorの `OnRockPaperScissors()`
+- プレイヤー勝利時は既存の先攻/後攻選択UIを表示
+- WindBot勝利時は同Executorの `OnSelectHand()` でAIが先攻/後攻を決定
+- あいこは再じゃんけん
+- ネット対戦用 `TcpHelper.CtosMessage_HandResult` は使わず、ローカルAI内で完結
+
+じゃんけんUIの元実装は固定KoishiPro2 `Assets/SibylSystem/Room/Room.cs`。
+上流更新時は `RMSshow_tp`, `RMSshow_FS`, `new_ui_handShower`, `Program.go` の互換性を確認する。
