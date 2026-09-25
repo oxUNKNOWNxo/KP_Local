@@ -440,9 +440,16 @@ iOS cloud buildで利用しているKoishiPro2ソース:
 - `OldSchool` はupstreamに対応YDKが無いため除外
 - Blue-Eyesを代表としてRadiant以外のExecutor生成をCIで確認
 
-AI選択UIはNGUIの長いPopupListが画面外へ見切れるため、1ページ8件とし、
-rank欄を「前のAI / AI x/y / 次のAI」のページ移動に利用する。
-長いドロップダウンのスクロール機能には依存しない。
+AI選択UIは小さいPopupList/ページ式を廃止し、
+既存の大きい `UIselectableList` を「自分のデッキ / AIデッキ」で切り替えて共用する。
+
+- 自分のデッキ一覧とAIデッキ一覧は同じスクロール枠を利用
+- AIデッキ72件も同じ縦スクロールで全件選択可能
+- AIデッキ選択は `list_aideck` Configへ保持
+- 自分のデッキ選択は `deckInUse` Configへ保持
+- ページ送り用 `rank_` は一覧モード切替へ転用
+- 旧小型 `aideck_` PopupListは非表示
+- 一覧行文字は24、設定項目文字は26へ拡大
 
 ## 15. デッキシャッフル
 
@@ -537,16 +544,17 @@ KoishiPro2本体、WindBot、ocgcore、script、Unityの更新・追従作業を
 - AIデッキ選択
 - AIページ移動
 - `unrand_` — 「シャッフルしない」
-- `first_` — 「自分が先攻（OFFでじゃんけん）」
+- `first_` — 「自分が先攻」
 
 `first_` がONならプレイヤー先攻で即開始。
-OFFなら、KoishiPro2が通常対戦で使用している `RMSshow_tp` のグー/チョキ/パーUIと
+OFF時は画面上に補足文を出さず、KoishiPro2が通常対戦で使用している `RMSshow_tp` のグー/チョキ/パーUIと
 `new_ui_handShower` の結果表示を再利用してWindBotとじゃんけんする。
 
 - WindBotの手は選択中Executorの `OnRockPaperScissors()`
 - プレイヤー勝利時は既存の先攻/後攻選択UIを表示
 - WindBot勝利時は同Executorの `OnSelectHand()` でAIが先攻/後攻を決定
 - あいこは再じゃんけん
+- じゃんけん中はAIRoomの子UIを非表示にし、AI選択画面を背景へ残さない
 - ネット対戦用 `TcpHelper.CtosMessage_HandResult` は使わず、ローカルAI内で完結
 
 じゃんけんUIの元実装は固定KoishiPro2 `Assets/SibylSystem/Room/Room.cs`。
