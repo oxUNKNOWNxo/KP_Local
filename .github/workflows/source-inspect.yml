@@ -132,6 +132,42 @@ jobs:
             grep -RniE -C 8 --include='*.cs' 'script[/\\]|\.lua|lua|StreamingAssets|ExtractZip|DownloadAndProcessFile|UnityWebRequest|http[s]?://|Resource Update|资源|更新' source/Assets/SibylSystem source/Assets/YGOSharp 2>/dev/null | head -5000 || true
           } | tee inspection/script-update-paths.txt
 
+      - name: Inspect AI room controls and first-turn selection
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' | tee inspection/ai-first-turn-ui.txt
+          from pathlib import Path
+
+          root = Path('source/Assets')
+          keys = [
+              'unrand_', 'mr4_', 'god_', 'life_', 'first_', 'aideck_', 'rank_',
+              'rock', 'paper', 'scissor', 'rps', 'janken', 'guess',
+              '先攻', '後攻', '先手', '后手', '石头', '石頭', '剪刀', '布', '猜拳',
+              'select first', 'first player', 'second player'
+          ]
+
+          for path in sorted(root.rglob('*')):
+              if not path.is_file() or path.suffix.lower() not in {'.cs','.prefab','.unity','.asset','.txt','.json'}:
+                  continue
+              try:
+                  text = path.read_text(encoding='utf-8-sig', errors='replace')
+              except Exception:
+                  continue
+              rows = text.splitlines()
+              matches = [i for i,row in enumerate(rows) if any(k.lower() in row.lower() for k in keys)]
+              if not matches:
+                  continue
+              print('===== ' + str(path) + ' =====')
+              shown=set()
+              for i in matches[:300]:
+                  for j in range(max(0,i-16), min(len(rows),i+30)):
+                      if j in shown:
+                          continue
+                      shown.add(j)
+                      print(f'{j+1}: {rows[j]}')
+          PY
+
       - name: Upload inspection snapshot
         uses: actions/upload-artifact@v4
         with:
