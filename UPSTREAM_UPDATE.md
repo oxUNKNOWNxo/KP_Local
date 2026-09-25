@@ -172,11 +172,17 @@ TrollStore IPA
 - 複数AIデッキ選択
 - AI一覧のページ送り
 - player deck選択
-- シャッフルなし設定
-- life / 先攻後攻
+- 「シャッフルしない」設定
+- 固定8000LP / Master Rule 2020
+- Koishi既存RPS UIを再利用したローカルじゃんけんと先攻後攻決定
 
 上流AIRoomの新機能は自動では取り込まれない。
 KoishiPro2更新時は**新しい上流AIRoomと独自AIRoomを必ず比較**し、有用な新機能があれば手動統合する。
+
+現在は通常対戦側のじゃんけんUIを再利用するため、固定KoishiPro2の
+`Room.cs` / `Servant.cs` にある `RMSshow_tp`, `RMSshow_FS`,
+`new_ui_handShower`, `Program.go` にも依存する。
+上流更新時はこのUI APIも比較する。
 
 ### 4.4 中リスク — `KoishiWindBotBridge.cs`
 
@@ -406,14 +412,15 @@ Unity認証が必要な場合は認証。
 4. 全AIページへ移動可能
 5. Radiant Typhoon対戦
 6. Radiant以外のAI対戦
-7. シャッフルON/OFF
-8. 通常カード効果
-9. `expansions/*.cdb` の追加カード
-10. `expansions/script/c<ID>.lua`
-11. 遠いaliasを持つ原作版カードが本人Luaを使用
-12. iPhone X横画面の左右回転
-13. ノッチ余白
-14. デッキ編集/通常メニュー等、AI以外の既存機能
+7. 「シャッフルしない」ON/OFF
+8. 「自分が先攻」OFF時のじゃんけん・先後決定
+9. 通常カード効果
+10. `expansions/*.cdb` の追加カード
+11. `expansions/script/c<ID>.lua`
+12. 遠いaliasを持つ原作版カードが本人Luaを使用
+13. iPhone X横画面の左右回転
+14. ノッチ余白
+15. デッキ編集/通常メニュー等、AI以外の既存機能
 
 ### Step 9 — 正常基準を更新
 
