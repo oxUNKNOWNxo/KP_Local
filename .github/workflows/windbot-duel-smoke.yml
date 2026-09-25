@@ -337,7 +337,7 @@ jobs:
                           string expectedScript = Path.Combine(
                               Directory.GetCurrentDirectory(),
                               "expansions",
-                              "scripts",
+                              "script",
                               "c" + ExpansionMonster + ".lua");
                           if (!string.Equals(
                               Path.GetFullPath(resolvedScript),
