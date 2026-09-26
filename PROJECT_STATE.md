@@ -465,6 +465,26 @@ AI対戦画面は3カラム構成。
 同オブジェクト配下に `panel_` と `bar_` が含まれているため、
 スクロール領域・スクロールバーは左右で独立する。
 
+### 重要: AIルーム親UIPanelのclip
+
+#120/#124の実機確認で、`mainWindow` を980幅へ広げても左右リストが中央の旧500幅で切られる問題を確認した。
+原因は `mainWindow` の親 `GameObject` に付く `UIPanel` の
+`mClipRange = {x:0,y:0,z:500,w:400}`。
+
+したがって3カラム化では、`mainWindow` Spriteだけでなく次も必ず同時に変更する。
+
+- 親 `UIPanel.baseClipRegion`: 980x420
+- `mainWindow`: 980x420
+- `glass` 背景: 944x370
+- deck list frame: 280
+- deck list clip: 260
+- scrollbar x: 135
+- header separator: 948
+
+`patches/patch_ai_room_prefab.py` でPrefabのシリアライズ値自体を変更し、
+`AIRoom.ConfigureMainWindow()` / `ApplyStableLayout()` でも表示直後に再適用する。
+親UIPanelのclip更新を省くと、子要素の座標だけ動いて見た目が旧幅のままになる。
+
 ## 15. デッキシャッフル
 
 AI対戦UIの `unrand_` は **「シャッフルしない」** と表示する。
