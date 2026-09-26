@@ -557,11 +557,6 @@ public class AIRoom : WindowServantSP
                 item.lable.fontSize = DeckListFontSize;
                 item.lable.width = DeckListClipWidth - 24;
                 item.lable.height = 33;
-                item.lable.pivot = UIWidget.Pivot.Left;
-
-                Vector3 lp = item.lable.transform.localPosition;
-                lp.x = -DeckListClipWidth * 0.5f + 12f;
-                item.lable.transform.localPosition = lp;
             }
 
             if (item.selectedObject != null)
@@ -571,7 +566,9 @@ public class AIRoom : WindowServantSP
                     selected.width = DeckListClipWidth - 8;
             }
 
-            BoxCollider collider = item.GetComponent<BoxCollider>();
+            BoxCollider collider = item.btn == null
+                ? null
+                : item.btn.GetComponent<BoxCollider>();
             if (collider != null)
             {
                 Vector3 size = collider.size;
