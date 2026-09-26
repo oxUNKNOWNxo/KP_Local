@@ -440,16 +440,30 @@ iOS cloud buildで利用しているKoishiPro2ソース:
 - `OldSchool` はupstreamに対応YDKが無いため除外
 - Blue-Eyesを代表としてRadiant以外のExecutor生成をCIで確認
 
-AI選択UIは小さいPopupList/ページ式を廃止し、
-既存の大きい `UIselectableList` を「自分のデッキ / AIデッキ」で切り替えて共用する。
+AI対戦画面は3カラム構成。
 
-- 自分のデッキ一覧とAIデッキ一覧は同じスクロール枠を利用
-- AIデッキ72件も同じ縦スクロールで全件選択可能
-- AIデッキ選択は `list_aideck` Configへ保持
+```
+[ 自分のデッキ一覧 ] [ 選択内容 + オプション ] [ AIデッキ一覧 ]
+```
+
+- 左: 既存 `UIselectableList` を使った自分のデッキ一覧
+- 右: 左一覧をruntime複製した独立 `UIselectableList` でAIデッキ72件を全件スクロール
+- 中央:
+  - `rank_` を操作不可の「自分: <選択デッキ>」表示へ転用
+  - `aideck_` を操作不可の「AI: <選択デッキ>」表示へ転用
+  - `unrand_` = 「シャッフルしない」
+  - `first_` = 「自分が先攻」
+  - 対戦開始 / 戻る
 - 自分のデッキ選択は `deckInUse` Configへ保持
-- ページ送り用 `rank_` は一覧モード切替へ転用
-- 旧小型 `aideck_` PopupListは非表示
-- 一覧行文字は24、設定項目文字は26へ拡大
+- AIデッキ選択は `list_aideck` Configへ保持
+- リストの行文字は24
+- 中央オプション/表示/ボタン文字は26で統一
+- 左右一覧には「自分のデッキ」「AIデッキ」の見出しを表示
+- 旧ページ式・一覧切替式は廃止
+
+実装では既存 `trans_AIroom.prefab` の `deck` オブジェクトを複製する。
+同オブジェクト配下に `panel_` と `bar_` が含まれているため、
+スクロール領域・スクロールバーは左右で独立する。
 
 ## 15. デッキシャッフル
 
@@ -539,16 +553,17 @@ KoishiPro2本体、WindBot、ocgcore、script、Unityの更新・追従作業を
 - `mr4_` — 旧「新マスタールール」切替。現在はMaster Rule 2020 / rule 5固定
 - `god_` — 旧Percyの相手非公開情報表示モード。WindBot版では使用しない
 
-残す:
+中央に残す:
 
-- AIデッキ選択
-- AIページ移動
+- 選択中の自分デッキ（表示専用）
+- 選択中のAIデッキ（表示専用）
 - `unrand_` — 「シャッフルしない」
 - `first_` — 「自分が先攻」
+- 対戦開始 / 戻る
 
 `first_` がONならプレイヤー先攻で即開始。
-OFF時は画面上に補足文を出さず、KoishiPro2が通常対戦で使用している `RMSshow_tp` のグー/チョキ/パーUIと
-`new_ui_handShower` の結果表示を再利用してWindBotとじゃんけんする。
+OFF時は画面上に補足文を出さず、KoishiPro2が通常対戦で使用している
+`RMSshow_tp` のグー/チョキ/パーUIと `new_ui_handShower` の結果表示を再利用してWindBotとじゃんけんする。
 
 - WindBotの手は選択中Executorの `OnRockPaperScissors()`
 - プレイヤー勝利時は既存の先攻/後攻選択UIを表示
