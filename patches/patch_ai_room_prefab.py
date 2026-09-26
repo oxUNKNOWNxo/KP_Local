@@ -139,7 +139,7 @@ parts[idx] = replace_number(parts[idx], "mWidth", 280, (230,))
 # Keep the clipping panel and scrollbar consistent with the widened list.
 panel_go = game_object_id("panel_")
 idx = component_index(panel_go, "114", uipanel_guid)
-parts[idx] = replace_clip_width(parts[idx], 260, (210,))
+parts[idx] = replace_clip_width(parts[idx], 240, (210, 260))
 
 bar_go = game_object_id("bar_")
 idx = component_index(bar_go, "4")
@@ -162,7 +162,7 @@ for needle in (
     "mWidth: 980",
     "mHeight: 420",
     "mWidth: 280",
-    "mClipRange: {x: -0.0000038146973, y: 0, z: 260, w: 314}",
+    "mClipRange: {x: -0.0000038146973, y: 0, z: 240, w: 314}",
     "m_LocalPosition: {x: 135, y: 0, z: 0}",
     "mWidth: 948",
 ):
@@ -174,6 +174,6 @@ print("  - root UIPanel clip: 980x420")
 print("  - glass backdrop: 944x370")
 print("  - mainWindow: 980x420")
 print("  - deck list frame: 280 wide")
-print("  - deck clip region: 260 wide")
+print("  - deck clip region: 240 wide")
 print("  - scrollbar x: 135")
 print("  - header separator: 948 wide")
