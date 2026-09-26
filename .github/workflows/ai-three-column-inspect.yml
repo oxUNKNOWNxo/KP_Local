@@ -40,6 +40,59 @@ jobs:
           done < <(grep -Rl "$GUID" source/Assets --include='*.prefab' --include='*.unity' || true)
           echo '===== AI prefab direct reference ====='
           grep -n -B80 -A180 "$GUID" "$PREFAB" || true
+          echo '===== selectable-list ownership graph ====='
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p=Path("source/Assets/transUI/prefab/trans_AIroom.prefab")
+          text=p.read_text(encoding="utf-8-sig",errors="replace")
+          docs=re.split(r'(?=--- !u!)', text)
+          go_names={}
+          go_transform={}
+          transforms={}
+          comp_to_go={}
+          for d in docs:
+              m=re.match(r'--- !u!1 &(\d+)',d)
+              if m:
+                  fid=m.group(1)
+                  n=re.search(r'\n  m_Name: (.+)',d)
+                  if n: go_names[fid]=n.group(1).strip()
+                  continue
+              m=re.match(r'--- !u!4 &(\d+)',d)
+              if m:
+                  fid=m.group(1)
+                  go=re.search(r'm_GameObject: \{fileID: (\d+)\}',d)
+                  father=re.search(r'm_Father: \{fileID: (\d+)\}',d)
+                  pos=re.search(r'm_LocalPosition: \{x: ([^,]+), y: ([^,]+), z: ([^}]+)\}',d)
+                  if go:
+                      goid=go.group(1); go_transform[goid]=fid
+                      transforms[fid]=(goid, father.group(1) if father else "0", pos.groups() if pos else None)
+                  continue
+              m=re.match(r'--- !u!\d+ &(\d+)',d)
+              if m:
+                  go=re.search(r'm_GameObject: \{fileID: (\d+)\}',d)
+                  if go: comp_to_go[m.group(1)]=go.group(1)
+          for comp in ["11439610","11410012","11472526"]:
+              go=comp_to_go.get(comp)
+              tf=go_transform.get(go)
+              print("component",comp,"go",go,"name",go_names.get(go),"tf",tf,"transform",transforms.get(tf))
+          def chain(go):
+              out=[]
+              seen=set()
+              while go and go!="0" and go not in seen:
+                  seen.add(go)
+                  tf=go_transform.get(go)
+                  out.append((go,go_names.get(go),tf,transforms.get(tf)))
+                  if not tf or tf not in transforms: break
+                  father=transforms[tf][1]
+                  if father=="0": break
+                  parent_go=transforms.get(father,("", "", None))[0]
+                  go=parent_go
+              return out
+          for comp in ["11439610","11410012","11472526"]:
+              go=comp_to_go.get(comp)
+              print("CHAIN",comp,chain(go))
+          PY
           echo '===== named control transforms ====='
           python3 - <<'PY'
           from pathlib import Path
