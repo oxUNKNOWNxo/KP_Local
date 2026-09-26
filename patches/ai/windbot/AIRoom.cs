@@ -9,12 +9,12 @@ public class AIRoom : WindowServantSP
     const int OptionFontSize = 22;
     const int DeckListFontSize = 22;
     const int TitleFontSize = 28;
-    const int MainWindowWidth = 980;
-    const int MainWindowHeight = 460;
-    const int DeckListWidth = 280;
-    const int DeckListClipWidth = 240;
-    const float DeckListOffset = 325f;
-    const int ActionButtonWidth = 300;
+    const int MainWindowWidth = 1100;
+    const int MainWindowHeight = 480;
+    const int DeckListWidth = 330;
+    const int DeckListClipWidth = 290;
+    const float DeckListOffset = 310f;
+    const int ActionButtonWidth = 250;
     const int ActionButtonHeight = 44;
     const string LocalRpsHash = "WindBot_LocalRps";
     const string LocalTurnChoiceHash = "WindBot_LocalTurnChoice";
@@ -397,8 +397,8 @@ public class AIRoom : WindowServantSP
         SetControlPosition("unrand_", -82f, -2f);
         SetControlPosition("first_", -82f, -44f);
 
-        SetControlWidgetWidth("unrand_", 220);
-        SetControlWidgetWidth("first_", 220);
+        SetControlWidgetWidth("unrand_", 200);
+        SetControlWidgetWidth("first_", 200);
 
         Transform startGroup = FindControl("start");
         if (startGroup != null)
@@ -519,7 +519,7 @@ public class AIRoom : WindowServantSP
             p.x = 0f;
             p.y = 108f;
             playerDeckDisplayLabel.transform.localPosition = p;
-            playerDeckDisplayLabel.width = 340;
+            playerDeckDisplayLabel.width = 280;
             playerDeckDisplayLabel.fontSize = OptionFontSize;
         }
 
@@ -529,7 +529,7 @@ public class AIRoom : WindowServantSP
             p.x = 0f;
             p.y = 66f;
             aiDeckDisplayLabel.transform.localPosition = p;
-            aiDeckDisplayLabel.width = 340;
+            aiDeckDisplayLabel.width = 280;
             aiDeckDisplayLabel.fontSize = OptionFontSize;
         }
     }
