@@ -1,0 +1,136 @@
+name: Koishi AI window frame inspection
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/ai-window-frame-inspect.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SOURCE_COMMIT: c1850e1120df6a5885692eadacad8ad114a3cf11
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: control
+      - uses: actions/cache/restore@v6
+        with:
+          path: source
+          key: koishipro2-source-${{ env.SOURCE_COMMIT }}-v1
+      - name: Inspect mainWindow subtree and layout controllers
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          p=Path("source/Assets/transUI/prefab/trans_AIroom.prefab")
+          text=p.read_text(encoding="utf-8-sig",errors="replace")
+          docs=re.split(r'(?=--- !u!)', text)
+
+          gos={}
+          go_components={}
+          transforms={}
+          docs_by_id={}
+          comp_to_go={}
+
+          for d in docs:
+              m=re.match(r'--- !u!(\d+) &(\d+)',d)
+              if not m:
+                  continue
+              typ,fid=m.groups()
+              docs_by_id[fid]=(typ,d)
+              go=re.search(r'm_GameObject: \{fileID: (\d+)\}',d)
+              if go:
+                  comp_to_go[fid]=go.group(1)
+                  go_components.setdefault(go.group(1),[]).append(fid)
+              if typ=="1":
+                  n=re.search(r'\n  m_Name: (.+)',d)
+                  if n: gos[fid]=n.group(1).strip()
+              if typ=="4":
+                  father=re.search(r'm_Father: \{fileID: (\d+)\}',d)
+                  pos=re.search(r'm_LocalPosition: \{x: ([^,]+), y: ([^,]+), z: ([^}]+)\}',d)
+                  scale=re.search(r'm_LocalScale: \{x: ([^,]+), y: ([^,]+), z: ([^}]+)\}',d)
+                  child_ids=re.findall(r'- \{fileID: (\d+)\}',d)
+                  transforms[fid]={
+                      "go": go.group(1) if go else "",
+                      "father": father.group(1) if father else "0",
+                      "pos": pos.groups() if pos else None,
+                      "scale": scale.groups() if scale else None,
+                      "children": child_ids,
+                  }
+
+          tf_by_go={v["go"]:k for k,v in transforms.items() if v["go"]}
+          main_go=next(g for g,n in gos.items() if n=="mainWindow")
+          main_tf=tf_by_go[main_go]
+
+          subtree_tfs=[]
+          stack=[main_tf]
+          while stack:
+              tf=stack.pop()
+              if tf in subtree_tfs: continue
+              subtree_tfs.append(tf)
+              stack.extend(transforms.get(tf,{}).get("children",[]))
+
+          subtree_gos=[transforms[tf]["go"] for tf in subtree_tfs if tf in transforms and transforms[tf]["go"]]
+
+          print("MAIN GO",main_go,"TF",main_tf)
+          print("=== subtree transforms ===")
+          for tf in subtree_tfs:
+              if tf not in transforms: continue
+              go=transforms[tf]["go"]
+              print(gos.get(go), "go",go,"tf",tf,
+                    "pos",transforms[tf]["pos"],
+                    "scale",transforms[tf]["scale"],
+                    "father",transforms[tf]["father"])
+
+          print("=== subtree components ===")
+          for go in subtree_gos:
+              print("\nOBJECT",gos.get(go),go)
+              for cid in go_components.get(go,[]):
+                  typ,d=docs_by_id[cid]
+                  if typ=="4": continue
+                  script=re.search(r'm_Script: \{fileID: 11500000, guid: ([0-9a-f]+),',d)
+                  width=re.search(r'\n  mWidth: ([-0-9.]+)',d)
+                  height=re.search(r'\n  mHeight: ([-0-9.]+)',d)
+                  clip=re.search(r'\n  mClipRange: \{x: ([^,]+), y: ([^,]+), z: ([^,]+), w: ([^}]+)\}',d)
+                  left=re.search(r'\n  leftAnchor:\n(?:.*\n){0,5}?    target: \{fileID: (\d+)\}',d)
+                  right=re.search(r'\n  rightAnchor:\n(?:.*\n){0,5}?    target: \{fileID: (\d+)\}',d)
+                  top=re.search(r'\n  topAnchor:\n(?:.*\n){0,5}?    target: \{fileID: (\d+)\}',d)
+                  bottom=re.search(r'\n  bottomAnchor:\n(?:.*\n){0,5}?    target: \{fileID: (\d+)\}',d)
+                  print(" comp",cid,"type",typ,
+                        "script",script.group(1) if script else "",
+                        "w",width.group(1) if width else "",
+                        "h",height.group(1) if height else "",
+                        "clip",clip.groups() if clip else "",
+                        "anchors",(
+                          left.group(1) if left else "",
+                          right.group(1) if right else "",
+                          top.group(1) if top else "",
+                          bottom.group(1) if bottom else ""
+                        ))
+                  if any(x in d for x in ["UIStretch","UIAnchor","mStyle:","mClipping:"]):
+                      print(d[:3500])
+
+          print("=== likely frame/background objects globally ===")
+          for go,name in gos.items():
+              low=name.lower()
+              if any(k in low for k in ["window","background","bg","frame","mask","panel"]):
+                  tf=tf_by_go.get(go)
+                  print(name,"go",go,"tf",tf,"transform",transforms.get(tf))
+                  for cid in go_components.get(go,[]):
+                      typ,d=docs_by_id[cid]
+                      width=re.search(r'\n  mWidth: ([-0-9.]+)',d)
+                      height=re.search(r'\n  mHeight: ([-0-9.]+)',d)
+                      clip=re.search(r'\n  mClipRange: \{x: ([^,]+), y: ([^,]+), z: ([^,]+), w: ([^}]+)\}',d)
+                      if width or height or clip:
+                          print(" ",cid,"type",typ,"w",width.group(1) if width else "","h",height.group(1) if height else "","clip",clip.groups() if clip else "")
+          PY
