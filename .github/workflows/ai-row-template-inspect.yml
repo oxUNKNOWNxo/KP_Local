@@ -36,6 +36,15 @@ jobs:
           f2=$(grep -Rl --include='*.cs' 'class UIselectableList' source/Assets | head -1)
           echo "$f2"
           sed -n '1,300p' "$f2"
+          echo '=== row prefab by mod GUID ==='
+          MODGUID=b102b714e94a8bf4abf4b4ada52e4158
+          meta=$(grep -RIl "guid: $MODGUID" source/Assets --include='*.meta' | head -1)
+          echo "$meta"
+          asset="${meta%.meta}"
+          echo "$asset"
+          sed -n '1,900p' "$asset"
+          echo '=== exact UIselectableList.cs ==='
+          sed -n '1,360p' source/Assets/transUI/UIselectableList.cs
           echo '=== trans_AIroom deck/item hierarchy ==='
           python3 - <<'PY'
           from pathlib import Path
