@@ -8,19 +8,19 @@ public class AIRoom : WindowServantSP
     const int DefaultLife = 8000;
     const int OptionFontSize = 26;
     const int DeckListFontSize = 24;
-    const string PlayerDeckMode = "自分のデッキ";
-    const string AiDeckMode = "AIデッキ";
+    const float FallbackDeckListOffset = 330f;
     const string LocalRpsHash = "WindBot_LocalRps";
     const string LocalTurnChoiceHash = "WindBot_LocalTurnChoice";
 
-    UIselectableList superScrollView = null;
-    string sort = "sortByTimeDeck";
-    UIPopupList list_aideck;
-    UIPopupList list_airank;
+    UIselectableList playerDeckList;
+    UIselectableList aiDeckList;
+    UIPopupList playerDeckDisplay;
+    UIPopupList aiDeckDisplay;
     KoishiWindBotBridge windbot;
+
+    string sort = "sortByTimeDeck";
     string[] aiDeckNames = new string[0];
     List<string> playerDeckNames = new List<string>();
-    bool showingAiDecks;
 
     bool pregamePending;
     string pendingPlayerDeck;
@@ -30,27 +30,30 @@ public class AIRoom : WindowServantSP
     public override void initialize()
     {
         createWindow(Program.I().new_ui_aiRoom);
-        superScrollView = gameObject.GetComponentInChildren<UIselectableList>();
-        superScrollView.selectedAction = onSelected;
-        list_aideck = UIHelper.getByName<UIPopupList>(gameObject, "aideck_");
-        list_airank = UIHelper.getByName<UIPopupList>(gameObject, "rank_");
 
-        SimplifyWindBotOptions();
-        ConfigureDeckListModeSelector();
-        EnlargeDeckListTemplate();
+        playerDeckList = gameObject.GetComponentInChildren<UIselectableList>();
+        if (playerDeckList == null)
+            throw new InvalidOperationException("AI room player deck list was not found.");
 
-        UIHelper.registEvent(gameObject, "rank_", onListModeChanged);
+        CreateSideBySideDeckLists();
+
+        playerDeckDisplay = UIHelper.getByName<UIPopupList>(gameObject, "rank_");
+        aiDeckDisplay = UIHelper.getByName<UIPopupList>(gameObject, "aideck_");
+
+        ConfigureCenterOptions();
+
+        playerDeckList.selectedAction = OnPlayerDeckSelected;
+        aiDeckList.selectedAction = OnAiDeckSelected;
+
         UIHelper.registEvent(gameObject, "start_", onStart);
         UIHelper.registEvent(gameObject, "exit_", () => { Program.I().shiftToServant(Program.I().menu); });
-        UpdateHeader();
 
-        superScrollView.install();
-        if (superScrollView.mod != null)
-        {
-            Vector3 prototypePosition = superScrollView.mod.transform.localPosition;
-            prototypePosition.y = 100000f;
-            superScrollView.mod.transform.localPosition = prototypePosition;
-        }
+        playerDeckList.install();
+        aiDeckList.install();
+
+        ParkListPrototype(playerDeckList);
+        ParkListPrototype(aiDeckList);
+
         SetActiveFalse();
     }
 
@@ -75,15 +78,26 @@ public class AIRoom : WindowServantSP
         return label;
     }
 
-    void SetControlLabel(string name, string text, int fontSize = 0)
+    void SetControlLabel(string name, string text, int fontSize)
     {
         UILabel label = FindControlLabel(name);
         if (label == null)
             return;
 
         label.text = text;
-        if (fontSize > 0)
-            label.fontSize = fontSize;
+        label.fontSize = fontSize;
+    }
+
+    void SetControlPosition(string name, float x, float y)
+    {
+        Transform control = FindControl(name);
+        if (control == null)
+            return;
+
+        Vector3 p = control.localPosition;
+        p.x = x;
+        p.y = y;
+        control.localPosition = p;
     }
 
     void HideControl(string name)
@@ -99,131 +113,206 @@ public class AIRoom : WindowServantSP
             child.gameObject.SetActive(visible);
     }
 
-    void SimplifyWindBotOptions()
+    void CreateSideBySideDeckLists()
     {
-        Transform life = FindControl("life_");
-        Transform unrand = FindControl("unrand_");
-        Transform first = FindControl("first_");
+        Transform originalTransform = playerDeckList.transform;
+        Transform parent = originalTransform.parent;
+        Vector3 originalPosition = originalTransform.localPosition;
 
-        if (life != null && unrand != null && first != null)
-        {
-            float spacing = first.localPosition.y - unrand.localPosition.y;
+        float sideOffset = Math.Abs(originalPosition.x);
+        if (sideOffset < 180f)
+            sideOffset = FallbackDeckListOffset;
 
-            Vector3 p = unrand.localPosition;
-            p.y = life.localPosition.y;
-            unrand.localPosition = p;
+        originalTransform.localPosition = new Vector3(
+            -sideOffset,
+            originalPosition.y,
+            originalPosition.z);
+        originalTransform.gameObject.name = "PlayerDeckList";
 
-            p = first.localPosition;
-            p.y = life.localPosition.y + spacing;
-            first.localPosition = p;
-        }
+        GameObject aiListObject = (GameObject)UnityEngine.Object.Instantiate(
+            originalTransform.gameObject,
+            originalTransform.localPosition,
+            originalTransform.localRotation);
+        aiListObject.name = "AiDeckList";
+        aiListObject.transform.SetParent(parent, false);
+        aiListObject.transform.localScale = originalTransform.localScale;
+        aiListObject.transform.localPosition = new Vector3(
+            sideOffset,
+            originalPosition.y,
+            originalPosition.z);
 
-        HideControl("life_");
-        HideControl("mr4_");
-        HideControl("god_");
-        HideControl("aideck_");
+        aiDeckList = aiListObject.GetComponent<UIselectableList>();
+        if (aiDeckList == null)
+            throw new InvalidOperationException("Cloned AI deck list is missing UIselectableList.");
 
-        SetControlLabel("unrand_", "シャッフルしない", OptionFontSize);
-        SetControlLabel("first_", "自分が先攻", OptionFontSize);
+        EnlargeDeckListTemplate(playerDeckList);
+        EnlargeDeckListTemplate(aiDeckList);
     }
 
-    void ConfigureDeckListModeSelector()
+    void EnlargeDeckListTemplate(UIselectableList list)
     {
-        if (list_airank == null)
+        if (list == null || list.mod == null)
             return;
 
-        list_airank.Clear();
-        list_airank.AddItem(PlayerDeckMode);
-        list_airank.AddItem(AiDeckMode);
-
-        string saved = Config.Get("aiDeckListMode", PlayerDeckMode);
-        showingAiDecks = String.Equals(saved, AiDeckMode, StringComparison.Ordinal);
-        list_airank.value = showingAiDecks ? AiDeckMode : PlayerDeckMode;
-        list_airank.fontSize = OptionFontSize;
-    }
-
-    void EnlargeDeckListTemplate()
-    {
-        if (superScrollView == null || superScrollView.mod == null)
-            return;
-
-        UILabel label = superScrollView.mod.GetComponentInChildren<UILabel>(true);
+        UILabel label = list.mod.GetComponentInChildren<UILabel>(true);
         if (label != null)
             label.fontSize = Math.Max(label.fontSize, DeckListFontSize);
     }
 
-    void UpdateHeader()
+    void ParkListPrototype(UIselectableList list)
     {
-        string aiDeck = Config.Get("list_aideck", "RadiantTyphoon");
-        UIHelper.trySetLableText(gameObject, "percyHint", "WindBot AIモード  /  AI: " + aiDeck);
-    }
-
-    void onSelected()
-    {
-        if (String.IsNullOrWhiteSpace(superScrollView.selectedString))
+        if (list == null || list.mod == null)
             return;
 
-        if (showingAiDecks)
+        Vector3 p = list.mod.transform.localPosition;
+        p.y = 100000f;
+        list.mod.transform.localPosition = p;
+    }
+
+    void ConfigureCenterOptions()
+    {
+        HideControl("life_");
+        HideControl("mr4_");
+        HideControl("god_");
+
+        SetControlLabel("unrand_", "シャッフルしない", OptionFontSize);
+        SetControlLabel("first_", "自分が先攻", OptionFontSize);
+        SetControlLabel("start_", "対戦開始", OptionFontSize);
+        SetControlLabel("exit_", "戻る", OptionFontSize);
+
+        SetControlPosition("rank_", 0f, 135f);
+        SetControlPosition("aideck_", 0f, 90f);
+        SetControlPosition("unrand_", 0f, 25f);
+        SetControlPosition("first_", 0f, -25f);
+
+        Transform hint = FindControl("percyHint");
+        if (hint != null)
         {
-            Config.Set("list_aideck", superScrollView.selectedString);
-            UpdateHeader();
+            Vector3 p = hint.localPosition;
+            p.x = 0f;
+            p.y = 190f;
+            hint.localPosition = p;
         }
-        else
+        SetControlLabel("percyHint", "WindBot AI対戦", OptionFontSize);
+
+        Transform buttons = FindControl("btns");
+        if (buttons != null)
         {
-            Config.Set("deckInUse", superScrollView.selectedString);
+            Vector3 p = buttons.localPosition;
+            p.x = 0f;
+            buttons.localPosition = p;
+        }
+        SetControlPosition("start_", -70f, 142f);
+        SetControlPosition("exit_", 70f, 142f);
+
+        ConfigureReadOnlyDisplay(playerDeckDisplay);
+        ConfigureReadOnlyDisplay(aiDeckDisplay);
+        UpdateSelectedDeckDisplays();
+    }
+
+    void ConfigureReadOnlyDisplay(UIPopupList popup)
+    {
+        if (popup == null)
+            return;
+
+        popup.enabled = false;
+        popup.fontSize = OptionFontSize;
+
+        UILabel label = popup.GetComponent<UILabel>();
+        if (label == null)
+            label = popup.GetComponentInChildren<UILabel>(true);
+        if (label != null)
+            label.fontSize = OptionFontSize;
+
+        Collider[] colliders = popup.GetComponentsInChildren<Collider>(true);
+        for (int i = 0; i < colliders.Length; ++i)
+            colliders[i].enabled = false;
+    }
+
+    void SetReadOnlyDisplay(UIPopupList popup, string text)
+    {
+        if (popup == null)
+            return;
+
+        popup.enabled = true;
+        popup.Clear();
+        popup.AddItem(text);
+        popup.value = text;
+        popup.enabled = false;
+
+        UILabel label = popup.GetComponent<UILabel>();
+        if (label == null)
+            label = popup.GetComponentInChildren<UILabel>(true);
+        if (label != null)
+        {
+            label.text = text;
+            label.fontSize = OptionFontSize;
         }
     }
 
-    void onListModeChanged()
+    void UpdateSelectedDeckDisplays()
     {
-        if (list_airank == null || String.IsNullOrWhiteSpace(list_airank.value))
-            return;
+        string player = Config.Get("deckInUse", "");
+        string ai = Config.Get("list_aideck", "RadiantTyphoon");
 
-        bool nextAi = String.Equals(list_airank.value, AiDeckMode, StringComparison.Ordinal);
-        if (showingAiDecks == nextAi && superScrollView.Selected())
-            return;
-
-        showingAiDecks = nextAi;
-        Config.Set("aiDeckListMode", showingAiDecks ? AiDeckMode : PlayerDeckMode);
-        PopulateDeckList();
+        SetReadOnlyDisplay(playerDeckDisplay, "自分: " + player);
+        SetReadOnlyDisplay(aiDeckDisplay, "AI: " + ai);
     }
 
-    void PopulateDeckList()
+    void OnPlayerDeckSelected()
     {
-        superScrollView.clear();
+        if (playerDeckList == null || String.IsNullOrWhiteSpace(playerDeckList.selectedString))
+            return;
 
-        if (showingAiDecks)
+        Config.Set("deckInUse", playerDeckList.selectedString);
+        UpdateSelectedDeckDisplays();
+    }
+
+    void OnAiDeckSelected()
+    {
+        if (aiDeckList == null || String.IsNullOrWhiteSpace(aiDeckList.selectedString))
+            return;
+
+        Config.Set("list_aideck", aiDeckList.selectedString);
+        UpdateSelectedDeckDisplays();
+    }
+
+    void PopulatePlayerDeckList()
+    {
+        playerDeckList.clear();
+        string selected = Config.Get("deckInUse", "miaowu");
+
+        for (int i = 0; i < playerDeckNames.Count; ++i)
+            playerDeckList.add(playerDeckNames[i]);
+
+        if (!playerDeckNames.Contains(selected) && playerDeckNames.Count > 0)
         {
-            string selectedAi = Config.Get("list_aideck", "RadiantTyphoon");
-            for (int i = 0; i < aiDeckNames.Length; ++i)
-                superScrollView.add(aiDeckNames[i]);
-
-            if (Array.IndexOf(aiDeckNames, selectedAi) < 0 && aiDeckNames.Length > 0)
-            {
-                selectedAi = aiDeckNames[0];
-                Config.Set("list_aideck", selectedAi);
-            }
-
-            superScrollView.selectedString = selectedAi;
+            selected = playerDeckNames[0];
+            Config.Set("deckInUse", selected);
         }
-        else
+
+        playerDeckList.selectedString = selected;
+        playerDeckList.toTop();
+        playerDeckList.mark();
+    }
+
+    void PopulateAiDeckList()
+    {
+        aiDeckList.clear();
+        string selected = Config.Get("list_aideck", "RadiantTyphoon");
+
+        for (int i = 0; i < aiDeckNames.Length; ++i)
+            aiDeckList.add(aiDeckNames[i]);
+
+        if (Array.IndexOf(aiDeckNames, selected) < 0 && aiDeckNames.Length > 0)
         {
-            string selectedPlayer = Config.Get("deckInUse", "miaowu");
-            for (int i = 0; i < playerDeckNames.Count; ++i)
-                superScrollView.add(playerDeckNames[i]);
-
-            if (!playerDeckNames.Contains(selectedPlayer) && playerDeckNames.Count > 0)
-            {
-                selectedPlayer = playerDeckNames[0];
-                Config.Set("deckInUse", selectedPlayer);
-            }
-
-            superScrollView.selectedString = selectedPlayer;
+            selected = aiDeckNames[0];
+            Config.Set("list_aideck", selected);
         }
 
-        superScrollView.toTop();
-        superScrollView.mark();
-        UpdateHeader();
+        aiDeckList.selectedString = selected;
+        aiDeckList.toTop();
+        aiDeckList.mark();
     }
 
     void onStart()
@@ -410,13 +499,9 @@ public class AIRoom : WindowServantSP
 
         base.show();
         LoadDeckNames();
-
-        string savedMode = Config.Get("aiDeckListMode", PlayerDeckMode);
-        showingAiDecks = String.Equals(savedMode, AiDeckMode, StringComparison.Ordinal);
-        if (list_airank != null)
-            list_airank.value = showingAiDecks ? AiDeckMode : PlayerDeckMode;
-
-        PopulateDeckList();
+        PopulatePlayerDeckList();
+        PopulateAiDeckList();
+        UpdateSelectedDeckDisplays();
         Program.charge();
     }
 
