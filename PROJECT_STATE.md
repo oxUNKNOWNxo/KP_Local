@@ -652,3 +652,26 @@ OFF時は画面上に補足文を出さず、KoishiPro2が通常対戦で使用�
 - CIでは、現在動的配置へ移行した箇所に古い固定座標が復活していないことも検証する
 
 今回のAI対戦画面では、見出しは各deck list frameのbounds、中央4項目は左右frameの内側端と各controlのvisual boundsから配置する方式を正常基準とする。
+
+
+---
+
+## 22. 中央カラム配置の補正（2026-09-27）
+
+実機で、見出しの動的配置は改善した一方、中央オプション4項目が左へ寄ることを確認した。
+
+原因:
+
+- 左右deck listの内側端から中央Xを求める考え方自体は正しい
+- ただし前版は各control配下の `UIWidget` をすべてunionしたvisual boundsを使っていた
+- 旧Prefab由来の大きい/不可視/anchor付き子Widgetまでboundsへ混ざると、見えているチェックボックス＋文字列の中心と計算上の中心が一致しない
+
+現在の基準:
+
+- 左deck frame右端を中央カラム左端、右deck frame左端を中央カラム右端として、`left/right/width/center` を実際の `worldCorners` から取得する
+- 中央controlの位置合わせには全descendantの総boundsを使わない
+- checkbox rowやbuttonは、control自身のルート `UIWidget` と表示 `UILabel` を中心としたcontent boundsを使う
+- そのcontent boundsの中心を中央カラム中心へ合わせる
+- 中央カラムの幅が変化しても、この算出を再実行して追従させる
+
+一般則として、動的配置でも『何のboundsを測るか』を明示する。親配下を無条件に全unionすると、不可視・anchor用Widgetが混ざって見た目と計算値がずれる可能性がある。

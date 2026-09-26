@@ -209,6 +209,100 @@ public class AIRoom : WindowServantSP
         target.position = root.TransformPoint(rootPosition);
     }
 
+    Bounds GetCenterColumnBounds(UIWidget playerFrame, UIWidget aiFrame)
+    {
+        Bounds playerBounds = GetWidgetBoundsInLayout(playerFrame);
+        Bounds aiBounds = GetWidgetBoundsInLayout(aiFrame);
+
+        float left = playerBounds.max.x;
+        float right = aiBounds.min.x;
+        if (right < left)
+        {
+            float swap = left;
+            left = right;
+            right = swap;
+        }
+
+        float bottom = Mathf.Max(playerBounds.min.y, aiBounds.min.y);
+        float top = Mathf.Min(playerBounds.max.y, aiBounds.max.y);
+        if (top < bottom)
+        {
+            bottom = Mathf.Min(playerBounds.min.y, aiBounds.min.y);
+            top = Mathf.Max(playerBounds.max.y, aiBounds.max.y);
+        }
+
+        Vector3 min = new Vector3(left, bottom, 0f);
+        Vector3 max = new Vector3(right, top, 0f);
+        Bounds column = new Bounds((min + max) * 0.5f, Vector3.zero);
+        column.Encapsulate(min);
+        column.Encapsulate(max);
+        return column;
+    }
+
+    void EncapsulateWidgetBounds(ref Bounds bounds, ref bool found, UIWidget widget)
+    {
+        if (widget == null || !widget.enabled || !widget.gameObject.activeInHierarchy)
+            return;
+
+        Bounds widgetBounds = GetWidgetBoundsInLayout(widget);
+        if (!found)
+        {
+            bounds = widgetBounds;
+            found = true;
+        }
+        else
+        {
+            bounds.Encapsulate(widgetBounds.min);
+            bounds.Encapsulate(widgetBounds.max);
+        }
+    }
+
+    Bounds GetControlContentBoundsInLayout(Transform target)
+    {
+        Transform root = LayoutRoot();
+        Vector3 fallback = target == null
+            ? Vector3.zero
+            : root.InverseTransformPoint(target.position);
+        Bounds bounds = new Bounds(fallback, Vector3.zero);
+        bool found = false;
+
+        if (target == null)
+            return bounds;
+
+        // For center-column controls, do not union every descendant widget:
+        // old prefab children may contain large/invisible anchored regions.
+        // The control's own widget plus its visible text describes the intended row.
+        EncapsulateWidgetBounds(ref bounds, ref found, target.GetComponent<UIWidget>());
+
+        UILabel[] labels = target.GetComponentsInChildren<UILabel>(true);
+        for (int i = 0; i < labels.Length; ++i)
+            EncapsulateWidgetBounds(ref bounds, ref found, labels[i]);
+
+        if (!found)
+        {
+            UIWidget fallbackWidget = target.GetComponentInChildren<UIWidget>(true);
+            EncapsulateWidgetBounds(ref bounds, ref found, fallbackWidget);
+        }
+
+        return bounds;
+    }
+
+    void MoveControlContentCenterInLayout(
+        Transform target,
+        Bounds columnBounds,
+        float targetY)
+    {
+        if (target == null)
+            return;
+
+        Transform root = LayoutRoot();
+        Bounds content = GetControlContentBoundsInLayout(target);
+        Vector3 rootPosition = root.InverseTransformPoint(target.position);
+        rootPosition.x += columnBounds.center.x - content.center.x;
+        rootPosition.y += targetY - content.center.y;
+        target.position = root.TransformPoint(rootPosition);
+    }
+
     void SetControlLabel(string name, string text, int fontSize)
     {
         Transform control = FindControl(name);
@@ -571,18 +665,12 @@ public class AIRoom : WindowServantSP
             || unrand == null || first == null || start == null || back == null)
             return;
 
-        Bounds playerBounds = GetWidgetBoundsInLayout(playerFrame);
-        Bounds aiBounds = GetWidgetBoundsInLayout(aiFrame);
+        Bounds columnBounds = GetCenterColumnBounds(playerFrame, aiFrame);
 
-        // Use the actual gap between the two list frames as the center column.
-        // This remains correct even when either list or its parent moves.
-        float centerX = (playerBounds.max.x + aiBounds.min.x) * 0.5f;
-        float centerY = (playerBounds.center.y + aiBounds.center.y) * 0.5f;
-
-        Bounds unrandBounds = GetVisualBoundsInLayout(unrand);
-        Bounds firstBounds = GetVisualBoundsInLayout(first);
-        Bounds startBounds = GetVisualBoundsInLayout(start);
-        Bounds backBounds = GetVisualBoundsInLayout(back);
+        Bounds unrandBounds = GetControlContentBoundsInLayout(unrand);
+        Bounds firstBounds = GetControlContentBoundsInLayout(first);
+        Bounds startBounds = GetControlContentBoundsInLayout(start);
+        Bounds backBounds = GetControlContentBoundsInLayout(back);
 
         float unrandHeight = Mathf.Max(1f, unrandBounds.size.y);
         float firstHeight = Mathf.Max(1f, firstBounds.size.y);
@@ -601,22 +689,22 @@ public class AIRoom : WindowServantSP
             + startHeight + buttonGap
             + backHeight;
 
-        float cursor = centerY + totalHeight * 0.5f;
+        float cursor = columnBounds.center.y + totalHeight * 0.5f;
 
         float unrandY = cursor - unrandHeight * 0.5f;
-        MoveVisualCenterInLayout(unrand, centerX, unrandY);
+        MoveControlContentCenterInLayout(unrand, columnBounds, unrandY);
         cursor -= unrandHeight + rowGap;
 
         float firstY = cursor - firstHeight * 0.5f;
-        MoveVisualCenterInLayout(first, centerX, firstY);
+        MoveControlContentCenterInLayout(first, columnBounds, firstY);
         cursor -= firstHeight + sectionGap;
 
         float startY = cursor - startHeight * 0.5f;
-        MoveVisualCenterInLayout(start, centerX, startY);
+        MoveControlContentCenterInLayout(start, columnBounds, startY);
         cursor -= startHeight + buttonGap;
 
         float backY = cursor - backHeight * 0.5f;
-        MoveVisualCenterInLayout(back, centerX, backY);
+        MoveControlContentCenterInLayout(back, columnBounds, backY);
     }
 
 
