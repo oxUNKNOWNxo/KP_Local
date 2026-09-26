@@ -449,8 +449,9 @@ AI対戦画面は3カラム構成。
 - 左: 既存 `UIselectableList` を使った自分のデッキ一覧
 - 右: 左一覧をruntime複製した独立 `UIselectableList` でAIデッキ72件を全件スクロール
 - 中央:
-  - `rank_` を操作不可の「自分: <選択デッキ>」表示へ転用
-  - `aideck_` を操作不可の「AI: <選択デッキ>」表示へ転用
+  - 旧 `rank_` / `aideck_` Popupは完全非表示
+  - `percyHint` と同系統の `UILabel` をruntime複製し、
+    「自分: <選択デッキ>」「AI: <選択デッキ>」を中央専用表示として生成
   - `unrand_` = 「シャッフルしない」
   - `first_` = 「自分が先攻」
   - 対戦開始 / 戻る
@@ -484,6 +485,21 @@ AI対戦画面は3カラム構成。
 `patches/patch_ai_room_prefab.py` でPrefabのシリアライズ値自体を変更し、
 `AIRoom.ConfigureMainWindow()` / `ApplyStableLayout()` でも表示直後に再適用する。
 親UIPanelのclip更新を省くと、子要素の座標だけ動いて見た目が旧幅のままになる。
+
+
+### 重要: 旧Popupを中央表示へ流用しない
+
+#126相当の実機画面で、`rank_` / `aideck_` の `content_` ラベルを中央表示へ流用すると、
+Popup内部のAnchor/子ラベル位置が残り、選択中デッキ名が左側デッキ一覧へめり込むことを確認。
+
+したがって今後は:
+
+- `rank_` / `aideck_` は完全非表示
+- 選択中デッキ名は専用 `UILabel` を新規生成
+- 左右一覧は `x=±325` に寄せ、外枠との余白を確保
+- list clipは240幅として左右に内側余白を確保
+
+とする。旧Popupの位置補正で再利用する方式へ戻さない。
 
 ## 15. デッキシャッフル
 
@@ -575,8 +591,8 @@ KoishiPro2本体、WindBot、ocgcore、script、Unityの更新・追従作業を
 
 中央に残す:
 
-- 選択中の自分デッキ（表示専用）
-- 選択中のAIデッキ（表示専用）
+- 選択中の自分デッキ（専用 `UILabel`、表示専用）
+- 選択中のAIデッキ（専用 `UILabel`、表示専用）
 - `unrand_` — 「シャッフルしない」
 - `first_` — 「自分が先攻」
 - 対戦開始 / 戻る
