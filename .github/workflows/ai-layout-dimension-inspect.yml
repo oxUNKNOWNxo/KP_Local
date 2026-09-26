@@ -73,6 +73,24 @@ jobs:
               name=gos.get(go)
               if name in wanted and (w or h):
                   print(name,"comp",cid,"guid",guid,"w",w,"h",h)
+          print("=== parent chains ===")
+          def chain(go):
+              out=[]
+              seen=set()
+              while go and go!="0" and go not in seen:
+                  seen.add(go)
+                  tf=tf_by_go.get(go)
+                  data=transforms.get(tf)
+                  out.append((gos.get(go),go,tf,data))
+                  if not data: break
+                  father=data[1]
+                  if father=="0": break
+                  pgo=transforms.get(father,("", "", None, None))[0]
+                  go=pgo
+              return out
+          for target in ["start_","exit_","rank_","aideck_","unrand_","first_","deck","percyHint"]:
+              go=next((g for g,n in gos.items() if n==target),None)
+              print(target, chain(go))
           print("=== deck subtree objects ===")
           deck_go=next((go for go,n in gos.items() if n=="deck"),None)
           deck_tf=tf_by_go.get(deck_go)
