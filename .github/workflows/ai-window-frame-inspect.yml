@@ -28,6 +28,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          echo '=== component GUID owners ==='
+          for guid in b90fc8427bee38c478f5b2f6f0ae9580 1b3dc54f924693f41b5cbecb267e647a ae942c9068183dc40a9d01f648273726; do
+            echo "--- $guid ---"
+            grep -RIl "guid: $guid" source/Assets --include='*.meta' | head -20 || true
+          done
           python3 - <<'PY'
           from pathlib import Path
           import re
