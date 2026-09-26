@@ -6,9 +6,11 @@ using UnityEngine;
 public class AIRoom : WindowServantSP
 {
     const int DefaultLife = 8000;
-    const int OptionFontSize = 26;
-    const int DeckListFontSize = 24;
-    const float FallbackDeckListOffset = 330f;
+    const int OptionFontSize = 22;
+    const int DeckListFontSize = 22;
+    const int MainWindowWidth = 980;
+    const int MainWindowHeight = 420;
+    const float DeckListOffset = 340f;
     const string LocalRpsHash = "WindBot_LocalRps";
     const string LocalTurnChoiceHash = "WindBot_LocalTurnChoice";
 
@@ -35,6 +37,7 @@ public class AIRoom : WindowServantSP
         if (playerDeckList == null)
             throw new InvalidOperationException("AI room player deck list was not found.");
 
+        ConfigureMainWindow();
         CreateSideBySideDeckLists();
 
         playerDeckDisplay = UIHelper.getByName<UIPopupList>(gameObject, "rank_");
@@ -42,11 +45,13 @@ public class AIRoom : WindowServantSP
 
         ConfigureCenterOptions();
         CreateDeckListTitles();
+        CreateBackButton();
 
         playerDeckList.selectedAction = OnPlayerDeckSelected;
         aiDeckList.selectedAction = OnAiDeckSelected;
 
         UIHelper.registEvent(gameObject, "start_", onStart);
+        UIHelper.registEvent(gameObject, "back_", () => { Program.I().shiftToServant(Program.I().menu); });
         UIHelper.registEvent(gameObject, "exit_", () => { Program.I().shiftToServant(Program.I().menu); });
 
         playerDeckList.install();
@@ -81,12 +86,17 @@ public class AIRoom : WindowServantSP
 
     void SetControlLabel(string name, string text, int fontSize)
     {
-        UILabel label = FindControlLabel(name);
-        if (label == null)
+        Transform control = FindControl(name);
+        if (control == null)
             return;
 
-        label.text = text;
-        label.fontSize = fontSize;
+        UILabel label = FindControlLabel(name);
+        if (label != null)
+            label.text = text;
+
+        UILabel[] labels = control.GetComponentsInChildren<UILabel>(true);
+        for (int i = 0; i < labels.Length; ++i)
+            labels[i].fontSize = fontSize;
     }
 
     void SetControlPosition(string name, float x, float y)
@@ -114,19 +124,50 @@ public class AIRoom : WindowServantSP
             child.gameObject.SetActive(visible);
     }
 
+    void ConfigureMainWindow()
+    {
+        Transform mainWindow = FindControl("mainWindow");
+        if (mainWindow == null)
+            throw new InvalidOperationException("AI room mainWindow was not found.");
+
+        UIWidget frame = mainWindow.GetComponent<UIWidget>();
+        if (frame != null)
+        {
+            frame.width = MainWindowWidth;
+            frame.height = MainWindowHeight;
+        }
+
+        BoxCollider collider = mainWindow.GetComponent<BoxCollider>();
+        if (collider != null)
+        {
+            Vector3 size = collider.size;
+            size.x = MainWindowWidth;
+            size.y = MainWindowHeight;
+            collider.size = size;
+        }
+
+        // Keep the original close button as a compact X at the top-right.
+        SetControlPosition("exit_", MainWindowWidth * 0.5f - 28f, MainWindowHeight * 0.5f - 35f);
+
+        Transform title = FindControl("percyHint");
+        if (title != null)
+        {
+            Vector3 p = title.localPosition;
+            p.x = 0f;
+            p.y = MainWindowHeight * 0.5f - 35f;
+            title.localPosition = p;
+        }
+    }
+
     void CreateSideBySideDeckLists()
     {
         Transform originalTransform = playerDeckList.transform;
         Transform parent = originalTransform.parent;
         Vector3 originalPosition = originalTransform.localPosition;
 
-        float sideOffset = Math.Abs(originalPosition.x);
-        if (sideOffset < 180f)
-            sideOffset = FallbackDeckListOffset;
-
         originalTransform.localPosition = new Vector3(
-            -sideOffset,
-            originalPosition.y,
+            -DeckListOffset,
+            -15f,
             originalPosition.z);
         originalTransform.gameObject.name = "PlayerDeckList";
 
@@ -138,8 +179,8 @@ public class AIRoom : WindowServantSP
         aiListObject.transform.SetParent(parent, false);
         aiListObject.transform.localScale = originalTransform.localScale;
         aiListObject.transform.localPosition = new Vector3(
-            sideOffset,
-            originalPosition.y,
+            DeckListOffset,
+            -15f,
             originalPosition.z);
 
         aiDeckList = aiListObject.GetComponent<UIselectableList>();
@@ -190,9 +231,8 @@ public class AIRoom : WindowServantSP
         title.transform.SetParent(list.transform.parent, false);
         title.transform.localScale = template.transform.localScale;
 
-        float listHeight = list.panel.GetViewSize().y;
         Vector3 p = list.transform.localPosition;
-        p.y += listHeight * 0.5f + 28f;
+        p.y = 172f;
         title.transform.localPosition = p;
 
         UILabel label = title.GetComponent<UILabel>();
@@ -202,7 +242,7 @@ public class AIRoom : WindowServantSP
         {
             label.text = text;
             label.fontSize = OptionFontSize;
-            label.width = Math.Max(label.width, 220);
+            label.width = 230;
         }
 
         Collider[] colliders = title.GetComponentsInChildren<Collider>(true);
@@ -219,36 +259,54 @@ public class AIRoom : WindowServantSP
         SetControlLabel("unrand_", "シャッフルしない", OptionFontSize);
         SetControlLabel("first_", "自分が先攻", OptionFontSize);
         SetControlLabel("start_", "対戦開始", OptionFontSize);
-        SetControlLabel("exit_", "戻る", OptionFontSize);
-
-        SetControlPosition("rank_", 0f, 135f);
-        SetControlPosition("aideck_", 0f, 90f);
-        SetControlPosition("unrand_", 0f, 25f);
-        SetControlPosition("first_", 0f, -25f);
-
-        Transform hint = FindControl("percyHint");
-        if (hint != null)
-        {
-            Vector3 p = hint.localPosition;
-            p.x = 0f;
-            p.y = 190f;
-            hint.localPosition = p;
-        }
         SetControlLabel("percyHint", "WindBot AI対戦", OptionFontSize);
 
-        Transform buttons = FindControl("btns");
-        if (buttons != null)
+        SetControlPosition("rank_", 0f, 110f);
+        SetControlPosition("aideck_", 0f, 65f);
+        SetControlPosition("unrand_", -70f, 5f);
+        SetControlPosition("first_", -70f, -40f);
+        SetControlWidgetWidth("unrand_", 210);
+        SetControlWidgetWidth("first_", 210);
+
+        Transform startGroup = FindControl("start");
+        if (startGroup != null)
         {
-            Vector3 p = buttons.localPosition;
+            Vector3 p = startGroup.localPosition;
             p.x = 0f;
-            buttons.localPosition = p;
+            p.y = -115f;
+            startGroup.localPosition = p;
         }
-        SetControlPosition("start_", -70f, 142f);
-        SetControlPosition("exit_", 70f, 142f);
+        SetControlPosition("start_", 0f, 0f);
 
         ConfigureReadOnlyDisplay(playerDeckDisplay);
         ConfigureReadOnlyDisplay(aiDeckDisplay);
         UpdateSelectedDeckDisplays();
+    }
+
+    void CreateBackButton()
+    {
+        Transform start = FindControl("start_");
+        if (start == null)
+            return;
+
+        GameObject back = (GameObject)UnityEngine.Object.Instantiate(start.gameObject);
+        back.name = "back_";
+        back.transform.SetParent(start.parent, false);
+        back.transform.localScale = start.localScale;
+
+        Vector3 p = start.localPosition;
+        p.y -= 46f;
+        back.transform.localPosition = p;
+
+        UILabel label = back.GetComponent<UILabel>();
+        if (label == null)
+            label = back.GetComponentInChildren<UILabel>(true);
+        if (label != null)
+            label.text = "戻る";
+
+        UILabel[] labels = back.GetComponentsInChildren<UILabel>(true);
+        for (int i = 0; i < labels.Length; ++i)
+            labels[i].fontSize = OptionFontSize;
     }
 
     void ConfigureReadOnlyDisplay(UIPopupList popup)
@@ -256,6 +314,7 @@ public class AIRoom : WindowServantSP
         if (popup == null)
             return;
 
+        popup.Clear();
         popup.enabled = false;
         popup.fontSize = OptionFontSize;
 
@@ -265,16 +324,31 @@ public class AIRoom : WindowServantSP
         if (label != null)
         {
             label.fontSize = OptionFontSize;
-            label.width = Math.Max(label.width, 260);
+            label.width = 300;
         }
 
         UIWidget frame = popup.GetComponent<UIWidget>();
         if (frame != null)
-            frame.width = Math.Max(frame.width, 280);
+            frame.width = 320;
 
         Collider[] colliders = popup.GetComponentsInChildren<Collider>(true);
         for (int i = 0; i < colliders.Length; ++i)
             colliders[i].enabled = false;
+    }
+
+    void SetControlWidgetWidth(string name, int width)
+    {
+        Transform control = FindControl(name);
+        if (control == null)
+            return;
+
+        UIWidget widget = control.GetComponent<UIWidget>();
+        if (widget != null)
+            widget.width = width;
+
+        UILabel[] labels = control.GetComponentsInChildren<UILabel>(true);
+        for (int i = 0; i < labels.Length; ++i)
+            labels[i].width = Math.Max(labels[i].width, width - 30);
     }
 
     void SetReadOnlyDisplay(UIPopupList popup, string text)
