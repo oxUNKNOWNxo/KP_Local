@@ -162,6 +162,10 @@ print("  - left explicit/manual Resource Update behavior unchanged")
 # 1cd5d12ad7b888b8774da7d67c8dba9898a108ee (parent bd251b8...).
 # ---------------------------------------------------------------------------
 patch_root = Path(__file__).resolve().parent
+subprocess.run(
+    [sys.executable, str(patch_root / "patch_ai_room_prefab.py"), str(root)],
+    check=True,
+)
 legacy = patch_root / "ai" / "legacy"
 required_legacy = [legacy / "coreWrapper.cs", legacy / "precy.cs", legacy / "AIRoom.cs"]
 missing = [str(p) for p in required_legacy if not p.is_file()]
