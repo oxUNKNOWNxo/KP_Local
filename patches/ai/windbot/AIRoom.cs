@@ -217,7 +217,7 @@ public class AIRoom : WindowServantSP
 
         Vector3 p = list.transform.localPosition;
         p.x = x;
-        p.y = -15f;
+        p.y = -35f;
         list.transform.localPosition = p;
 
         UIWidget frame = list.GetComponent<UIWidget>();
@@ -287,7 +287,7 @@ public class AIRoom : WindowServantSP
         title.transform.localScale = template.transform.localScale;
 
         Vector3 p = list.transform.localPosition;
-        p.y = 172f;
+        p.y = 128f;
         title.transform.localPosition = p;
 
         UILabel label = title.GetComponent<UILabel>();
@@ -314,8 +314,8 @@ public class AIRoom : WindowServantSP
         SetControlLabel("unrand_", "シャッフルしない", OptionFontSize);
         SetControlLabel("first_", "自分が先攻", OptionFontSize);
 
-        SetControlPosition("rank_", 0f, 105f);
-        SetControlPosition("aideck_", 0f, 58f);
+        SetControlPosition("rank_", 0f, 100f);
+        SetControlPosition("aideck_", 0f, 54f);
         SetControlPosition("unrand_", -82f, -8f);
         SetControlPosition("first_", -82f, -52f);
 
@@ -327,7 +327,7 @@ public class AIRoom : WindowServantSP
         {
             Vector3 p = startGroup.localPosition;
             p.x = 0f;
-            p.y = -120f;
+            p.y = -125f;
             startGroup.localPosition = p;
 
             Transform texture = startGroup.Find("Texture");
