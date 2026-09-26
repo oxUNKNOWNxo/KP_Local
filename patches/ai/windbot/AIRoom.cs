@@ -41,6 +41,7 @@ public class AIRoom : WindowServantSP
         aiDeckDisplay = UIHelper.getByName<UIPopupList>(gameObject, "aideck_");
 
         ConfigureCenterOptions();
+        CreateDeckListTitles();
 
         playerDeckList.selectedAction = OnPlayerDeckSelected;
         aiDeckList.selectedAction = OnAiDeckSelected;
@@ -169,6 +170,46 @@ public class AIRoom : WindowServantSP
         list.mod.transform.localPosition = p;
     }
 
+    void CreateDeckListTitles()
+    {
+        Transform hint = FindControl("percyHint");
+        if (hint == null)
+            return;
+
+        CreateDeckListTitle(hint.gameObject, playerDeckList, "自分のデッキ", "PlayerDeckListTitle");
+        CreateDeckListTitle(hint.gameObject, aiDeckList, "AIデッキ", "AiDeckListTitle");
+    }
+
+    void CreateDeckListTitle(GameObject template, UIselectableList list, string text, string objectName)
+    {
+        if (template == null || list == null || list.panel == null)
+            return;
+
+        GameObject title = (GameObject)UnityEngine.Object.Instantiate(template);
+        title.name = objectName;
+        title.transform.SetParent(list.transform.parent, false);
+        title.transform.localScale = template.transform.localScale;
+
+        float listHeight = list.panel.GetViewSize().y;
+        Vector3 p = list.transform.localPosition;
+        p.y += listHeight * 0.5f + 28f;
+        title.transform.localPosition = p;
+
+        UILabel label = title.GetComponent<UILabel>();
+        if (label == null)
+            label = title.GetComponentInChildren<UILabel>(true);
+        if (label != null)
+        {
+            label.text = text;
+            label.fontSize = OptionFontSize;
+            label.width = Math.Max(label.width, 220);
+        }
+
+        Collider[] colliders = title.GetComponentsInChildren<Collider>(true);
+        for (int i = 0; i < colliders.Length; ++i)
+            colliders[i].enabled = false;
+    }
+
     void ConfigureCenterOptions()
     {
         HideControl("life_");
@@ -222,7 +263,14 @@ public class AIRoom : WindowServantSP
         if (label == null)
             label = popup.GetComponentInChildren<UILabel>(true);
         if (label != null)
+        {
             label.fontSize = OptionFontSize;
+            label.width = Math.Max(label.width, 260);
+        }
+
+        UIWidget frame = popup.GetComponent<UIWidget>();
+        if (frame != null)
+            frame.width = Math.Max(frame.width, 280);
 
         Collider[] colliders = popup.GetComponentsInChildren<Collider>(true);
         for (int i = 0; i < colliders.Length; ++i)
@@ -234,12 +282,6 @@ public class AIRoom : WindowServantSP
         if (popup == null)
             return;
 
-        popup.enabled = true;
-        popup.Clear();
-        popup.AddItem(text);
-        popup.value = text;
-        popup.enabled = false;
-
         UILabel label = popup.GetComponent<UILabel>();
         if (label == null)
             label = popup.GetComponentInChildren<UILabel>(true);
@@ -247,6 +289,7 @@ public class AIRoom : WindowServantSP
         {
             label.text = text;
             label.fontSize = OptionFontSize;
+            label.width = Math.Max(label.width, 260);
         }
     }
 
