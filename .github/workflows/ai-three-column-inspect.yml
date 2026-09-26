@@ -32,6 +32,13 @@ jobs:
           META=source/Assets/transUI/UIselectableList.cs.meta
           GUID=$(awk '/^guid:/{print $2; exit}' "$META")
           echo "UIselectableList guid=$GUID"
+          echo '===== all UIselectableList prefab references ====='
+          grep -Rl "$GUID" source/Assets --include='*.prefab' --include='*.unity' || true
+          while IFS= read -r file; do
+            echo "===== $file ====="
+            grep -n -B100 -A220 "$GUID" "$file" | head -1200 || true
+          done < <(grep -Rl "$GUID" source/Assets --include='*.prefab' --include='*.unity' || true)
+          echo '===== AI prefab direct reference ====='
           grep -n -B80 -A180 "$GUID" "$PREFAB" || true
           echo '===== named control transforms ====='
           python3 - <<'PY'
