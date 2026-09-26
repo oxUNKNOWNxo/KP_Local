@@ -113,42 +113,42 @@ def replace_local_x(block: str, target: int, accepted: tuple[int, ...]) -> str:
 # any widened mainWindow/list is still cut back to the legacy rectangle.
 container_go = game_object_id("GameObject")
 idx = component_index(container_go, "114", uipanel_guid)
-parts[idx] = replace_clip_width(parts[idx], 980, (500,))
-parts[idx] = replace_clip_height(parts[idx], 460, (400, 420))
+parts[idx] = replace_clip_width(parts[idx], 1100, (500, 980))
+parts[idx] = replace_clip_height(parts[idx], 480, (400, 420, 460))
 
 # The sibling glass texture supplies the translucent/blurred backdrop around
 # the modal. Widen it with the window so it does not remain a legacy-sized box.
 glass_go = game_object_id("glass")
 idx = component_index(glass_go, "114", uitexture_guid)
-parts[idx] = replace_number(parts[idx], "mWidth", 944, (464,))
-parts[idx] = replace_number(parts[idx], "mHeight", 410, (350, 370))
+parts[idx] = replace_number(parts[idx], "mWidth", 1064, (464, 944))
+parts[idx] = replace_number(parts[idx], "mHeight", 430, (350, 370, 410))
 
 # The original AI room is only 500x400, while one deck list already consumes
 # 230x314. A three-column layout cannot fit inside it. Patch the serialized
 # NGUI prefab itself so the first activation cannot restore the old dimensions.
 main_go = game_object_id("mainWindow")
 idx = component_index(main_go, "114", uisprite_guid)
-parts[idx] = replace_number(parts[idx], "mWidth", 980, (500,))
-parts[idx] = replace_number(parts[idx], "mHeight", 460, (400, 420))
+parts[idx] = replace_number(parts[idx], "mWidth", 1100, (500, 980))
+parts[idx] = replace_number(parts[idx], "mHeight", 480, (400, 420, 460))
 
 # Widen the original deck-list frame before AIRoom clones it for the AI side.
 deck_go = game_object_id("deck")
 idx = component_index(deck_go, "114", uisprite_guid)
-parts[idx] = replace_number(parts[idx], "mWidth", 280, (230,))
+parts[idx] = replace_number(parts[idx], "mWidth", 330, (230, 280))
 
 # Keep the clipping panel and scrollbar consistent with the widened list.
 panel_go = game_object_id("panel_")
 idx = component_index(panel_go, "114", uipanel_guid)
-parts[idx] = replace_clip_width(parts[idx], 240, (210, 260))
+parts[idx] = replace_clip_width(parts[idx], 290, (210, 240, 260))
 
 bar_go = game_object_id("bar_")
 idx = component_index(bar_go, "4")
-parts[idx] = replace_local_x(parts[idx], 135, (110,))
+parts[idx] = replace_local_x(parts[idx], 160, (110, 135))
 
 # The separator belongs to the main frame. Let it span the widened window.
 line_go = game_object_id("line_")
 idx = component_index(line_go, "114", uisprite_guid)
-parts[idx] = replace_number(parts[idx], "mWidth", 948, (468,))
+parts[idx] = replace_number(parts[idx], "mWidth", 1068, (468, 948))
 
 patched = "".join(parts)
 prefab.write_text(patched, encoding="utf-8")
@@ -156,24 +156,24 @@ prefab.write_text(patched, encoding="utf-8")
 # Fail-fast verification.
 verify = prefab.read_text(encoding="utf-8")
 for needle in (
-    "mClipRange: {x: 0, y: 0, z: 980, w: 460}",
-    "mWidth: 944",
-    "mHeight: 410",
-    "mWidth: 980",
-    "mHeight: 460",
-    "mWidth: 280",
-    "mClipRange: {x: -0.0000038146973, y: 0, z: 240, w: 314}",
-    "m_LocalPosition: {x: 135, y: 0, z: 0}",
-    "mWidth: 948",
+    "mClipRange: {x: 0, y: 0, z: 1100, w: 480}",
+    "mWidth: 1064",
+    "mHeight: 430",
+    "mWidth: 1100",
+    "mHeight: 480",
+    "mWidth: 330",
+    "mClipRange: {x: -0.0000038146973, y: 0, z: 290, w: 314}",
+    "m_LocalPosition: {x: 160, y: 0, z: 0}",
+    "mWidth: 1068",
 ):
     if needle not in verify:
         raise SystemExit(f"AI room prefab verification failed: {needle}")
 
 print("Patched serialized AI room geometry:")
-print("  - root UIPanel clip: 980x460")
-print("  - glass backdrop: 944x410")
-print("  - mainWindow: 980x460")
-print("  - deck list frame: 280 wide")
-print("  - deck clip region: 240 wide")
-print("  - scrollbar x: 135")
-print("  - header separator: 948 wide")
+print("  - root UIPanel clip: 1100x480")
+print("  - glass backdrop: 1064x430")
+print("  - mainWindow: 1100x480")
+print("  - deck list frame: 330 wide")
+print("  - deck clip region: 290 wide")
+print("  - scrollbar x: 160")
+print("  - header separator: 1068 wide")
