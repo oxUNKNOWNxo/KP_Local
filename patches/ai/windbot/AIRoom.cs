@@ -143,6 +143,30 @@ public class AIRoom : WindowServantSP
             frame.height = MainWindowHeight;
         }
 
+        UIPanel rootPanel = mainWindow.parent == null
+            ? null
+            : mainWindow.parent.GetComponent<UIPanel>();
+        if (rootPanel != null)
+        {
+            Vector4 clip = rootPanel.baseClipRegion;
+            clip.x = 0f;
+            clip.y = 0f;
+            clip.z = MainWindowWidth;
+            clip.w = MainWindowHeight;
+            rootPanel.baseClipRegion = clip;
+        }
+
+        Transform glass = FindControl("glass");
+        if (glass != null)
+        {
+            UIWidget glassWidget = glass.GetComponent<UIWidget>();
+            if (glassWidget != null)
+            {
+                glassWidget.width = MainWindowWidth - 36;
+                glassWidget.height = MainWindowHeight - 50;
+            }
+        }
+
         BoxCollider collider = mainWindow.GetComponent<BoxCollider>();
         if (collider != null)
         {
