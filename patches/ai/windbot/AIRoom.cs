@@ -47,6 +47,7 @@ public class AIRoom : WindowServantSP
         ConfigureCenterOptions();
         CreateDeckListTitles();
         CreateBackButton();
+        ApplyDynamicCenterLayout();
 
         playerDeckList.selectedAction = OnPlayerDeckSelected;
         aiDeckList.selectedAction = OnAiDeckSelected;
@@ -108,10 +109,9 @@ public class AIRoom : WindowServantSP
     }
 
     UILabel CreateStandaloneLabel(
+        Transform parent,
         string objectName,
         string text,
-        float x,
-        float y,
         int width,
         int height,
         int fontSize,
@@ -120,9 +120,9 @@ public class AIRoom : WindowServantSP
         UILabel template = VisibleLabelTemplate();
         GameObject display = (GameObject)UnityEngine.Object.Instantiate(template.gameObject);
         display.name = objectName;
-        display.transform.SetParent(LayoutRoot(), false);
+        display.transform.SetParent(parent, false);
         display.transform.localScale = template.transform.localScale;
-        display.transform.localPosition = new Vector3(x, y, template.transform.localPosition.z);
+        display.transform.localPosition = new Vector3(0f, 0f, template.transform.localPosition.z);
 
         UILabel label = display.GetComponent<UILabel>();
         if (label == null)
@@ -144,6 +144,69 @@ public class AIRoom : WindowServantSP
             colliders[i].enabled = false;
 
         return label;
+    }
+
+    Bounds GetWidgetBoundsInLayout(UIWidget widget)
+    {
+        Transform root = LayoutRoot();
+        if (widget == null)
+            return new Bounds(Vector3.zero, Vector3.zero);
+
+        Vector3[] corners = widget.worldCorners;
+        Vector3 first = root.InverseTransformPoint(corners[0]);
+        Bounds bounds = new Bounds(first, Vector3.zero);
+        for (int i = 1; i < corners.Length; ++i)
+            bounds.Encapsulate(root.InverseTransformPoint(corners[i]));
+        return bounds;
+    }
+
+    Bounds GetVisualBoundsInLayout(Transform target)
+    {
+        Transform root = LayoutRoot();
+        Vector3 fallback = target == null
+            ? Vector3.zero
+            : root.InverseTransformPoint(target.position);
+        Bounds bounds = new Bounds(fallback, Vector3.zero);
+        bool found = false;
+
+        if (target == null)
+            return bounds;
+
+        UIWidget[] widgets = target.GetComponentsInChildren<UIWidget>(true);
+        for (int i = 0; i < widgets.Length; ++i)
+        {
+            UIWidget widget = widgets[i];
+            if (widget == null || !widget.enabled || !widget.gameObject.activeInHierarchy)
+                continue;
+
+            Vector3[] corners = widget.worldCorners;
+            for (int j = 0; j < corners.Length; ++j)
+            {
+                Vector3 point = root.InverseTransformPoint(corners[j]);
+                if (!found)
+                {
+                    bounds = new Bounds(point, Vector3.zero);
+                    found = true;
+                }
+                else
+                    bounds.Encapsulate(point);
+            }
+        }
+
+        return bounds;
+    }
+
+    void MoveVisualCenterInLayout(Transform target, float targetX, float targetY)
+    {
+        if (target == null)
+            return;
+
+        Transform root = LayoutRoot();
+        Bounds visual = GetVisualBoundsInLayout(target);
+        Vector3 rootPosition = root.InverseTransformPoint(target.position);
+        rootPosition.x += targetX - visual.center.x;
+        rootPosition.y += targetY - visual.center.y;
+        target.position = root.TransformPoint(rootPosition);
     }
 
     void SetControlLabel(string name, string text, int fontSize)
@@ -357,24 +420,44 @@ public class AIRoom : WindowServantSP
     void CreateDeckListTitles()
     {
         CreateStandaloneLabel(
+            playerDeckList.transform,
             "PlayerDeckListTitle",
             "自分のデッキ",
-            -DeckListOffset,
-            158f,
             DeckListWidth,
             36,
             DeckListFontSize,
             35);
 
         CreateStandaloneLabel(
+            aiDeckList.transform,
             "AiDeckListTitle",
             "AIデッキ",
-            DeckListOffset,
-            158f,
             DeckListWidth,
             36,
             DeckListFontSize,
             35);
+
+        PositionDeckListTitle(playerDeckList, "PlayerDeckListTitle");
+        PositionDeckListTitle(aiDeckList, "AiDeckListTitle");
+    }
+
+    void PositionDeckListTitle(UIselectableList list, string titleName)
+    {
+        if (list == null)
+            return;
+
+        UIWidget frame = list.GetComponent<UIWidget>();
+        Transform title = FindControl(titleName);
+        UILabel label = title == null ? null : title.GetComponent<UILabel>();
+        if (frame == null || title == null || label == null)
+            return;
+
+        Bounds frameBounds = GetWidgetBoundsInLayout(frame);
+        label.width = frame.width;
+
+        float gap = Mathf.Max(4f, label.fontSize * 0.35f);
+        float targetY = frameBounds.max.y + label.height * 0.5f + gap;
+        MoveVisualCenterInLayout(title, frameBounds.center.x, targetY);
     }
 
 
@@ -393,26 +476,17 @@ public class AIRoom : WindowServantSP
         SetControlLabel("unrand_", "シャッフルしない", OptionFontSize);
         SetControlLabel("first_", "自分が先攻", OptionFontSize);
 
-        SetControlPosition("unrand_", -82f, 38f);
-        SetControlPosition("first_", -82f, -4f);
-
         SetControlWidgetWidth("unrand_", 200);
         SetControlWidgetWidth("first_", 200);
 
         Transform startGroup = FindControl("start");
         if (startGroup != null)
         {
-            Vector3 p = startGroup.localPosition;
-            p.x = 0f;
-            p.y = -78f;
-            startGroup.localPosition = p;
-
             Transform texture = startGroup.Find("Texture");
             if (texture != null)
                 texture.gameObject.SetActive(false);
         }
 
-        SetControlPosition("start_", 0f, 0f);
         ConfigureActionButton("start_", "対戦開始");
     }
 
@@ -460,9 +534,7 @@ public class AIRoom : WindowServantSP
         back.transform.SetParent(start.parent, false);
         back.transform.localScale = start.localScale;
 
-        Vector3 p = start.localPosition;
-        p.y -= 52f;
-        back.transform.localPosition = p;
+        back.transform.localPosition = start.localPosition;
 
         ConfigureActionButton("back_", "戻る");
     }
@@ -481,6 +553,70 @@ public class AIRoom : WindowServantSP
         UILabel[] labels = control.GetComponentsInChildren<UILabel>(true);
         for (int i = 0; i < labels.Length; ++i)
             labels[i].width = Math.Max(labels[i].width, width - 30);
+    }
+
+    void ApplyDynamicCenterLayout()
+    {
+        if (playerDeckList == null || aiDeckList == null)
+            return;
+
+        UIWidget playerFrame = playerDeckList.GetComponent<UIWidget>();
+        UIWidget aiFrame = aiDeckList.GetComponent<UIWidget>();
+        Transform unrand = FindControl("unrand_");
+        Transform first = FindControl("first_");
+        Transform start = FindControl("start_");
+        Transform back = FindControl("back_");
+
+        if (playerFrame == null || aiFrame == null
+            || unrand == null || first == null || start == null || back == null)
+            return;
+
+        Bounds playerBounds = GetWidgetBoundsInLayout(playerFrame);
+        Bounds aiBounds = GetWidgetBoundsInLayout(aiFrame);
+
+        // Use the actual gap between the two list frames as the center column.
+        // This remains correct even when either list or its parent moves.
+        float centerX = (playerBounds.max.x + aiBounds.min.x) * 0.5f;
+        float centerY = (playerBounds.center.y + aiBounds.center.y) * 0.5f;
+
+        Bounds unrandBounds = GetVisualBoundsInLayout(unrand);
+        Bounds firstBounds = GetVisualBoundsInLayout(first);
+        Bounds startBounds = GetVisualBoundsInLayout(start);
+        Bounds backBounds = GetVisualBoundsInLayout(back);
+
+        float unrandHeight = Mathf.Max(1f, unrandBounds.size.y);
+        float firstHeight = Mathf.Max(1f, firstBounds.size.y);
+        float startHeight = Mathf.Max(1f, startBounds.size.y);
+        float backHeight = Mathf.Max(1f, backBounds.size.y);
+
+        float rowGap = Mathf.Max(6f, Mathf.Min(unrandHeight, firstHeight) * 0.25f);
+        float sectionGap = Mathf.Max(
+            rowGap * 2f,
+            Mathf.Min(firstHeight, startHeight) * 0.65f);
+        float buttonGap = Mathf.Max(6f, Mathf.Min(startHeight, backHeight) * 0.20f);
+
+        float totalHeight =
+            unrandHeight + rowGap
+            + firstHeight + sectionGap
+            + startHeight + buttonGap
+            + backHeight;
+
+        float cursor = centerY + totalHeight * 0.5f;
+
+        float unrandY = cursor - unrandHeight * 0.5f;
+        MoveVisualCenterInLayout(unrand, centerX, unrandY);
+        cursor -= unrandHeight + rowGap;
+
+        float firstY = cursor - firstHeight * 0.5f;
+        MoveVisualCenterInLayout(first, centerX, firstY);
+        cursor -= firstHeight + sectionGap;
+
+        float startY = cursor - startHeight * 0.5f;
+        MoveVisualCenterInLayout(start, centerX, startY);
+        cursor -= startHeight + buttonGap;
+
+        float backY = cursor - backHeight * 0.5f;
+        MoveVisualCenterInLayout(back, centerX, backY);
     }
 
 
@@ -586,36 +722,12 @@ public class AIRoom : WindowServantSP
         ConfigureDeckListGeometry(playerDeckList, -DeckListOffset);
         ConfigureDeckListGeometry(aiDeckList, DeckListOffset);
         ConfigureCenterOptions();
+        ConfigureActionButton("back_", "戻る");
         ApplyDeckListRowStyle(playerDeckList);
         ApplyDeckListRowStyle(aiDeckList);
-
-        Transform playerTitle = FindControl("PlayerDeckListTitle");
-        if (playerTitle != null)
-        {
-            playerTitle.localPosition = new Vector3(
-                -DeckListOffset,
-                158f,
-                playerTitle.localPosition.z);
-        }
-
-        Transform aiTitle = FindControl("AiDeckListTitle");
-        if (aiTitle != null)
-        {
-            aiTitle.localPosition = new Vector3(
-                DeckListOffset,
-                158f,
-                aiTitle.localPosition.z);
-        }
-
-        Transform back = FindControl("back_");
-        Transform start = FindControl("start_");
-        if (back != null && start != null)
-        {
-            Vector3 p = start.localPosition;
-            p.y -= 52f;
-            back.localPosition = p;
-            ConfigureActionButton("back_", "戻る");
-        }
+        PositionDeckListTitle(playerDeckList, "PlayerDeckListTitle");
+        PositionDeckListTitle(aiDeckList, "AiDeckListTitle");
+        ApplyDynamicCenterLayout();
     }
 
     void onStart()
