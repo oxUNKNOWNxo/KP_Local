@@ -450,15 +450,17 @@ AI対戦画面は3カラム構成。
 - 右: 左一覧をruntime複製した独立 `UIselectableList` でAIデッキ72件を全件スクロール
 - 中央:
   - 旧 `rank_` / `aideck_` Popupは完全非表示
-  - `percyHint` と同系統の `UILabel` をruntime複製し、
+  - 旧Popupや `percyHint` は表示テンプレートに使わない
+  - 実機で確実に表示される `unrand_` / `first_` / `start_` のUILabelから
+    standalone UILabelをruntime生成し、
     「自分: <選択デッキ>」「AI: <選択デッキ>」を中央専用表示として生成
   - `unrand_` = 「シャッフルしない」
   - `first_` = 「自分が先攻」
   - 対戦開始 / 戻る
 - 自分のデッキ選択は `deckInUse` Configへ保持
 - AIデッキ選択は `list_aideck` Configへ保持
-- リストの行文字は24
-- 中央オプション/表示/ボタン文字は26で統一
+- リストの行文字は22
+- 中央オプション/表示/ボタン文字は22で統一
 - 左右一覧には「自分のデッキ」「AIデッキ」の見出しを表示
 - 旧ページ式・一覧切替式は廃止
 
@@ -474,11 +476,11 @@ AI対戦画面は3カラム構成。
 
 したがって3カラム化では、`mainWindow` Spriteだけでなく次も必ず同時に変更する。
 
-- 親 `UIPanel.baseClipRegion`: 980x420
-- `mainWindow`: 980x420
-- `glass` 背景: 944x370
+- 親 `UIPanel.baseClipRegion`: 980x460
+- `mainWindow`: 980x460
+- `glass` 背景: 944x410
 - deck list frame: 280
-- deck list clip: 260
+- deck list clip: 240
 - scrollbar x: 135
 - header separator: 948
 
@@ -498,8 +500,11 @@ Popup内部のAnchor/子ラベル位置が残り、選択中デッキ名が左�
 - 選択中デッキ名は専用 `UILabel` を新規生成
 - 左右一覧は `x=±325` に寄せ、外枠との余白を確保
 - list clipは240幅として左右に内側余白を確保
+- `percyHint` 複製も実機では描画されないため中央表示/見出しのテンプレートに使わない
+- standalone UILabelは、実機で表示確認済みのオプションUILabelを複製して作る
+- ウィンドウ高は460、glassは410として、左右リスト最下段と「戻る」の下に余白を残す
 
-とする。旧Popupの位置補正で再利用する方式へ戻さない。
+とする。旧Popupの位置補正や `percyHint` 複製で表示を作る方式へ戻さない。
 
 ## 15. デッキシャッフル
 
