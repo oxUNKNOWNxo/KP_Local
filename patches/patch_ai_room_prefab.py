@@ -114,14 +114,14 @@ def replace_local_x(block: str, target: int, accepted: tuple[int, ...]) -> str:
 container_go = game_object_id("GameObject")
 idx = component_index(container_go, "114", uipanel_guid)
 parts[idx] = replace_clip_width(parts[idx], 980, (500,))
-parts[idx] = replace_clip_height(parts[idx], 420, (400,))
+parts[idx] = replace_clip_height(parts[idx], 460, (400, 420))
 
 # The sibling glass texture supplies the translucent/blurred backdrop around
 # the modal. Widen it with the window so it does not remain a legacy-sized box.
 glass_go = game_object_id("glass")
 idx = component_index(glass_go, "114", uitexture_guid)
 parts[idx] = replace_number(parts[idx], "mWidth", 944, (464,))
-parts[idx] = replace_number(parts[idx], "mHeight", 370, (350,))
+parts[idx] = replace_number(parts[idx], "mHeight", 410, (350, 370))
 
 # The original AI room is only 500x400, while one deck list already consumes
 # 230x314. A three-column layout cannot fit inside it. Patch the serialized
@@ -129,7 +129,7 @@ parts[idx] = replace_number(parts[idx], "mHeight", 370, (350,))
 main_go = game_object_id("mainWindow")
 idx = component_index(main_go, "114", uisprite_guid)
 parts[idx] = replace_number(parts[idx], "mWidth", 980, (500,))
-parts[idx] = replace_number(parts[idx], "mHeight", 420, (400,))
+parts[idx] = replace_number(parts[idx], "mHeight", 460, (400, 420))
 
 # Widen the original deck-list frame before AIRoom clones it for the AI side.
 deck_go = game_object_id("deck")
@@ -156,11 +156,11 @@ prefab.write_text(patched, encoding="utf-8")
 # Fail-fast verification.
 verify = prefab.read_text(encoding="utf-8")
 for needle in (
-    "mClipRange: {x: 0, y: 0, z: 980, w: 420}",
+    "mClipRange: {x: 0, y: 0, z: 980, w: 460}",
     "mWidth: 944",
-    "mHeight: 370",
+    "mHeight: 410",
     "mWidth: 980",
-    "mHeight: 420",
+    "mHeight: 460",
     "mWidth: 280",
     "mClipRange: {x: -0.0000038146973, y: 0, z: 240, w: 314}",
     "m_LocalPosition: {x: 135, y: 0, z: 0}",
@@ -170,9 +170,9 @@ for needle in (
         raise SystemExit(f"AI room prefab verification failed: {needle}")
 
 print("Patched serialized AI room geometry:")
-print("  - root UIPanel clip: 980x420")
-print("  - glass backdrop: 944x370")
-print("  - mainWindow: 980x420")
+print("  - root UIPanel clip: 980x460")
+print("  - glass backdrop: 944x410")
+print("  - mainWindow: 980x460")
 print("  - deck list frame: 280 wide")
 print("  - deck clip region: 240 wide")
 print("  - scrollbar x: 135")
