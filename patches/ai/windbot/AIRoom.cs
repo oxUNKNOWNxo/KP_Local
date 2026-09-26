@@ -10,7 +10,7 @@ public class AIRoom : WindowServantSP
     const int DeckListFontSize = 22;
     const int TitleFontSize = 28;
     const int MainWindowWidth = 980;
-    const int MainWindowHeight = 420;
+    const int MainWindowHeight = 460;
     const int DeckListWidth = 280;
     const int DeckListClipWidth = 240;
     const float DeckListOffset = 325f;
@@ -85,6 +85,65 @@ public class AIRoom : WindowServantSP
         UILabel label = control.GetComponent<UILabel>();
         if (label == null)
             label = control.GetComponentInChildren<UILabel>(true);
+        return label;
+    }
+
+    Transform LayoutRoot()
+    {
+        Transform mainWindow = FindControl("mainWindow");
+        if (mainWindow == null || mainWindow.parent == null)
+            throw new InvalidOperationException("AI room layout root was not found.");
+        return mainWindow.parent;
+    }
+
+    UILabel VisibleLabelTemplate()
+    {
+        // percyHint is not reliably rendered in the iOS build. Use a label
+        // that is confirmed visible on-device as the font/material template.
+        UILabel label = FindControlLabel("unrand_");
+        if (label == null)
+            label = FindControlLabel("first_");
+        if (label == null)
+            label = FindControlLabel("start_");
+        if (label == null)
+            throw new InvalidOperationException("A visible AI-room UILabel template was not found.");
+        return label;
+    }
+
+    UILabel CreateStandaloneLabel(
+        string objectName,
+        string text,
+        float x,
+        float y,
+        int width,
+        int height,
+        int fontSize,
+        int depth)
+    {
+        UILabel template = VisibleLabelTemplate();
+        GameObject display = (GameObject)UnityEngine.Object.Instantiate(template.gameObject);
+        display.name = objectName;
+        display.transform.SetParent(LayoutRoot(), false);
+        display.transform.localScale = template.transform.localScale;
+        display.transform.localPosition = new Vector3(x, y, template.transform.localPosition.z);
+
+        UILabel label = display.GetComponent<UILabel>();
+        if (label == null)
+            label = display.GetComponentInChildren<UILabel>(true);
+        if (label == null)
+            throw new InvalidOperationException("Standalone AI-room UILabel was not found.");
+
+        label.text = text;
+        label.fontSize = fontSize;
+        label.width = width;
+        label.height = height;
+        label.depth = depth;
+        label.enabled = true;
+
+        Collider[] colliders = display.GetComponentsInChildren<Collider>(true);
+        for (int i = 0; i < colliders.Length; ++i)
+            colliders[i].enabled = false;
+
         return label;
     }
 
@@ -240,7 +299,7 @@ public class AIRoom : WindowServantSP
 
         Vector3 p = list.transform.localPosition;
         p.x = x;
-        p.y = -35f;
+        p.y = -25f;
         list.transform.localPosition = p;
 
         UIWidget frame = list.GetComponent<UIWidget>();
@@ -298,43 +357,27 @@ public class AIRoom : WindowServantSP
 
     void CreateDeckListTitles()
     {
-        Transform hint = FindControl("percyHint");
-        if (hint == null)
-            return;
+        CreateStandaloneLabel(
+            "PlayerDeckListTitle",
+            "自分のデッキ",
+            -DeckListOffset,
+            158f,
+            DeckListWidth,
+            36,
+            DeckListFontSize,
+            35);
 
-        CreateDeckListTitle(hint.gameObject, playerDeckList, "自分のデッキ", "PlayerDeckListTitle");
-        CreateDeckListTitle(hint.gameObject, aiDeckList, "AIデッキ", "AiDeckListTitle");
+        CreateStandaloneLabel(
+            "AiDeckListTitle",
+            "AIデッキ",
+            DeckListOffset,
+            158f,
+            DeckListWidth,
+            36,
+            DeckListFontSize,
+            35);
     }
 
-    void CreateDeckListTitle(GameObject template, UIselectableList list, string text, string objectName)
-    {
-        if (template == null || list == null || list.panel == null)
-            return;
-
-        GameObject title = (GameObject)UnityEngine.Object.Instantiate(template);
-        title.name = objectName;
-        title.transform.SetParent(list.transform.parent, false);
-        title.transform.localScale = template.transform.localScale;
-
-        Vector3 p = list.transform.localPosition;
-        p.y = 140f;
-        title.transform.localPosition = p;
-
-        UILabel label = title.GetComponent<UILabel>();
-        if (label == null)
-            label = title.GetComponentInChildren<UILabel>(true);
-        if (label != null)
-        {
-            label.text = text;
-            label.fontSize = DeckListFontSize;
-            label.width = DeckListWidth;
-            label.depth = 30;
-        }
-
-        Collider[] colliders = title.GetComponentsInChildren<Collider>(true);
-        for (int i = 0; i < colliders.Length; ++i)
-            colliders[i].enabled = false;
-    }
 
     void ConfigureCenterOptions()
     {
@@ -351,8 +394,8 @@ public class AIRoom : WindowServantSP
         SetControlLabel("unrand_", "シャッフルしない", OptionFontSize);
         SetControlLabel("first_", "自分が先攻", OptionFontSize);
 
-        SetControlPosition("unrand_", -82f, -8f);
-        SetControlPosition("first_", -82f, -52f);
+        SetControlPosition("unrand_", -82f, -2f);
+        SetControlPosition("first_", -82f, -44f);
 
         SetControlWidgetWidth("unrand_", 220);
         SetControlWidgetWidth("first_", 220);
@@ -362,7 +405,7 @@ public class AIRoom : WindowServantSP
         {
             Vector3 p = startGroup.localPosition;
             p.x = 0f;
-            p.y = -125f;
+            p.y = -118f;
             startGroup.localPosition = p;
 
             Transform texture = startGroup.Find("Texture");
@@ -444,47 +487,29 @@ public class AIRoom : WindowServantSP
 
     void CreateCenterSelectionDisplays()
     {
-        Transform template = FindControl("percyHint");
-        if (template == null)
-            throw new InvalidOperationException("AI room title label was not found.");
-
-        playerDeckDisplayLabel = CreateCenterDisplayLabel(
-            template.gameObject,
+        playerDeckDisplayLabel = CreateStandaloneLabel(
             "PlayerDeckDisplay",
-            96f);
-        aiDeckDisplayLabel = CreateCenterDisplayLabel(
-            template.gameObject,
+            "自分:",
+            0f,
+            108f,
+            340,
+            38,
+            OptionFontSize,
+            40);
+
+        aiDeckDisplayLabel = CreateStandaloneLabel(
             "AiDeckDisplay",
-            52f);
+            "AI:",
+            0f,
+            66f,
+            340,
+            38,
+            OptionFontSize,
+            40);
 
         UpdateSelectedDeckDisplays();
     }
 
-    UILabel CreateCenterDisplayLabel(GameObject template, string objectName, float y)
-    {
-        GameObject display = (GameObject)UnityEngine.Object.Instantiate(template);
-        display.name = objectName;
-        display.transform.SetParent(template.transform.parent, false);
-        display.transform.localScale = template.transform.localScale;
-        display.transform.localPosition = new Vector3(0f, y, template.transform.localPosition.z);
-
-        UILabel label = display.GetComponent<UILabel>();
-        if (label == null)
-            label = display.GetComponentInChildren<UILabel>(true);
-        if (label == null)
-            throw new InvalidOperationException("Center deck display UILabel was not found.");
-
-        label.fontSize = OptionFontSize;
-        label.width = 340;
-        label.height = 38;
-        label.depth = 30;
-
-        Collider[] colliders = display.GetComponentsInChildren<Collider>(true);
-        for (int i = 0; i < colliders.Length; ++i)
-            colliders[i].enabled = false;
-
-        return label;
-    }
 
     void PositionCenterSelectionDisplays()
     {
@@ -492,7 +517,7 @@ public class AIRoom : WindowServantSP
         {
             Vector3 p = playerDeckDisplayLabel.transform.localPosition;
             p.x = 0f;
-            p.y = 96f;
+            p.y = 108f;
             playerDeckDisplayLabel.transform.localPosition = p;
             playerDeckDisplayLabel.width = 340;
             playerDeckDisplayLabel.fontSize = OptionFontSize;
@@ -502,7 +527,7 @@ public class AIRoom : WindowServantSP
         {
             Vector3 p = aiDeckDisplayLabel.transform.localPosition;
             p.x = 0f;
-            p.y = 52f;
+            p.y = 66f;
             aiDeckDisplayLabel.transform.localPosition = p;
             aiDeckDisplayLabel.width = 340;
             aiDeckDisplayLabel.fontSize = OptionFontSize;
@@ -515,9 +540,17 @@ public class AIRoom : WindowServantSP
         string ai = Config.Get("list_aideck", "RadiantTyphoon");
 
         if (playerDeckDisplayLabel != null)
+        {
+            playerDeckDisplayLabel.gameObject.SetActive(true);
+            playerDeckDisplayLabel.enabled = true;
             playerDeckDisplayLabel.text = "自分: " + player;
+        }
         if (aiDeckDisplayLabel != null)
+        {
+            aiDeckDisplayLabel.gameObject.SetActive(true);
+            aiDeckDisplayLabel.enabled = true;
             aiDeckDisplayLabel.text = "AI: " + ai;
+        }
     }
 
     void OnPlayerDeckSelected()
@@ -632,17 +665,19 @@ public class AIRoom : WindowServantSP
         Transform playerTitle = FindControl("PlayerDeckListTitle");
         if (playerTitle != null)
         {
-            Vector3 p = playerDeckList.transform.localPosition;
-            p.y = 140f;
-            playerTitle.localPosition = p;
+            playerTitle.localPosition = new Vector3(
+                -DeckListOffset,
+                158f,
+                playerTitle.localPosition.z);
         }
 
         Transform aiTitle = FindControl("AiDeckListTitle");
         if (aiTitle != null)
         {
-            Vector3 p = aiDeckList.transform.localPosition;
-            p.y = 172f;
-            aiTitle.localPosition = p;
+            aiTitle.localPosition = new Vector3(
+                DeckListOffset,
+                158f,
+                aiTitle.localPosition.z);
         }
 
         Transform back = FindControl("back_");
