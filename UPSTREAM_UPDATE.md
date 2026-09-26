@@ -170,7 +170,8 @@ TrollStore IPA
 
 - ローカルWindBot起動
 - 複数AIデッキ選択
-- 既存 `UIselectableList` を自分/AIデッキで切り替えるスクロール一覧
+- 左右2本の独立 `UIselectableList` による自分/AIデッキ同時表示
+- 中央の操作不可選択表示（旧 `rank_` / `aideck_` を転用）
 - player deck選択
 - 「シャッフルしない」設定
 - 固定8000LP / Master Rule 2020
@@ -184,7 +185,9 @@ KoishiPro2更新時は**新しい上流AIRoomと独自AIRoomを必ず比較**し
 `new_ui_handShower`, `Program.go` にも依存する。
 また、AI/プレイヤーデッキ一覧は `transUI/UIselectableList.cs` と
 `UIselectableListItem.cs` の45px行スクロール実装を共用する。
-上流更新時はこれらのUI API/テンプレートも比較する。
+AI側一覧は `trans_AIroom.prefab` の既存 `deck` オブジェクトをruntime複製して作る。
+現固定ソースでは `panel_` と `bar_` が `deck` の子なので、複製後も左右で独立する。
+上流更新時はこの階層構造とUI API/テンプレートを比較する。
 
 ### 4.4 中リスク — `KoishiWindBotBridge.cs`
 
@@ -411,7 +414,7 @@ Unity認証が必要な場合は認証。
 1. 起動
 2. メニュー操作速度
 3. AI画面を開く
-4. 全AIページへ移動可能
+4. 左右のデッキ一覧が同時表示され、AIデッキ全件を右一覧でスクロール可能
 5. Radiant Typhoon対戦
 6. Radiant以外のAI対戦
 7. 「シャッフルしない」ON/OFF
