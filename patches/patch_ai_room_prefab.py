@@ -8,8 +8,9 @@ assets = root / "Assets"
 prefab = assets / "transUI" / "prefab" / "trans_AIroom.prefab"
 uisprite_meta = assets / "NGUI" / "Scripts" / "UI" / "UISprite.cs.meta"
 uipanel_meta = assets / "NGUI" / "Scripts" / "UI" / "UIPanel.cs.meta"
+uitexture_meta = assets / "NGUI" / "Scripts" / "UI" / "UITexture.cs.meta"
 
-for required in (prefab, uisprite_meta, uipanel_meta):
+for required in (prefab, uisprite_meta, uipanel_meta, uitexture_meta):
     if not required.is_file():
         raise SystemExit(f"AI room layout source missing: {required}")
 
@@ -21,6 +22,7 @@ def guid_from_meta(path: Path) -> str:
 
 uisprite_guid = guid_from_meta(uisprite_meta)
 uipanel_guid = guid_from_meta(uipanel_meta)
+uitexture_guid = guid_from_meta(uitexture_meta)
 
 text = prefab.read_text(encoding="utf-8-sig")
 parts = re.split(r"(?=--- !u!)", text)
@@ -81,6 +83,19 @@ def replace_clip_width(block: str, target: int, accepted: tuple[int, ...]) -> st
         raise SystemExit(f"Unexpected clip width={current}; accepted={accepted}, target={target}")
     return block[:m.start(2)] + str(target) + block[m.end(2):]
 
+def replace_clip_height(block: str, target: int, accepted: tuple[int, ...]) -> str:
+    pat = re.compile(
+        r"(?m)^(\s*mClipRange:\s*\{x:\s*[^,]+,\s*y:\s*[^,]+,\s*z:\s*[^,]+,\s*w:\s*)([-0-9.]+)(\}\s*)$"
+    )
+    m = pat.search(block)
+    if not m:
+        raise SystemExit("mClipRange height not found")
+    current = float(m.group(2))
+    accepted_f = tuple(float(v) for v in accepted)
+    if current not in accepted_f and current != float(target):
+        raise SystemExit(f"Unexpected clip height={current}; accepted={accepted}, target={target}")
+    return block[:m.start(2)] + str(target) + block[m.end(2):]
+
 def replace_local_x(block: str, target: int, accepted: tuple[int, ...]) -> str:
     pat = re.compile(
         r"(?m)^(\s*m_LocalPosition:\s*\{x:\s*)([-0-9.]+)(,\s*y:\s*[^,]+,\s*z:\s*[^}]+\}\s*)$"
@@ -93,6 +108,20 @@ def replace_local_x(block: str, target: int, accepted: tuple[int, ...]) -> str:
     if current not in accepted_f and current != float(target):
         raise SystemExit(f"Unexpected local x={current}; accepted={accepted}, target={target}")
     return block[:m.start(2)] + str(target) + block[m.end(2):]
+
+# The root content UIPanel is the critical visual clip. If it stays 500x400,
+# any widened mainWindow/list is still cut back to the legacy rectangle.
+container_go = game_object_id("GameObject")
+idx = component_index(container_go, "114", uipanel_guid)
+parts[idx] = replace_clip_width(parts[idx], 980, (500,))
+parts[idx] = replace_clip_height(parts[idx], 420, (400,))
+
+# The sibling glass texture supplies the translucent/blurred backdrop around
+# the modal. Widen it with the window so it does not remain a legacy-sized box.
+glass_go = game_object_id("glass")
+idx = component_index(glass_go, "114", uitexture_guid)
+parts[idx] = replace_number(parts[idx], "mWidth", 944, (464,))
+parts[idx] = replace_number(parts[idx], "mHeight", 370, (350,))
 
 # The original AI room is only 500x400, while one deck list already consumes
 # 230x314. A three-column layout cannot fit inside it. Patch the serialized
@@ -127,6 +156,9 @@ prefab.write_text(patched, encoding="utf-8")
 # Fail-fast verification.
 verify = prefab.read_text(encoding="utf-8")
 for needle in (
+    "mClipRange: {x: 0, y: 0, z: 980, w: 420}",
+    "mWidth: 944",
+    "mHeight: 370",
     "mWidth: 980",
     "mHeight: 420",
     "mWidth: 280",
@@ -138,6 +170,8 @@ for needle in (
         raise SystemExit(f"AI room prefab verification failed: {needle}")
 
 print("Patched serialized AI room geometry:")
+print("  - root UIPanel clip: 980x420")
+print("  - glass backdrop: 944x370")
 print("  - mainWindow: 980x420")
 print("  - deck list frame: 280 wide")
 print("  - deck clip region: 260 wide")
