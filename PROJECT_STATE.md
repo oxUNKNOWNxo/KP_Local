@@ -476,13 +476,13 @@ AI対戦画面は3カラム構成。
 
 したがって3カラム化では、`mainWindow` Spriteだけでなく次も必ず同時に変更する。
 
-- 親 `UIPanel.baseClipRegion`: 980x460
-- `mainWindow`: 980x460
-- `glass` 背景: 944x410
-- deck list frame: 280
-- deck list clip: 240
-- scrollbar x: 135
-- header separator: 948
+- 親 `UIPanel.baseClipRegion`: 1100x480
+- `mainWindow`: 1100x480
+- `glass` 背景: 1064x430
+- deck list frame: 330
+- deck list clip: 290
+- scrollbar x: 160
+- header separator: 1068
 
 `patches/patch_ai_room_prefab.py` でPrefabのシリアライズ値自体を変更し、
 `AIRoom.ConfigureMainWindow()` / `ApplyStableLayout()` でも表示直後に再適用する。
@@ -498,8 +498,10 @@ Popup内部のAnchor/子ラベル位置が残り、選択中デッキ名が左�
 
 - `rank_` / `aideck_` は完全非表示
 - 選択中デッキ名は専用 `UILabel` を新規生成
-- 左右一覧は `x=±325` に寄せ、外枠との余白を確保
-- list clipは240幅として左右に内側余白を確保
+- 左右一覧は `x=±310` に配置
+- 各一覧frameは330幅、clipは290幅
+- ウィンドウは1100幅とし、左右一覧の外側に約75pxの余白を確保
+- 中央カラムは約280〜300幅に抑え、選択表示は280幅、開始/戻るは250幅
 - `percyHint` 複製も実機では描画されないため中央表示/見出しのテンプレートに使わない
 - standalone UILabelは、実機で表示確認済みのオプションUILabelを複製して作る
 - ウィンドウ高は460、glassは410として、左右リスト最下段と「戻る」の下に余白を残す
