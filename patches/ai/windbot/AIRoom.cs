@@ -203,6 +203,7 @@ public class AIRoom : WindowServantSP
                 titleLabel.text = "WindBot AI対戦";
                 titleLabel.fontSize = TitleFontSize;
                 titleLabel.width = MainWindowWidth - 120;
+                titleLabel.depth = 30;
             }
         }
     }
@@ -279,7 +280,10 @@ public class AIRoom : WindowServantSP
 
         UILabel label = list.mod.GetComponentInChildren<UILabel>(true);
         if (label != null)
-            label.fontSize = Math.Max(label.fontSize, DeckListFontSize);
+        {
+            label.fontSize = DeckListFontSize;
+            label.width = DeckListClipWidth - 24;
+        }
     }
 
     void ParkListPrototype(UIselectableList list)
@@ -324,6 +328,7 @@ public class AIRoom : WindowServantSP
             label.text = text;
             label.fontSize = DeckListFontSize;
             label.width = DeckListWidth;
+            label.depth = 30;
         }
 
         Collider[] colliders = title.GetComponentsInChildren<Collider>(true);
@@ -472,6 +477,7 @@ public class AIRoom : WindowServantSP
         label.fontSize = OptionFontSize;
         label.width = 340;
         label.height = 38;
+        label.depth = 30;
 
         Collider[] colliders = display.GetComponentsInChildren<Collider>(true);
         for (int i = 0; i < colliders.Length; ++i)
@@ -532,6 +538,49 @@ public class AIRoom : WindowServantSP
         UpdateSelectedDeckDisplays();
     }
 
+    void ApplyDeckListRowStyle(UIselectableList list)
+    {
+        if (list == null || list.panel == null)
+            return;
+
+        UIselectableListItem[] items =
+            list.panel.GetComponentsInChildren<UIselectableListItem>(true);
+
+        for (int i = 0; i < items.Length; ++i)
+        {
+            UIselectableListItem item = items[i];
+            if (item == null)
+                continue;
+
+            if (item.lable != null)
+            {
+                item.lable.fontSize = DeckListFontSize;
+                item.lable.width = DeckListClipWidth - 24;
+                item.lable.height = 33;
+                item.lable.pivot = UIWidget.Pivot.Left;
+
+                Vector3 lp = item.lable.transform.localPosition;
+                lp.x = -DeckListClipWidth * 0.5f + 12f;
+                item.lable.transform.localPosition = lp;
+            }
+
+            if (item.selectedObject != null)
+            {
+                UIWidget selected = item.selectedObject.GetComponent<UIWidget>();
+                if (selected != null)
+                    selected.width = DeckListClipWidth - 8;
+            }
+
+            BoxCollider collider = item.GetComponent<BoxCollider>();
+            if (collider != null)
+            {
+                Vector3 size = collider.size;
+                size.x = DeckListClipWidth - 8;
+                collider.size = size;
+            }
+        }
+    }
+
     void PopulatePlayerDeckList()
     {
         playerDeckList.clear();
@@ -549,6 +598,7 @@ public class AIRoom : WindowServantSP
         playerDeckList.selectedString = selected;
         playerDeckList.toTop();
         playerDeckList.mark();
+        ApplyDeckListRowStyle(playerDeckList);
     }
 
     void PopulateAiDeckList()
@@ -568,6 +618,7 @@ public class AIRoom : WindowServantSP
         aiDeckList.selectedString = selected;
         aiDeckList.toTop();
         aiDeckList.mark();
+        ApplyDeckListRowStyle(aiDeckList);
     }
 
     void ApplyStableLayout()
@@ -578,6 +629,8 @@ public class AIRoom : WindowServantSP
         ConfigureCenterOptions();
         PositionCenterSelectionDisplays();
         UpdateSelectedDeckDisplays();
+        ApplyDeckListRowStyle(playerDeckList);
+        ApplyDeckListRowStyle(aiDeckList);
 
         Transform playerTitle = FindControl("PlayerDeckListTitle");
         if (playerTitle != null)
