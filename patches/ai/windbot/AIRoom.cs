@@ -853,10 +853,18 @@ public class AIRoom : WindowServantSP
     {
         base.preFrameFunction();
 
-        if (isShowed && layoutRefreshFrames > 0)
+        if (isShowed)
         {
-            ApplyStableLayout();
-            --layoutRefreshFrames;
+            if (layoutRefreshFrames > 0)
+            {
+                ApplyStableLayout();
+                --layoutRefreshFrames;
+            }
+
+            // UIselectableList creates visible rows lazily while scrolling.
+            // Keep newly-created rows on the AI-room-specific 22px style.
+            ApplyDeckListRowStyle(playerDeckList);
+            ApplyDeckListRowStyle(aiDeckList);
         }
 
         Menu.checkCommend();
