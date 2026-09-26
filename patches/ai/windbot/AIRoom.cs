@@ -21,8 +21,6 @@ public class AIRoom : WindowServantSP
 
     UIselectableList playerDeckList;
     UIselectableList aiDeckList;
-    UILabel playerDeckDisplayLabel;
-    UILabel aiDeckDisplayLabel;
     KoishiWindBotBridge windbot;
 
     string sort = "sortByTimeDeck";
@@ -47,7 +45,6 @@ public class AIRoom : WindowServantSP
         CreateSideBySideDeckLists();
 
         ConfigureCenterOptions();
-        CreateCenterSelectionDisplays();
         CreateDeckListTitles();
         CreateBackButton();
 
@@ -138,6 +135,8 @@ public class AIRoom : WindowServantSP
         label.width = width;
         label.height = height;
         label.depth = depth;
+        label.pivot = UIWidget.Pivot.Center;
+        label.alignment = NGUIText.Alignment.Center;
         label.enabled = true;
 
         Collider[] colliders = display.GetComponentsInChildren<Collider>(true);
@@ -386,16 +385,16 @@ public class AIRoom : WindowServantSP
         HideControl("god_");
 
         // The legacy Percy popup controls have their own anchored child labels.
-        // Reusing them caused the selected deck names to intrude into the left
-        // deck list. Hide them completely and use dedicated center UILabels.
+        // Keep them hidden. The selected deck is already visible in each list,
+        // so do not duplicate long deck names in the narrow center column.
         HideControl("rank_");
         HideControl("aideck_");
 
         SetControlLabel("unrand_", "シャッフルしない", OptionFontSize);
         SetControlLabel("first_", "自分が先攻", OptionFontSize);
 
-        SetControlPosition("unrand_", -82f, -2f);
-        SetControlPosition("first_", -82f, -44f);
+        SetControlPosition("unrand_", -82f, 38f);
+        SetControlPosition("first_", -82f, -4f);
 
         SetControlWidgetWidth("unrand_", 200);
         SetControlWidgetWidth("first_", 200);
@@ -405,7 +404,7 @@ public class AIRoom : WindowServantSP
         {
             Vector3 p = startGroup.localPosition;
             p.x = 0f;
-            p.y = -118f;
+            p.y = -78f;
             startGroup.localPosition = p;
 
             Transform texture = startGroup.Find("Texture");
@@ -485,81 +484,12 @@ public class AIRoom : WindowServantSP
     }
 
 
-    void CreateCenterSelectionDisplays()
-    {
-        playerDeckDisplayLabel = CreateStandaloneLabel(
-            "PlayerDeckDisplay",
-            "自分:",
-            0f,
-            108f,
-            340,
-            38,
-            OptionFontSize,
-            40);
-
-        aiDeckDisplayLabel = CreateStandaloneLabel(
-            "AiDeckDisplay",
-            "AI:",
-            0f,
-            66f,
-            340,
-            38,
-            OptionFontSize,
-            40);
-
-        UpdateSelectedDeckDisplays();
-    }
-
-
-    void PositionCenterSelectionDisplays()
-    {
-        if (playerDeckDisplayLabel != null)
-        {
-            Vector3 p = playerDeckDisplayLabel.transform.localPosition;
-            p.x = 0f;
-            p.y = 108f;
-            playerDeckDisplayLabel.transform.localPosition = p;
-            playerDeckDisplayLabel.width = 280;
-            playerDeckDisplayLabel.fontSize = OptionFontSize;
-        }
-
-        if (aiDeckDisplayLabel != null)
-        {
-            Vector3 p = aiDeckDisplayLabel.transform.localPosition;
-            p.x = 0f;
-            p.y = 66f;
-            aiDeckDisplayLabel.transform.localPosition = p;
-            aiDeckDisplayLabel.width = 280;
-            aiDeckDisplayLabel.fontSize = OptionFontSize;
-        }
-    }
-
-    void UpdateSelectedDeckDisplays()
-    {
-        string player = Config.Get("deckInUse", "");
-        string ai = Config.Get("list_aideck", "RadiantTyphoon");
-
-        if (playerDeckDisplayLabel != null)
-        {
-            playerDeckDisplayLabel.gameObject.SetActive(true);
-            playerDeckDisplayLabel.enabled = true;
-            playerDeckDisplayLabel.text = "自分: " + player;
-        }
-        if (aiDeckDisplayLabel != null)
-        {
-            aiDeckDisplayLabel.gameObject.SetActive(true);
-            aiDeckDisplayLabel.enabled = true;
-            aiDeckDisplayLabel.text = "AI: " + ai;
-        }
-    }
-
     void OnPlayerDeckSelected()
     {
         if (playerDeckList == null || String.IsNullOrWhiteSpace(playerDeckList.selectedString))
             return;
 
         Config.Set("deckInUse", playerDeckList.selectedString);
-        UpdateSelectedDeckDisplays();
     }
 
     void OnAiDeckSelected()
@@ -568,7 +498,6 @@ public class AIRoom : WindowServantSP
             return;
 
         Config.Set("list_aideck", aiDeckList.selectedString);
-        UpdateSelectedDeckDisplays();
     }
 
     void ApplyDeckListRowStyle(UIselectableList list)
@@ -657,8 +586,6 @@ public class AIRoom : WindowServantSP
         ConfigureDeckListGeometry(playerDeckList, -DeckListOffset);
         ConfigureDeckListGeometry(aiDeckList, DeckListOffset);
         ConfigureCenterOptions();
-        PositionCenterSelectionDisplays();
-        UpdateSelectedDeckDisplays();
         ApplyDeckListRowStyle(playerDeckList);
         ApplyDeckListRowStyle(aiDeckList);
 
@@ -880,7 +807,6 @@ public class AIRoom : WindowServantSP
         LoadDeckNames();
         PopulatePlayerDeckList();
         PopulateAiDeckList();
-        UpdateSelectedDeckDisplays();
         Program.charge();
     }
 
