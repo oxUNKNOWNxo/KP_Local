@@ -12,8 +12,8 @@ public class AIRoom : WindowServantSP
     const int MainWindowWidth = 980;
     const int MainWindowHeight = 420;
     const int DeckListWidth = 280;
-    const int DeckListClipWidth = 260;
-    const float DeckListOffset = 340f;
+    const int DeckListClipWidth = 240;
+    const float DeckListOffset = 325f;
     const int ActionButtonWidth = 300;
     const int ActionButtonHeight = 44;
     const string LocalRpsHash = "WindBot_LocalRps";
@@ -21,8 +21,8 @@ public class AIRoom : WindowServantSP
 
     UIselectableList playerDeckList;
     UIselectableList aiDeckList;
-    UIPopupList playerDeckDisplay;
-    UIPopupList aiDeckDisplay;
+    UILabel playerDeckDisplayLabel;
+    UILabel aiDeckDisplayLabel;
     KoishiWindBotBridge windbot;
 
     string sort = "sortByTimeDeck";
@@ -46,10 +46,8 @@ public class AIRoom : WindowServantSP
         ConfigureMainWindow();
         CreateSideBySideDeckLists();
 
-        playerDeckDisplay = UIHelper.getByName<UIPopupList>(gameObject, "rank_");
-        aiDeckDisplay = UIHelper.getByName<UIPopupList>(gameObject, "aideck_");
-
         ConfigureCenterOptions();
+        CreateCenterSelectionDisplays();
         CreateDeckListTitles();
         CreateBackButton();
 
@@ -253,6 +251,10 @@ public class AIRoom : WindowServantSP
 
         if (list.panel != null)
         {
+            Vector3 panelPosition = list.panel.transform.localPosition;
+            panelPosition.x = 0f;
+            list.panel.transform.localPosition = panelPosition;
+
             Vector4 clip = list.panel.baseClipRegion;
             clip.x = 0f;
             clip.y = 0f;
@@ -311,7 +313,7 @@ public class AIRoom : WindowServantSP
         title.transform.localScale = template.transform.localScale;
 
         Vector3 p = list.transform.localPosition;
-        p.y = 128f;
+        p.y = 140f;
         title.transform.localPosition = p;
 
         UILabel label = title.GetComponent<UILabel>();
@@ -335,11 +337,15 @@ public class AIRoom : WindowServantSP
         HideControl("mr4_");
         HideControl("god_");
 
+        // The legacy Percy popup controls have their own anchored child labels.
+        // Reusing them caused the selected deck names to intrude into the left
+        // deck list. Hide them completely and use dedicated center UILabels.
+        HideControl("rank_");
+        HideControl("aideck_");
+
         SetControlLabel("unrand_", "シャッフルしない", OptionFontSize);
         SetControlLabel("first_", "自分が先攻", OptionFontSize);
 
-        SetControlPosition("rank_", 0f, 100f);
-        SetControlPosition("aideck_", 0f, 54f);
         SetControlPosition("unrand_", -82f, -8f);
         SetControlPosition("first_", -82f, -52f);
 
@@ -361,11 +367,8 @@ public class AIRoom : WindowServantSP
 
         SetControlPosition("start_", 0f, 0f);
         ConfigureActionButton("start_", "対戦開始");
-
-        ConfigureReadOnlyDisplay(playerDeckDisplay);
-        ConfigureReadOnlyDisplay(aiDeckDisplay);
-        UpdateSelectedDeckDisplays();
     }
+
 
     void ConfigureActionButton(string name, string text)
     {
@@ -417,51 +420,6 @@ public class AIRoom : WindowServantSP
         ConfigureActionButton("back_", "戻る");
     }
 
-    void ConfigureReadOnlyDisplay(UIPopupList popup)
-    {
-        if (popup == null)
-            return;
-
-        popup.Clear();
-        popup.enabled = false;
-        popup.fontSize = OptionFontSize;
-
-        UIWidget frame = popup.GetComponent<UIWidget>();
-        if (frame != null)
-        {
-            frame.width = 320;
-            frame.height = 42;
-        }
-
-        Transform legacyLabel = popup.transform.Find("!lable");
-        if (legacyLabel != null)
-            legacyLabel.gameObject.SetActive(false);
-
-        Transform symbol = popup.transform.Find("Symbol");
-        if (symbol != null)
-            symbol.gameObject.SetActive(false);
-
-        Transform content = popup.transform.Find("content_");
-        if (content != null)
-        {
-            Vector3 p = content.localPosition;
-            p.x = -148f;
-            p.y = 0f;
-            content.localPosition = p;
-
-            UILabel label = content.GetComponent<UILabel>();
-            if (label != null)
-            {
-                label.fontSize = OptionFontSize;
-                label.width = 296;
-                label.height = 36;
-            }
-        }
-
-        Collider[] colliders = popup.GetComponentsInChildren<Collider>(true);
-        for (int i = 0; i < colliders.Length; ++i)
-            colliders[i].enabled = false;
-    }
 
     void SetControlWidgetWidth(string name, int width)
     {
@@ -478,19 +436,70 @@ public class AIRoom : WindowServantSP
             labels[i].width = Math.Max(labels[i].width, width - 30);
     }
 
-    void SetReadOnlyDisplay(UIPopupList popup, string text)
-    {
-        if (popup == null)
-            return;
 
-        Transform content = popup.transform.Find("content_");
-        UILabel label = content == null ? null : content.GetComponent<UILabel>();
-        if (label != null)
+    void CreateCenterSelectionDisplays()
+    {
+        Transform template = FindControl("percyHint");
+        if (template == null)
+            throw new InvalidOperationException("AI room title label was not found.");
+
+        playerDeckDisplayLabel = CreateCenterDisplayLabel(
+            template.gameObject,
+            "PlayerDeckDisplay",
+            96f);
+        aiDeckDisplayLabel = CreateCenterDisplayLabel(
+            template.gameObject,
+            "AiDeckDisplay",
+            52f);
+
+        UpdateSelectedDeckDisplays();
+    }
+
+    UILabel CreateCenterDisplayLabel(GameObject template, string objectName, float y)
+    {
+        GameObject display = (GameObject)UnityEngine.Object.Instantiate(template);
+        display.name = objectName;
+        display.transform.SetParent(template.transform.parent, false);
+        display.transform.localScale = template.transform.localScale;
+        display.transform.localPosition = new Vector3(0f, y, template.transform.localPosition.z);
+
+        UILabel label = display.GetComponent<UILabel>();
+        if (label == null)
+            label = display.GetComponentInChildren<UILabel>(true);
+        if (label == null)
+            throw new InvalidOperationException("Center deck display UILabel was not found.");
+
+        label.fontSize = OptionFontSize;
+        label.width = 340;
+        label.height = 38;
+
+        Collider[] colliders = display.GetComponentsInChildren<Collider>(true);
+        for (int i = 0; i < colliders.Length; ++i)
+            colliders[i].enabled = false;
+
+        return label;
+    }
+
+    void PositionCenterSelectionDisplays()
+    {
+        if (playerDeckDisplayLabel != null)
         {
-            label.text = text;
-            label.fontSize = OptionFontSize;
-            label.width = 296;
-            label.height = 36;
+            Vector3 p = playerDeckDisplayLabel.transform.localPosition;
+            p.x = 0f;
+            p.y = 96f;
+            playerDeckDisplayLabel.transform.localPosition = p;
+            playerDeckDisplayLabel.width = 340;
+            playerDeckDisplayLabel.fontSize = OptionFontSize;
+        }
+
+        if (aiDeckDisplayLabel != null)
+        {
+            Vector3 p = aiDeckDisplayLabel.transform.localPosition;
+            p.x = 0f;
+            p.y = 52f;
+            aiDeckDisplayLabel.transform.localPosition = p;
+            aiDeckDisplayLabel.width = 340;
+            aiDeckDisplayLabel.fontSize = OptionFontSize;
         }
     }
 
@@ -499,8 +508,10 @@ public class AIRoom : WindowServantSP
         string player = Config.Get("deckInUse", "");
         string ai = Config.Get("list_aideck", "RadiantTyphoon");
 
-        SetReadOnlyDisplay(playerDeckDisplay, "自分: " + player);
-        SetReadOnlyDisplay(aiDeckDisplay, "AI: " + ai);
+        if (playerDeckDisplayLabel != null)
+            playerDeckDisplayLabel.text = "自分: " + player;
+        if (aiDeckDisplayLabel != null)
+            aiDeckDisplayLabel.text = "AI: " + ai;
     }
 
     void OnPlayerDeckSelected()
@@ -565,12 +576,14 @@ public class AIRoom : WindowServantSP
         ConfigureDeckListGeometry(playerDeckList, -DeckListOffset);
         ConfigureDeckListGeometry(aiDeckList, DeckListOffset);
         ConfigureCenterOptions();
+        PositionCenterSelectionDisplays();
+        UpdateSelectedDeckDisplays();
 
         Transform playerTitle = FindControl("PlayerDeckListTitle");
         if (playerTitle != null)
         {
             Vector3 p = playerDeckList.transform.localPosition;
-            p.y = 172f;
+            p.y = 140f;
             playerTitle.localPosition = p;
         }
 
