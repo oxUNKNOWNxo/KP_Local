@@ -1,0 +1,80 @@
+name: Koishi AI row template inspection
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/ai-row-template-inspect.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SOURCE_COMMIT: c1850e1120df6a5885692eadacad8ad114a3cf11
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: control
+      - uses: actions/cache/restore@v6
+        with:
+          path: source
+          key: koishipro2-source-${{ env.SOURCE_COMMIT }}-v1
+      - name: Inspect selectable-list row template
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== UIselectableListItem ==='
+          f=$(grep -Rl --include='*.cs' 'class UIselectableListItem' source/Assets | head -1)
+          echo "$f"
+          sed -n '1,260p' "$f"
+          echo '=== selectable list prefab component ==='
+          f2=$(grep -Rl --include='*.cs' 'class UIselectableList' source/Assets | head -1)
+          echo "$f2"
+          sed -n '1,300p' "$f2"
+          echo '=== trans_AIroom deck/item hierarchy ==='
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p=Path("source/Assets/transUI/prefab/trans_AIroom.prefab")
+          text=p.read_text(encoding="utf-8-sig",errors="replace")
+          docs=re.split(r'(?=--- !u!)', text)
+          names={}
+          tf={}
+          bygo={}
+          comps={}
+          for d in docs:
+              h=re.match(r'--- !u!(\d+) &(\d+)',d)
+              if not h: continue
+              typ,fid=h.groups()
+              if typ=="1":
+                  m=re.search(r'(?m)^  m_Name:\s*(.*?)\s*$',d)
+                  if m:names[fid]=m.group(1)
+              go=re.search(r'm_GameObject: \{fileID: (\d+)\}',d)
+              if go: comps.setdefault(go.group(1),[]).append((typ,fid,d))
+              if typ=="4":
+                  father=re.search(r'm_Father: \{fileID: (\d+)\}',d)
+                  pos=re.search(r'm_LocalPosition: \{x: ([^,]+), y: ([^,]+), z: ([^}]+)\}',d)
+                  children=re.findall(r'- \{fileID: (\d+)\}',d)
+                  gid=go.group(1) if go else ""
+                  tf[fid]=(gid,father.group(1) if father else "0",pos.groups() if pos else None,children)
+                  if gid:bygo[gid]=fid
+          def walk(t,depth=0):
+              if t not in tf:return
+              gid,fa,pos,ch=tf[t]
+              print("  "*depth,names.get(gid),gid,t,pos)
+              for c in ch:walk(c,depth+1)
+          deck=next(g for g,n in names.items() if n=="deck")
+          walk(bygo[deck])
+          for name in ["mod_","text_","selected_","background_","deck"]:
+              for gid,n in names.items():
+                  if n==name:
+                      print("\nOBJECT",name,gid)
+                      for typ,fid,d in comps.get(gid,[]):
+                          print("---",typ,fid,"---")
+                          print(d[:4500])
+          PY
