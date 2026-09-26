@@ -1,0 +1,37 @@
+name: Koishi AI window lifecycle inspection
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/ai-window-lifecycle-inspect.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SOURCE_COMMIT: c1850e1120df6a5885692eadacad8ad114a3cf11
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: control
+      - uses: actions/cache/restore@v6
+        with:
+          path: source
+          key: koishipro2-source-${{ env.SOURCE_COMMIT }}-v1
+      - name: Inspect WindowServant lifecycle
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== class locations ==='
+          grep -Rnl --include='*.cs' 'class WindowServantSP\|class WindowServant' source/Assets/SibylSystem source/Assets | head -50 || true
+          echo '=== lifecycle snippets ==='
+          while IFS= read -r f; do
+            echo "===== $f ====="
+            grep -n -B35 -A100 -E 'class WindowServantSP|class WindowServant|void createWindow|createWindow\(|override void show\(|virtual void show\(|SetActiveFalse\(|SetActiveTrue\(' "$f" | head -1200 || true
+          done < <(grep -Rl --include='*.cs' 'class WindowServantSP\|class WindowServant' source/Assets/SibylSystem source/Assets | sort -u)
