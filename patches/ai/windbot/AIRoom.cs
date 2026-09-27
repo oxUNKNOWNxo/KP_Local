@@ -33,12 +33,13 @@ public class AIRoom : WindowServantSP
     string pendingAiDeck;
     bool pendingNoShuffle;
     int layoutRefreshFrames;
+    GameObject wiredWindow;
 
     public override void initialize()
     {
         createWindow(Program.I().new_ui_aiRoom);
 
-        playerDeckList = gameObject.GetComponentInChildren<UIselectableList>();
+        playerDeckList = FindPlayerDeckList();
         if (playerDeckList == null)
             throw new InvalidOperationException("AI room player deck list was not found.");
 
@@ -49,18 +50,24 @@ public class AIRoom : WindowServantSP
         CreateCenterColumnRoot();
         CreateDeckListTitles();
         CreateBackButton();
-        ArrangeCenterColumnContents();
         ApplyDynamicCenterLayout();
 
         playerDeckList.selectedAction = OnPlayerDeckSelected;
         aiDeckList.selectedAction = OnAiDeckSelected;
 
-        UIHelper.registEvent(gameObject, "start_", onStart);
-        UIHelper.registEvent(gameObject, "back_", () => { Program.I().shiftToServant(Program.I().menu); });
-        UIHelper.registEvent(gameObject, "exit_", () => { Program.I().shiftToServant(Program.I().menu); });
+        // AIRoom can be entered again after another duel/menu mode. If the same
+        // runtime window is reused, do not register click handlers or install
+        // selectable lists a second time. A newly-created window is wired once.
+        if (wiredWindow != gameObject)
+        {
+            UIHelper.registEvent(gameObject, "start_", onStart);
+            UIHelper.registEvent(gameObject, "back_", () => { Program.I().shiftToServant(Program.I().menu); });
+            UIHelper.registEvent(gameObject, "exit_", () => { Program.I().shiftToServant(Program.I().menu); });
 
-        playerDeckList.install();
-        aiDeckList.install();
+            playerDeckList.install();
+            aiDeckList.install();
+            wiredWindow = gameObject;
+        }
 
         ParkListPrototype(playerDeckList);
         ParkListPrototype(aiDeckList);
@@ -75,6 +82,76 @@ public class AIRoom : WindowServantSP
             if (children[i].name == name)
                 return children[i];
         return null;
+    }
+
+    Transform FindGeneratedControl(string name)
+    {
+        Transform first = null;
+        Transform[] children = gameObject.GetComponentsInChildren<Transform>(true);
+        for (int i = 0; i < children.Length; ++i)
+        {
+            Transform current = children[i];
+            if (current == null || current.name != name)
+                continue;
+
+            if (first == null)
+            {
+                first = current;
+                continue;
+            }
+
+            // A previous re-initialization must never leave two runtime copies.
+            current.gameObject.SetActive(false);
+            UnityEngine.Object.Destroy(current.gameObject);
+        }
+        return first;
+    }
+
+    UIselectableList FindPlayerDeckList()
+    {
+        UIselectableList fallback = null;
+        UIselectableList[] lists =
+            gameObject.GetComponentsInChildren<UIselectableList>(true);
+
+        for (int i = 0; i < lists.Length; ++i)
+        {
+            UIselectableList list = lists[i];
+            if (list == null)
+                continue;
+
+            if (list.gameObject.name == "PlayerDeckList")
+                return list;
+
+            if (list.gameObject.name != "AiDeckList" && fallback == null)
+                fallback = list;
+        }
+
+        return fallback;
+    }
+
+    UIselectableList FindGeneratedDeckList(string name)
+    {
+        UIselectableList first = null;
+        UIselectableList[] lists =
+            gameObject.GetComponentsInChildren<UIselectableList>(true);
+
+        for (int i = 0; i < lists.Length; ++i)
+        {
+            UIselectableList list = lists[i];
+            if (list == null || list.gameObject.name != name)
+                continue;
+
+            if (first == null)
+            {
+                first = list;
+                continue;
+            }
+
+            list.gameObject.SetActive(false);
+            UnityEngine.Object.Destroy(list.gameObject);
+        }
+
+        return first;
     }
 
     UILabel FindControlLabel(string name)
@@ -143,6 +220,46 @@ public class AIRoom : WindowServantSP
         label.enabled = true;
 
         Collider[] colliders = display.GetComponentsInChildren<Collider>(true);
+        for (int i = 0; i < colliders.Length; ++i)
+            colliders[i].enabled = false;
+
+        return label;
+    }
+
+    UILabel EnsureStandaloneLabel(
+        Transform parent,
+        string objectName,
+        string text,
+        int width,
+        int height,
+        int fontSize,
+        int depth)
+    {
+        Transform existing = FindGeneratedControl(objectName);
+        if (existing == null)
+            return CreateStandaloneLabel(
+                parent, objectName, text, width, height, fontSize, depth);
+
+        if (existing.parent != parent)
+            existing.SetParent(parent, true);
+
+        UILabel label = existing.GetComponent<UILabel>();
+        if (label == null)
+            label = existing.GetComponentInChildren<UILabel>(true);
+        if (label == null)
+            throw new InvalidOperationException(
+                "Existing standalone AI-room label is missing UILabel: " + objectName);
+
+        label.text = text;
+        label.fontSize = fontSize;
+        label.width = width;
+        label.height = height;
+        label.depth = depth;
+        label.pivot = UIWidget.Pivot.Center;
+        label.alignment = NGUIText.Alignment.Center;
+        label.enabled = true;
+
+        Collider[] colliders = existing.GetComponentsInChildren<Collider>(true);
         for (int i = 0; i < colliders.Length; ++i)
             colliders[i].enabled = false;
 
@@ -373,17 +490,25 @@ public class AIRoom : WindowServantSP
 
         originalTransform.gameObject.name = "PlayerDeckList";
 
-        GameObject aiListObject = (GameObject)UnityEngine.Object.Instantiate(
-            originalTransform.gameObject,
-            originalTransform.localPosition,
-            originalTransform.localRotation);
-        aiListObject.name = "AiDeckList";
-        aiListObject.transform.SetParent(parent, false);
-        aiListObject.transform.localScale = originalTransform.localScale;
-
-        aiDeckList = aiListObject.GetComponent<UIselectableList>();
+        aiDeckList = FindGeneratedDeckList("AiDeckList");
         if (aiDeckList == null)
-            throw new InvalidOperationException("Cloned AI deck list is missing UIselectableList.");
+        {
+            GameObject aiListObject = (GameObject)UnityEngine.Object.Instantiate(
+                originalTransform.gameObject,
+                originalTransform.localPosition,
+                originalTransform.localRotation);
+            aiListObject.name = "AiDeckList";
+            aiListObject.transform.SetParent(parent, false);
+            aiListObject.transform.localScale = originalTransform.localScale;
+
+            aiDeckList = aiListObject.GetComponent<UIselectableList>();
+            if (aiDeckList == null)
+                throw new InvalidOperationException("Cloned AI deck list is missing UIselectableList.");
+        }
+        else if (aiDeckList.transform.parent != parent)
+        {
+            aiDeckList.transform.SetParent(parent, true);
+        }
 
         ConfigureDeckListGeometry(playerDeckList, -DeckListOffset);
         ConfigureDeckListGeometry(aiDeckList, DeckListOffset);
@@ -456,7 +581,7 @@ public class AIRoom : WindowServantSP
 
     void CreateDeckListTitles()
     {
-        CreateStandaloneLabel(
+        EnsureStandaloneLabel(
             playerDeckList.transform,
             "PlayerDeckListTitle",
             "自分のデッキ",
@@ -465,7 +590,7 @@ public class AIRoom : WindowServantSP
             DeckListFontSize,
             35);
 
-        CreateStandaloneLabel(
+        EnsureStandaloneLabel(
             aiDeckList.transform,
             "AiDeckListTitle",
             "AIデッキ",
@@ -504,9 +629,18 @@ public class AIRoom : WindowServantSP
         if (mainWindow == null)
             throw new InvalidOperationException("AI room mainWindow was not found.");
 
-        GameObject rootObject = new GameObject("WindBotCenterColumn");
-        centerColumnRoot = rootObject.transform;
-        centerColumnRoot.SetParent(mainWindow, false);
+        centerColumnRoot = FindGeneratedControl("WindBotCenterColumn");
+        if (centerColumnRoot == null)
+        {
+            GameObject rootObject = new GameObject("WindBotCenterColumn");
+            centerColumnRoot = rootObject.transform;
+            centerColumnRoot.SetParent(mainWindow, false);
+        }
+        else if (centerColumnRoot.parent != mainWindow)
+        {
+            centerColumnRoot.SetParent(mainWindow, true);
+        }
+
         centerColumnRoot.localPosition = Vector3.zero;
         centerColumnRoot.localRotation = Quaternion.identity;
         centerColumnRoot.localScale = Vector3.one;
@@ -515,84 +649,48 @@ public class AIRoom : WindowServantSP
         for (int i = 0; i < names.Length; ++i)
         {
             Transform control = FindControl(names[i]);
-            if (control != null)
-                control.SetParent(centerColumnRoot, false);
+            if (control != null && control.parent != centerColumnRoot)
+                control.SetParent(centerColumnRoot, true);
         }
     }
 
-    void CenterChildHorizontally(Transform target)
+    void MoveVisualCenterInSpace(
+        Transform target,
+        Transform space,
+        float targetX,
+        float targetY)
     {
-        if (target == null || centerColumnRoot == null)
+        if (target == null || space == null)
             return;
 
-        Bounds bounds = GetVisualBoundsInSpace(target, centerColumnRoot);
-        Vector3 p = target.localPosition;
-        p.x -= bounds.center.x;
-        target.localPosition = p;
+        Bounds bounds = GetVisualBoundsInSpace(target, space);
+        Vector3 position = space.InverseTransformPoint(target.position);
+        position.x += targetX - bounds.center.x;
+        position.y += targetY - bounds.center.y;
+        target.position = space.TransformPoint(position);
     }
 
-    void PositionSecondToggleBelowFirst()
-    {
-        if (centerColumnRoot == null)
-            return;
-
-        Transform unrand = FindControl("unrand_");
-        Transform first = FindControl("first_");
-        if (unrand == null || first == null)
-            return;
-
-        Bounds upper = GetVisualBoundsInSpace(unrand, centerColumnRoot);
-        Bounds lower = GetVisualBoundsInSpace(first, centerColumnRoot);
-        float gap = Mathf.Max(6f, Mathf.Min(upper.size.y, lower.size.y) * 0.25f);
-        float targetCenterY = upper.min.y - gap - lower.size.y * 0.5f;
-
-        Vector3 p = first.localPosition;
-        p.y += targetCenterY - lower.center.y;
-        first.localPosition = p;
-    }
-
-    void PositionBackBelowStart()
+    void ArrangeStartButtons()
     {
         Transform start = FindControl("start_");
         Transform back = FindControl("back_");
         if (start == null || back == null || start.parent == null || start.parent != back.parent)
             return;
 
-        Transform parent = start.parent;
-        Bounds startBounds = GetVisualBoundsInSpace(start, parent);
-        Bounds backBounds = GetVisualBoundsInSpace(back, parent);
-        float gap = Mathf.Max(6f, Mathf.Min(startBounds.size.y, backBounds.size.y) * 0.20f);
-        float targetCenterY = startBounds.min.y - gap - backBounds.size.y * 0.5f;
+        Transform group = start.parent;
+        Bounds startBounds = GetVisualBoundsInSpace(start, group);
+        Bounds backBounds = GetVisualBoundsInSpace(back, group);
 
-        Vector3 p = back.localPosition;
-        p.x = start.localPosition.x;
-        p.y += targetCenterY - backBounds.center.y;
-        back.localPosition = p;
-    }
+        float startHeight = Mathf.Max(1f, startBounds.size.y);
+        float backHeight = Mathf.Max(1f, backBounds.size.y);
+        float gap = Mathf.Max(6f, Mathf.Min(startHeight, backHeight) * 0.20f);
+        float totalHeight = startHeight + gap + backHeight;
 
-    void PositionButtonGroupBelowToggles()
-    {
-        if (centerColumnRoot == null)
-            return;
+        float startY = totalHeight * 0.5f - startHeight * 0.5f;
+        float backY = -totalHeight * 0.5f + backHeight * 0.5f;
 
-        Transform first = FindControl("first_");
-        Transform startGroup = FindControl("start");
-        Transform start = FindControl("start_");
-        if (first == null || startGroup == null || start == null)
-            return;
-
-        Bounds firstBounds = GetVisualBoundsInSpace(first, centerColumnRoot);
-        Bounds groupBounds = GetVisualBoundsInSpace(startGroup, centerColumnRoot);
-        Bounds startBounds = GetVisualBoundsInSpace(start, startGroup);
-
-        float sectionGap = Mathf.Max(
-            12f,
-            Mathf.Min(firstBounds.size.y, startBounds.size.y) * 0.65f);
-        float targetTop = firstBounds.min.y - sectionGap;
-
-        Vector3 p = startGroup.localPosition;
-        p.y += targetTop - groupBounds.max.y;
-        startGroup.localPosition = p;
+        MoveVisualCenterInSpace(start, group, 0f, startY);
+        MoveVisualCenterInSpace(back, group, 0f, backY);
     }
 
     void ArrangeCenterColumnContents()
@@ -600,16 +698,51 @@ public class AIRoom : WindowServantSP
         if (centerColumnRoot == null)
             return;
 
-        // Preserve one hierarchy and arrange inside it. Do not move each row in
-        // world space: NGUI child widgets and their parents use different origins.
-        PositionSecondToggleBelowFirst();
-        PositionBackBelowStart();
+        // Always rebuild from the same local origin. This makes repeated show(),
+        // anchor refreshes, and the three stabilization frames converge to the
+        // same geometry instead of accumulating offsets.
+        centerColumnRoot.localPosition = Vector3.zero;
+        centerColumnRoot.localRotation = Quaternion.identity;
+        centerColumnRoot.localScale = Vector3.one;
 
-        CenterChildHorizontally(FindControl("unrand_"));
-        CenterChildHorizontally(FindControl("first_"));
-        CenterChildHorizontally(FindControl("start"));
+        Transform unrand = FindControl("unrand_");
+        Transform first = FindControl("first_");
+        Transform startGroup = FindControl("start");
+        if (unrand == null || first == null || startGroup == null)
+            return;
 
-        PositionButtonGroupBelowToggles();
+        ArrangeStartButtons();
+
+        Bounds unrandBounds = GetVisualBoundsInSpace(unrand, centerColumnRoot);
+        Bounds firstBounds = GetVisualBoundsInSpace(first, centerColumnRoot);
+        Bounds buttonBounds = GetVisualBoundsInSpace(startGroup, centerColumnRoot);
+
+        float unrandHeight = Mathf.Max(1f, unrandBounds.size.y);
+        float firstHeight = Mathf.Max(1f, firstBounds.size.y);
+        float buttonHeight = Mathf.Max(1f, buttonBounds.size.y);
+
+        float rowGap = Mathf.Max(6f, Mathf.Min(unrandHeight, firstHeight) * 0.25f);
+        float sectionGap = Mathf.Max(
+            rowGap * 2f,
+            Mathf.Min(firstHeight, buttonHeight) * 0.35f);
+
+        float totalHeight =
+            unrandHeight + rowGap
+            + firstHeight + sectionGap
+            + buttonHeight;
+
+        float cursor = totalHeight * 0.5f;
+
+        float unrandY = cursor - unrandHeight * 0.5f;
+        MoveVisualCenterInSpace(unrand, centerColumnRoot, 0f, unrandY);
+        cursor -= unrandHeight + rowGap;
+
+        float firstY = cursor - firstHeight * 0.5f;
+        MoveVisualCenterInSpace(first, centerColumnRoot, 0f, firstY);
+        cursor -= firstHeight + sectionGap;
+
+        float buttonY = cursor - buttonHeight * 0.5f;
+        MoveVisualCenterInSpace(startGroup, centerColumnRoot, 0f, buttonY);
     }
 
     void ConfigureCenterOptions()
@@ -680,15 +813,21 @@ public class AIRoom : WindowServantSP
         if (start == null)
             return;
 
-        GameObject back = (GameObject)UnityEngine.Object.Instantiate(start.gameObject);
-        back.name = "back_";
-        back.transform.SetParent(start.parent, false);
-        back.transform.localScale = start.localScale;
-
-        back.transform.localPosition = start.localPosition;
+        Transform back = FindGeneratedControl("back_");
+        if (back == null)
+        {
+            GameObject backObject = (GameObject)UnityEngine.Object.Instantiate(start.gameObject);
+            backObject.name = "back_";
+            back = backObject.transform;
+            back.SetParent(start.parent, false);
+            back.localScale = start.localScale;
+        }
+        else if (back.parent != start.parent)
+        {
+            back.SetParent(start.parent, true);
+        }
 
         ConfigureActionButton("back_", "戻る");
-        PositionBackBelowStart();
     }
 
 
@@ -720,13 +859,10 @@ public class AIRoom : WindowServantSP
         ArrangeCenterColumnContents();
 
         Bounds columnBounds = GetCenterColumnBounds(playerFrame, aiFrame);
-        Bounds contentBounds = GetVisualBoundsInLayout(centerColumnRoot);
-
-        Transform root = LayoutRoot();
-        Vector3 rootPosition = root.InverseTransformPoint(centerColumnRoot.position);
-        rootPosition.x += columnBounds.center.x - contentBounds.center.x;
-        rootPosition.y += columnBounds.center.y - contentBounds.center.y;
-        centerColumnRoot.position = root.TransformPoint(rootPosition);
+        MoveVisualCenterInLayout(
+            centerColumnRoot,
+            columnBounds.center.x,
+            columnBounds.center.y);
     }
 
 
@@ -837,7 +973,6 @@ public class AIRoom : WindowServantSP
         ApplyDeckListRowStyle(aiDeckList);
         PositionDeckListTitle(playerDeckList, "PlayerDeckListTitle");
         PositionDeckListTitle(aiDeckList, "AiDeckListTitle");
-        ArrangeCenterColumnContents();
         ApplyDynamicCenterLayout();
     }
 
