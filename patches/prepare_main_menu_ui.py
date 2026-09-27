@@ -23,7 +23,7 @@ text = menu_path.read_text(encoding="utf-8-sig")
 # Re-apply layout whenever the menu becomes visible. The immediate pass fixes
 # normal entry, and the delayed pass catches NGUI anchors/translations that are
 # refreshed on the following layout tick.
-if "MenuResponsiveLayout.Apply(gameObject);" not in text:
+if "MenuResponsiveLayout.ApplyAndSchedule(gameObject);" not in text:
     show = re.search(
         r"(?ms)(public\s+override\s+void\s+show\s*\(\s*\)\s*\{)(.*?)(\n\s*\})",
         text,
@@ -40,8 +40,7 @@ if "MenuResponsiveLayout.Apply(gameObject);" not in text:
     insertion = (
         base_show.group(0)
         + "\n"
-        + indent + "MenuResponsiveLayout.Apply(gameObject);\n"
-        + indent + "safeGogo(50, () => MenuResponsiveLayout.Apply(gameObject));"
+        + indent + "MenuResponsiveLayout.ApplyAndSchedule(gameObject);"
     )
     body = body[:base_show.start()] + insertion + body[base_show.end():]
     text = text[:show.start(2)] + body + text[show.end(2):]
@@ -50,8 +49,7 @@ menu_path.write_text(text, encoding="utf-8")
 
 verify = menu_path.read_text(encoding="utf-8")
 for needle in (
-    "MenuResponsiveLayout.Apply(gameObject);",
-    "safeGogo(50, () => MenuResponsiveLayout.Apply(gameObject));",
+    "MenuResponsiveLayout.ApplyAndSchedule(gameObject);",
 ):
     if needle not in verify:
         raise SystemExit(f"Responsive menu patch verification failed: {needle}")
@@ -64,6 +62,8 @@ for needle in (
     "panelWidth",
     "panelHeight",
     "CollectRows",
+    "RefreshAfterNguiLayout",
+    "TranslateMenuLabels",
 ):
     if needle not in helper_verify:
         raise SystemExit(f"Responsive menu helper verification failed: {needle}")

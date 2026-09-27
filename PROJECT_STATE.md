@@ -931,3 +931,69 @@ yes/noラベル等しか翻訳していなかったため、Prefab上の通常UI
 - `资源下载中 -> リソースをダウンロード中`
 
 方針はAI対戦画面と同じく、**文字を箱へ縮めて合わせず、実文字幅に箱を合わせる**。
+
+
+---
+
+## 30. build #145失敗・対戦UI副作用の修正（2026-09-28）
+
+ユーザー報告:
+
+- iOS build #145 が失敗
+- 直前の実機版で対戦中のチェーン確認UIが崩れる
+- 一部の日本語文字が欠字（×/missing glyph）になる
+
+### build #145失敗原因
+
+Unity compile log:
+
+`Assets/SibylSystem/Menu/Menu.cs(286,9): error CS0103: The name 'safeGogo' does not exist in the current context`
+
+メインメニューの遅延再配置に、固定KoishiPro2のMenuクラスには存在しない
+`safeGogo` を誤って使用していた。
+
+修正:
+
+- `safeGogo` を完全撤去
+- `MenuResponsiveLayout.ApplyAndSchedule()` を追加
+- `Program.I().StartCoroutine(...)` から1 frame後＋50ms後に再適用
+
+### 対戦中UI崩れ・欠字の原因方針
+
+build #144 で導入した日本語化は範囲が広すぎた。
+
+- 固定KoishiPro2の `InterString` 読み込み辞書を新しいja-JPへグローバル差替え
+- `UIHelper.InterGameObject()` を全UILabel翻訳へ変更
+- `trySetLableText()` の動的文字も強制翻訳
+- 全Servant表示後に翻訳パスを再実行
+
+このため、デュエル中のチェーン確認など、
+元来のUIサイズ・フォント・動的文字列を前提とする箇所まで新しい日本語が流入した。
+フォントが該当グリフを持たない箇所ではmissing glyphも起こり得る。
+
+次版では**グローバル日本語化を撤回**。
+
+- `InterString.cs` を変更しない
+- `UIHelper.cs` を変更しない
+- `Servant.cs` を変更しない
+- ja-JP辞書は参考ファイルとしてのみ同梱し、ゲーム全体の辞書へ強制適用しない
+- 日本語化は画面ごとにレビューして入れる
+
+現時点ではメインメニューのみ
+`MenuResponsiveLayout.TranslateMenuLabels()` で明示的に日本語化する。
+
+メニュー対象:
+
+- AI対戦
+- オンライン
+- リプレイ
+- デッキ編集
+- 設定
+- 詰めデュエル
+- ゲーム終了
+- 超先行カード
+- リソースダウンロード / リソース更新
+- `正在...%` 型の進捗表示
+
+これによりデュエル画面へ新しい翻訳処理・フォント文字列を流さず、
+メインメニューの固定文字サイズ＋可変UIだけを独立して維持する。

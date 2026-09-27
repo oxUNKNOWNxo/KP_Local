@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -11,6 +12,32 @@ using UnityEngine;
 public static class MenuResponsiveLayout
 {
     const int MinimumMenuFontSize = 20;
+
+    static readonly Dictionary<string, string> MenuTranslations =
+        new Dictionary<string, string>()
+        {
+            { "人机模式", "AI対戦" },
+            { "人机对战", "AI対戦" },
+            { "联机模式", "オンライン" },
+            { "聯機模式", "オンライン" },
+            { "观看录像", "リプレイ" },
+            { "觀看錄像", "リプレイ" },
+            { "编辑卡组", "デッキ編集" },
+            { "編輯卡組", "デッキ編集" },
+            { "系统设置", "設定" },
+            { "系統設置", "設定" },
+            { "残局模式", "詰めデュエル" },
+            { "殘局模式", "詰めデュエル" },
+            { "退出游戏", "ゲーム終了" },
+            { "退出遊戲", "ゲーム終了" },
+            { "超先行卡", "超先行カード" },
+            { "资源下载", "リソースダウンロード" },
+            { "資源下載", "リソースダウンロード" },
+            { "资源更新", "リソース更新" },
+            { "資源更新", "リソース更新" },
+            { "资源下载中", "リソースをダウンロード中" },
+            { "資源下載中", "リソースをダウンロード中" },
+        };
     const float LabelExtraWidth = 8f;
     const float HorizontalPadding = 22f;
     const float VerticalPadding = 14f;
@@ -26,13 +53,31 @@ public static class MenuResponsiveLayout
         public float originalRootY;
     }
 
+    public static void ApplyAndSchedule(GameObject menuRoot)
+    {
+        Apply(menuRoot);
+        if (menuRoot != null && Program.I() != null)
+            Program.I().StartCoroutine(RefreshAfterNguiLayout(menuRoot));
+    }
+
+    static IEnumerator RefreshAfterNguiLayout(GameObject menuRoot)
+    {
+        // One frame catches NGUI anchor/layout work. The short timed pass also
+        // catches menu labels that are populated immediately after show().
+        yield return null;
+        Apply(menuRoot);
+        yield return new WaitForSeconds(0.05f);
+        Apply(menuRoot);
+    }
+
     public static void Apply(GameObject menuRoot)
     {
         if (menuRoot == null || !menuRoot.activeInHierarchy)
             return;
 
-        // Translation must happen before measuring printed text.
-        UIHelper.InterGameObject(menuRoot);
+        // Keep localization local to the main menu. Do not route every game UI
+        // label through a new dictionary: duel UI has its own size/font rules.
+        TranslateMenuLabels(menuRoot);
 
         Transform space = menuRoot.transform;
         List<MenuRow> rows = CollectRows(menuRoot);
@@ -173,6 +218,40 @@ public static class MenuResponsiveLayout
             Vector3 center = collider.center;
             center.x = centerLocal.x;
             collider.center = center;
+        }
+    }
+
+    static void TranslateMenuLabels(GameObject menuRoot)
+    {
+        UILabel[] labels = menuRoot.GetComponentsInChildren<UILabel>(true);
+        for (int i = 0; i < labels.Length; ++i)
+        {
+            UILabel label = labels[i];
+            if (label == null || IsVersionLabel(label))
+                continue;
+
+            string text = label.text == null ? "" : label.text;
+            string translated;
+            if (MenuTranslations.TryGetValue(text, out translated))
+            {
+                label.text = translated;
+                continue;
+            }
+
+            // Progress text contains a changing percentage and is therefore not
+            // suitable for an exact-key translation dictionary.
+            if (text.StartsWith("正在") && text.Contains("%"))
+            {
+                int percent = text.LastIndexOf('%');
+                int start = percent - 1;
+                while (start >= 0 && Char.IsDigit(text[start]))
+                    --start;
+                ++start;
+                if (start < percent)
+                    label.text = "処理中…" + text.Substring(start, percent - start + 1);
+                else
+                    label.text = "処理中…";
+            }
         }
     }
 
