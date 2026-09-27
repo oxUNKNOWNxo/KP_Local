@@ -16,12 +16,21 @@ public class AIRoom : WindowServantSP
     const float DeckListOffset = 310f;
     const int ActionButtonWidth = 250;
     const int ActionButtonHeight = 44;
+    const string CenterColumnName = "WindBotCenterColumn";
+    const string NoShuffleToggleName = "WindBotNoShuffle";
+    const string PlayerFirstToggleName = "WindBotPlayerFirst";
+    const string StartButtonName = "WindBotStart";
+    const string BackButtonName = "WindBotBack";
     const string LocalRpsHash = "WindBot_LocalRps";
     const string LocalTurnChoiceHash = "WindBot_LocalTurnChoice";
 
     UIselectableList playerDeckList;
     UIselectableList aiDeckList;
     Transform centerColumnRoot;
+    UIToggle noShuffleToggle;
+    UIToggle playerFirstToggle;
+    Transform startButton;
+    Transform backButton;
     KoishiWindBotBridge windbot;
 
     string sort = "sortByTimeDeck";
@@ -46,10 +55,10 @@ public class AIRoom : WindowServantSP
         ConfigureMainWindow();
         CreateSideBySideDeckLists();
 
-        ConfigureCenterOptions();
         CreateCenterColumnRoot();
+        EnsureCenterColumnControls();
+        ConfigureCenterOptions();
         CreateDeckListTitles();
-        CreateBackButton();
         ApplyDynamicCenterLayout();
 
         playerDeckList.selectedAction = OnPlayerDeckSelected;
@@ -60,8 +69,8 @@ public class AIRoom : WindowServantSP
         // selectable lists a second time. A newly-created window is wired once.
         if (wiredWindow != gameObject)
         {
-            UIHelper.registEvent(gameObject, "start_", onStart);
-            UIHelper.registEvent(gameObject, "back_", () => { Program.I().shiftToServant(Program.I().menu); });
+            UIHelper.registEvent(gameObject, StartButtonName, onStart);
+            UIHelper.registEvent(gameObject, BackButtonName, () => { Program.I().shiftToServant(Program.I().menu); });
             UIHelper.registEvent(gameObject, "exit_", () => { Program.I().shiftToServant(Program.I().menu); });
 
             playerDeckList.install();
@@ -629,170 +638,160 @@ public class AIRoom : WindowServantSP
         if (mainWindow == null)
             throw new InvalidOperationException("AI room mainWindow was not found.");
 
-        centerColumnRoot = FindGeneratedControl("WindBotCenterColumn");
+        centerColumnRoot = FindGeneratedControl(CenterColumnName);
         if (centerColumnRoot == null)
         {
-            GameObject rootObject = new GameObject("WindBotCenterColumn");
+            GameObject rootObject = new GameObject(CenterColumnName);
             centerColumnRoot = rootObject.transform;
             centerColumnRoot.SetParent(mainWindow, false);
         }
         else if (centerColumnRoot.parent != mainWindow)
         {
-            centerColumnRoot.SetParent(mainWindow, true);
+            centerColumnRoot.SetParent(mainWindow, false);
         }
 
         centerColumnRoot.localPosition = Vector3.zero;
         centerColumnRoot.localRotation = Quaternion.identity;
         centerColumnRoot.localScale = Vector3.one;
+    }
 
-        string[] names = { "unrand_", "first_", "start" };
-        for (int i = 0; i < names.Length; ++i)
+    void ClearAnchors(UIRect rect)
+    {
+        if (rect == null)
+            return;
+
+        rect.leftAnchor.target = null;
+        rect.rightAnchor.target = null;
+        rect.bottomAnchor.target = null;
+        rect.topAnchor.target = null;
+        rect.updateAnchors = UIRect.AnchorUpdate.OnStart;
+    }
+
+    Transform EnsureCenterClone(string runtimeName, Transform source)
+    {
+        if (centerColumnRoot == null || source == null)
+            return null;
+
+        Transform existing = FindGeneratedControl(runtimeName);
+        if (existing == null)
         {
-            Transform control = FindControl(names[i]);
-            if (control != null && control.parent != centerColumnRoot)
-                control.SetParent(centerColumnRoot, true);
-        }
-    }
-
-    void MoveVisualCenterInSpace(
-        Transform target,
-        Transform space,
-        float targetX,
-        float targetY)
-    {
-        if (target == null || space == null)
-            return;
-
-        Bounds bounds = GetVisualBoundsInSpace(target, space);
-        Vector3 position = space.InverseTransformPoint(target.position);
-        position.x += targetX - bounds.center.x;
-        position.y += targetY - bounds.center.y;
-        target.position = space.TransformPoint(position);
-    }
-
-    void ArrangeStartButtons()
-    {
-        Transform start = FindControl("start_");
-        Transform back = FindControl("back_");
-        if (start == null || back == null || start.parent == null || start.parent != back.parent)
-            return;
-
-        Transform group = start.parent;
-        Bounds startBounds = GetVisualBoundsInSpace(start, group);
-        Bounds backBounds = GetVisualBoundsInSpace(back, group);
-
-        float startHeight = Mathf.Max(1f, startBounds.size.y);
-        float backHeight = Mathf.Max(1f, backBounds.size.y);
-        float gap = Mathf.Max(6f, Mathf.Min(startHeight, backHeight) * 0.20f);
-        float totalHeight = startHeight + gap + backHeight;
-
-        float startY = totalHeight * 0.5f - startHeight * 0.5f;
-        float backY = -totalHeight * 0.5f + backHeight * 0.5f;
-
-        MoveVisualCenterInSpace(start, group, 0f, startY);
-        MoveVisualCenterInSpace(back, group, 0f, backY);
-    }
-
-    void ArrangeCenterColumnContents()
-    {
-        if (centerColumnRoot == null)
-            return;
-
-        // Always rebuild from the same local origin. This makes repeated show(),
-        // anchor refreshes, and the three stabilization frames converge to the
-        // same geometry instead of accumulating offsets.
-        centerColumnRoot.localPosition = Vector3.zero;
-        centerColumnRoot.localRotation = Quaternion.identity;
-        centerColumnRoot.localScale = Vector3.one;
-
-        Transform unrand = FindControl("unrand_");
-        Transform first = FindControl("first_");
-        Transform startGroup = FindControl("start");
-        if (unrand == null || first == null || startGroup == null)
-            return;
-
-        ArrangeStartButtons();
-
-        Bounds unrandBounds = GetVisualBoundsInSpace(unrand, centerColumnRoot);
-        Bounds firstBounds = GetVisualBoundsInSpace(first, centerColumnRoot);
-        Bounds buttonBounds = GetVisualBoundsInSpace(startGroup, centerColumnRoot);
-
-        float unrandHeight = Mathf.Max(1f, unrandBounds.size.y);
-        float firstHeight = Mathf.Max(1f, firstBounds.size.y);
-        float buttonHeight = Mathf.Max(1f, buttonBounds.size.y);
-
-        float rowGap = Mathf.Max(6f, Mathf.Min(unrandHeight, firstHeight) * 0.25f);
-        float sectionGap = Mathf.Max(
-            rowGap * 2f,
-            Mathf.Min(firstHeight, buttonHeight) * 0.35f);
-
-        float totalHeight =
-            unrandHeight + rowGap
-            + firstHeight + sectionGap
-            + buttonHeight;
-
-        float cursor = totalHeight * 0.5f;
-
-        float unrandY = cursor - unrandHeight * 0.5f;
-        MoveVisualCenterInSpace(unrand, centerColumnRoot, 0f, unrandY);
-        cursor -= unrandHeight + rowGap;
-
-        float firstY = cursor - firstHeight * 0.5f;
-        MoveVisualCenterInSpace(first, centerColumnRoot, 0f, firstY);
-        cursor -= firstHeight + sectionGap;
-
-        float buttonY = cursor - buttonHeight * 0.5f;
-        MoveVisualCenterInSpace(startGroup, centerColumnRoot, 0f, buttonY);
-    }
-
-    void ConfigureCenterOptions()
-    {
-        HideControl("life_");
-        HideControl("mr4_");
-        HideControl("god_");
-
-        // The legacy Percy popup controls have their own anchored child labels.
-        // Keep them hidden. The selected deck is already visible in each list,
-        // so do not duplicate long deck names in the narrow center column.
-        HideControl("rank_");
-        HideControl("aideck_");
-
-        SetControlLabel("unrand_", "シャッフルしない", OptionFontSize);
-        SetControlLabel("first_", "自分が先攻", OptionFontSize);
-
-        SetControlWidgetWidth("unrand_", 200);
-        SetControlWidgetWidth("first_", 200);
-
-        Transform startGroup = FindControl("start");
-        if (startGroup != null)
-        {
-            Transform texture = startGroup.Find("Texture");
-            if (texture != null)
-                texture.gameObject.SetActive(false);
+            GameObject cloneObject =
+                (GameObject)UnityEngine.Object.Instantiate(source.gameObject);
+            cloneObject.name = runtimeName;
+            existing = cloneObject.transform;
         }
 
-        ConfigureActionButton("start_", "対戦開始");
+        if (existing.parent != centerColumnRoot)
+            existing.SetParent(centerColumnRoot, false);
+
+        existing.gameObject.SetActive(true);
+        existing.localRotation = Quaternion.identity;
+        existing.localScale = Vector3.one;
+        existing.localPosition = Vector3.zero;
+        return existing;
     }
 
-
-    void ConfigureActionButton(string name, string text)
+    void ConfigureCenterToggle(
+        Transform control,
+        string text,
+        float availableWidth)
     {
-        Transform control = FindControl(name);
         if (control == null)
             return;
 
         UIWidget widget = control.GetComponent<UIWidget>();
-        if (widget != null)
+        UILabel label = control.GetComponentInChildren<UILabel>(true);
+        Transform background = control.Find("Background");
+        UIWidget backgroundWidget =
+            background == null ? null : background.GetComponent<UIWidget>();
+
+        if (widget == null || label == null)
+            return;
+
+        ClearAnchors(widget);
+        widget.pivot = UIWidget.Pivot.Center;
+
+        label.text = text;
+        label.fontSize = OptionFontSize;
+        label.pivot = UIWidget.Pivot.Left;
+        label.alignment = NGUIText.Alignment.Left;
+        ClearAnchors(label);
+
+        Vector2 printed = label.printedSize;
+        float checkWidth = backgroundWidget == null
+            ? Mathf.Max(18f, OptionFontSize * 0.8f)
+            : Mathf.Max(1f, backgroundWidget.width);
+        float gap = Mathf.Max(8f, OptionFontSize * 0.35f);
+        float textWidth = Mathf.Max(1f, Mathf.Ceil(printed.x));
+        float desiredWidth = checkWidth + gap + textWidth;
+        float rowWidth = Mathf.Min(
+            Mathf.Max(desiredWidth, OptionFontSize * 5f),
+            Mathf.Max(1f, availableWidth));
+
+        widget.width = Mathf.RoundToInt(rowWidth);
+        widget.height = Mathf.Max(widget.height, OptionFontSize + 6);
+
+        float left = -rowWidth * 0.5f;
+
+        if (backgroundWidget != null)
         {
-            widget.width = ActionButtonWidth;
-            widget.height = ActionButtonHeight;
+            ClearAnchors(backgroundWidget);
+            backgroundWidget.pivot = UIWidget.Pivot.Center;
+
+            Vector3 bp = background.localPosition;
+            bp.x = left + checkWidth * 0.5f;
+            bp.y = 0f;
+            background.localPosition = bp;
         }
+
+        label.width = Mathf.Max(
+            1,
+            Mathf.RoundToInt(rowWidth - checkWidth - gap));
+        label.height = Mathf.Max(label.height, OptionFontSize + 4);
+
+        Vector3 lp = label.transform.localPosition;
+        lp.x = left + checkWidth + gap;
+        lp.y = 0f;
+        label.transform.localPosition = lp;
 
         BoxCollider collider = control.GetComponent<BoxCollider>();
         if (collider != null)
         {
+            collider.center = Vector3.zero;
             Vector3 size = collider.size;
-            size.x = ActionButtonWidth;
+            size.x = rowWidth;
+            size.y = widget.height;
+            collider.size = size;
+        }
+    }
+
+    void ConfigureCenterButton(
+        Transform control,
+        string text,
+        float availableWidth)
+    {
+        if (control == null)
+            return;
+
+        UIWidget widget = control.GetComponent<UIWidget>();
+        if (widget == null)
+            return;
+
+        ClearAnchors(widget);
+        widget.pivot = UIWidget.Pivot.Center;
+
+        float width = Mathf.Min(
+            ActionButtonWidth,
+            Mathf.Max(1f, availableWidth));
+        widget.width = Mathf.RoundToInt(width);
+        widget.height = ActionButtonHeight;
+
+        BoxCollider collider = control.GetComponent<BoxCollider>();
+        if (collider != null)
+        {
+            collider.center = Vector3.zero;
+            Vector3 size = collider.size;
+            size.x = width;
             size.y = ActionButtonHeight;
             collider.size = size;
         }
@@ -800,50 +799,159 @@ public class AIRoom : WindowServantSP
         UILabel[] labels = control.GetComponentsInChildren<UILabel>(true);
         for (int i = 0; i < labels.Length; ++i)
         {
-            labels[i].text = text;
-            labels[i].fontSize = OptionFontSize;
-            labels[i].width = ActionButtonWidth - 30;
-            labels[i].height = ActionButtonHeight;
+            UILabel label = labels[i];
+            ClearAnchors(label);
+            label.text = text;
+            label.fontSize = OptionFontSize;
+            label.width = Mathf.Max(1, Mathf.RoundToInt(width - 30f));
+            label.height = ActionButtonHeight;
+            label.pivot = UIWidget.Pivot.Center;
+            label.alignment = NGUIText.Alignment.Center;
+
+            Vector3 p = label.transform.localPosition;
+            p.x = 0f;
+            p.y = 0f;
+            label.transform.localPosition = p;
         }
     }
 
-    void CreateBackButton()
+    void EnsureCenterColumnControls()
     {
-        Transform start = FindControl("start_");
-        if (start == null)
-            return;
+        Transform legacyNoShuffle = FindControl("unrand_");
+        Transform legacyPlayerFirst = FindControl("first_");
+        Transform legacyStart = FindControl("start_");
 
-        Transform back = FindGeneratedControl("back_");
-        if (back == null)
-        {
-            GameObject backObject = (GameObject)UnityEngine.Object.Instantiate(start.gameObject);
-            backObject.name = "back_";
-            back = backObject.transform;
-            back.SetParent(start.parent, false);
-            back.localScale = start.localScale;
-        }
-        else if (back.parent != start.parent)
-        {
-            back.SetParent(start.parent, true);
-        }
+        if (legacyNoShuffle == null || legacyPlayerFirst == null || legacyStart == null)
+            throw new InvalidOperationException("Legacy AI-room center templates were not found.");
 
-        ConfigureActionButton("back_", "戻る");
+        Transform noShuffle = EnsureCenterClone(
+            NoShuffleToggleName, legacyNoShuffle);
+        Transform playerFirst = EnsureCenterClone(
+            PlayerFirstToggleName, legacyPlayerFirst);
+        startButton = EnsureCenterClone(
+            StartButtonName, legacyStart);
+        backButton = EnsureCenterClone(
+            BackButtonName, legacyStart);
+
+        noShuffleToggle =
+            noShuffle == null ? null : noShuffle.GetComponent<UIToggle>();
+        playerFirstToggle =
+            playerFirst == null ? null : playerFirst.GetComponent<UIToggle>();
+
+        if (noShuffleToggle == null || playerFirstToggle == null
+            || startButton == null || backButton == null)
+            throw new InvalidOperationException("WindBot center controls could not be created.");
     }
 
-
-    void SetControlWidgetWidth(string name, int width)
+    void ConfigureCenterOptions()
     {
-        Transform control = FindControl(name);
-        if (control == null)
+        HideControl("life_");
+        HideControl("mr4_");
+        HideControl("god_");
+        HideControl("rank_");
+        HideControl("aideck_");
+
+        // The original Percy controls are templates only. Keeping them out of
+        // the live layout prevents their NGUI anchors from re-applying old
+        // positions when the AI room is enabled again.
+        HideControl("unrand_");
+        HideControl("first_");
+        HideControl("start");
+    }
+
+    float GetCenterControlHeight(Transform control)
+    {
+        UIWidget widget = control == null ? null : control.GetComponent<UIWidget>();
+        return widget == null ? 1f : Mathf.Max(1f, widget.height);
+    }
+
+    void ArrangeCenterColumnContents(float columnWidth)
+    {
+        if (centerColumnRoot == null)
             return;
 
-        UIWidget widget = control.GetComponent<UIWidget>();
-        if (widget != null)
-            widget.width = width;
+        Transform noShuffle = FindGeneratedControl(NoShuffleToggleName);
+        Transform playerFirst = FindGeneratedControl(PlayerFirstToggleName);
+        startButton = FindGeneratedControl(StartButtonName);
+        backButton = FindGeneratedControl(BackButtonName);
 
-        UILabel[] labels = control.GetComponentsInChildren<UILabel>(true);
-        for (int i = 0; i < labels.Length; ++i)
-            labels[i].width = Math.Max(labels[i].width, width - 30);
+        if (noShuffle == null || playerFirst == null
+            || startButton == null || backButton == null)
+            return;
+
+        float margin = Mathf.Max(10f, OptionFontSize * 0.5f);
+        float usableWidth = Mathf.Max(1f, columnWidth - margin * 2f);
+
+        ConfigureCenterToggle(
+            noShuffle, "シャッフルしない", usableWidth);
+        ConfigureCenterToggle(
+            playerFirst, "自分が先攻", usableWidth);
+        ConfigureCenterButton(
+            startButton, "対戦開始", usableWidth);
+        ConfigureCenterButton(
+            backButton, "戻る", usableWidth);
+
+        float noShuffleHeight = GetCenterControlHeight(noShuffle);
+        float playerFirstHeight = GetCenterControlHeight(playerFirst);
+        float startHeight = GetCenterControlHeight(startButton);
+        float backHeight = GetCenterControlHeight(backButton);
+
+        float rowGap = Mathf.Max(
+            6f,
+            Mathf.Min(noShuffleHeight, playerFirstHeight) * 0.25f);
+        float sectionGap = Mathf.Max(
+            rowGap * 2f,
+            Mathf.Min(playerFirstHeight, startHeight) * 0.65f);
+        float buttonGap = Mathf.Max(
+            6f,
+            Mathf.Min(startHeight, backHeight) * 0.20f);
+
+        float totalHeight =
+            noShuffleHeight + rowGap
+            + playerFirstHeight + sectionGap
+            + startHeight + buttonGap
+            + backHeight;
+
+        float cursor = totalHeight * 0.5f;
+
+        Vector3 p = noShuffle.localPosition;
+        p.x = 0f;
+        p.y = cursor - noShuffleHeight * 0.5f;
+        noShuffle.localPosition = p;
+        cursor -= noShuffleHeight + rowGap;
+
+        p = playerFirst.localPosition;
+        p.x = 0f;
+        p.y = cursor - playerFirstHeight * 0.5f;
+        playerFirst.localPosition = p;
+        cursor -= playerFirstHeight + sectionGap;
+
+        p = startButton.localPosition;
+        p.x = 0f;
+        p.y = cursor - startHeight * 0.5f;
+        startButton.localPosition = p;
+        cursor -= startHeight + buttonGap;
+
+        p = backButton.localPosition;
+        p.x = 0f;
+        p.y = cursor - backHeight * 0.5f;
+        backButton.localPosition = p;
+    }
+
+    void PositionCenterColumn(Bounds columnBounds)
+    {
+        if (centerColumnRoot == null || centerColumnRoot.parent == null)
+            return;
+
+        Transform root = LayoutRoot();
+        Vector3 targetWorld = root.TransformPoint(new Vector3(
+            columnBounds.center.x,
+            columnBounds.center.y,
+            0f));
+        Vector3 local =
+            centerColumnRoot.parent.InverseTransformPoint(targetWorld);
+        local.z = centerColumnRoot.localPosition.z;
+        centerColumnRoot.localPosition = local;
     }
 
     void ApplyDynamicCenterLayout()
@@ -856,13 +964,14 @@ public class AIRoom : WindowServantSP
         if (playerFrame == null || aiFrame == null)
             return;
 
-        ArrangeCenterColumnContents();
-
         Bounds columnBounds = GetCenterColumnBounds(playerFrame, aiFrame);
-        MoveVisualCenterInLayout(
-            centerColumnRoot,
-            columnBounds.center.x,
-            columnBounds.center.y);
+
+        // Runtime controls are normalized to center pivots and no parent anchors.
+        // Their local X is always zero; only the measured column determines
+        // the container position. Re-entering the room therefore cannot add
+        // another positional correction.
+        ArrangeCenterColumnContents(columnBounds.size.x);
+        PositionCenterColumn(columnBounds);
     }
 
 
@@ -968,7 +1077,6 @@ public class AIRoom : WindowServantSP
         ConfigureDeckListGeometry(playerDeckList, -DeckListOffset);
         ConfigureDeckListGeometry(aiDeckList, DeckListOffset);
         ConfigureCenterOptions();
-        ConfigureActionButton("back_", "戻る");
         ApplyDeckListRowStyle(playerDeckList);
         ApplyDeckListRowStyle(aiDeckList);
         PositionDeckListTitle(playerDeckList, "PlayerDeckListTitle");
@@ -983,8 +1091,11 @@ public class AIRoom : WindowServantSP
 
         pendingPlayerDeck = "deck/" + Config.Get("deckInUse", "miaowu") + ".ydk";
         pendingAiDeck = Config.Get("list_aideck", "RadiantTyphoon");
-        pendingNoShuffle = UIHelper.getByName<UIToggle>(gameObject, "unrand_").value;
-        bool forcePlayerFirst = UIHelper.getByName<UIToggle>(gameObject, "first_").value;
+        if (noShuffleToggle == null || playerFirstToggle == null)
+            throw new InvalidOperationException("WindBot center toggles are unavailable.");
+
+        pendingNoShuffle = noShuffleToggle.value;
+        bool forcePlayerFirst = playerFirstToggle.value;
 
         pregamePending = true;
         if (forcePlayerFirst)

@@ -733,3 +733,32 @@ UI共通原則への追加:
 - `ApplyStableLayout()` から内部配置を二重呼び出しせず、1回の決定的なレイアウト関数へ集約する
 
 UI共通原則として、画面を閉じて再度開く操作を必ず考慮し、初回表示だけ正しい実装ではなく、同じshow/initializeを何度通っても同じUIツリー・同じ座標へ収束する冪等設計を優先する。
+
+
+---
+
+## 25. 中央UIを旧Prefabから分離（2026-09-27）
+
+実機で、AI画面へ入るたび中央オプション位置が変化する現象が継続したため、診断用ブランチで固定KoishiPro2 `trans_AIroom.prefab` のNGUI Anchorを直接確認した。
+
+確認結果:
+
+- `unrand_` / `first_` / `start_` は旧PrefabのUIWidget・UILabel構造を持つ
+- toggle子の `Background` / `Checkmark` / `!lable` はAnchor targetを保持し、`updateAnchors` により有効化時/更新時に再計算される
+- `WindowServantSP.applyShowArrangement()` はAI画面を再度 `SetActive(true)` にするため、AI画面へ入り直すたびNGUI側のAnchor更新が発生し得る
+- したがって旧 `unrand_` / `first_` / `start` をそのまま移動・reparentして表示に使う方式では、C#側の位置計算後に旧Prefabのレイアウト情報が再介入する余地が残る
+
+現在の方式:
+
+- 旧 `unrand_` / `first_` / `start_` は表示には使わず、runtime UI生成時のテンプレートとしてだけ利用する
+- `WindBotCenterColumn` 直下に `WindBotNoShuffle` / `WindBotPlayerFirst` / `WindBotStart` / `WindBotBack` を独立cloneとして生成・再利用する
+- 旧 `unrand_` / `first_` / `start` は非表示に固定する
+- runtime controlのルートUIWidgetおよび直接配置するLabel/BackgroundはAnchor targetを外す
+- toggleルートは `Pivot.Center` に正規化し、チェック背景・ラベル位置を中央カラム幅と実際の `UILabel.printedSize` から再構築する
+- buttonルートとラベルも `Pivot.Center` / 中央揃えへ正規化する
+- 中央カラム幅は左右deck frameの内側端から取得する
+- 4項目のlocal Xは常に0。縦位置も各UIWidgetの実heightからゼロ基準で算出する
+- `WindBotCenterColumn` 自体は差分移動せず、算出したcolumn centerへ絶対的に配置する
+- `onStart()` は旧toggle名検索ではなく、runtime toggle参照から値を読む
+
+この方式では、画面再入場時のNGUI旧Anchor再計算を中央レイアウトから切り離す。今後、旧Prefab UIを大幅に別位置へ移動して再利用する場合も、Anchor付き元オブジェクトを直接移動するより、表示用cloneを専用コンテナへ分離し正規化する方法を優先する。
