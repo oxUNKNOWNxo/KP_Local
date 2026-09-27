@@ -21,6 +21,7 @@ public class AIRoom : WindowServantSP
 
     UIselectableList playerDeckList;
     UIselectableList aiDeckList;
+    Transform centerColumnRoot;
     KoishiWindBotBridge windbot;
 
     string sort = "sortByTimeDeck";
@@ -45,8 +46,10 @@ public class AIRoom : WindowServantSP
         CreateSideBySideDeckLists();
 
         ConfigureCenterOptions();
+        CreateCenterColumnRoot();
         CreateDeckListTitles();
         CreateBackButton();
+        ArrangeCenterColumnContents();
         ApplyDynamicCenterLayout();
 
         playerDeckList.selectedAction = OnPlayerDeckSelected;
@@ -160,16 +163,15 @@ public class AIRoom : WindowServantSP
         return bounds;
     }
 
-    Bounds GetVisualBoundsInLayout(Transform target)
+    Bounds GetVisualBoundsInSpace(Transform target, Transform space)
     {
-        Transform root = LayoutRoot();
         Vector3 fallback = target == null
             ? Vector3.zero
-            : root.InverseTransformPoint(target.position);
+            : space.InverseTransformPoint(target.position);
         Bounds bounds = new Bounds(fallback, Vector3.zero);
         bool found = false;
 
-        if (target == null)
+        if (target == null || space == null)
             return bounds;
 
         UIWidget[] widgets = target.GetComponentsInChildren<UIWidget>(true);
@@ -182,7 +184,7 @@ public class AIRoom : WindowServantSP
             Vector3[] corners = widget.worldCorners;
             for (int j = 0; j < corners.Length; ++j)
             {
-                Vector3 point = root.InverseTransformPoint(corners[j]);
+                Vector3 point = space.InverseTransformPoint(corners[j]);
                 if (!found)
                 {
                     bounds = new Bounds(point, Vector3.zero);
@@ -194,6 +196,11 @@ public class AIRoom : WindowServantSP
         }
 
         return bounds;
+    }
+
+    Bounds GetVisualBoundsInLayout(Transform target)
+    {
+        return GetVisualBoundsInSpace(target, LayoutRoot());
     }
 
     void MoveVisualCenterInLayout(Transform target, float targetX, float targetY)
@@ -237,70 +244,6 @@ public class AIRoom : WindowServantSP
         column.Encapsulate(min);
         column.Encapsulate(max);
         return column;
-    }
-
-    void EncapsulateWidgetBounds(ref Bounds bounds, ref bool found, UIWidget widget)
-    {
-        if (widget == null || !widget.enabled || !widget.gameObject.activeInHierarchy)
-            return;
-
-        Bounds widgetBounds = GetWidgetBoundsInLayout(widget);
-        if (!found)
-        {
-            bounds = widgetBounds;
-            found = true;
-        }
-        else
-        {
-            bounds.Encapsulate(widgetBounds.min);
-            bounds.Encapsulate(widgetBounds.max);
-        }
-    }
-
-    Bounds GetControlContentBoundsInLayout(Transform target)
-    {
-        Transform root = LayoutRoot();
-        Vector3 fallback = target == null
-            ? Vector3.zero
-            : root.InverseTransformPoint(target.position);
-        Bounds bounds = new Bounds(fallback, Vector3.zero);
-        bool found = false;
-
-        if (target == null)
-            return bounds;
-
-        // For center-column controls, do not union every descendant widget:
-        // old prefab children may contain large/invisible anchored regions.
-        // The control's own widget plus its visible text describes the intended row.
-        EncapsulateWidgetBounds(ref bounds, ref found, target.GetComponent<UIWidget>());
-
-        UILabel[] labels = target.GetComponentsInChildren<UILabel>(true);
-        for (int i = 0; i < labels.Length; ++i)
-            EncapsulateWidgetBounds(ref bounds, ref found, labels[i]);
-
-        if (!found)
-        {
-            UIWidget fallbackWidget = target.GetComponentInChildren<UIWidget>(true);
-            EncapsulateWidgetBounds(ref bounds, ref found, fallbackWidget);
-        }
-
-        return bounds;
-    }
-
-    void MoveControlContentCenterInLayout(
-        Transform target,
-        Bounds columnBounds,
-        float targetY)
-    {
-        if (target == null)
-            return;
-
-        Transform root = LayoutRoot();
-        Bounds content = GetControlContentBoundsInLayout(target);
-        Vector3 rootPosition = root.InverseTransformPoint(target.position);
-        rootPosition.x += columnBounds.center.x - content.center.x;
-        rootPosition.y += targetY - content.center.y;
-        target.position = root.TransformPoint(rootPosition);
     }
 
     void SetControlLabel(string name, string text, int fontSize)
@@ -555,6 +498,120 @@ public class AIRoom : WindowServantSP
     }
 
 
+    void CreateCenterColumnRoot()
+    {
+        Transform mainWindow = FindControl("mainWindow");
+        if (mainWindow == null)
+            throw new InvalidOperationException("AI room mainWindow was not found.");
+
+        GameObject rootObject = new GameObject("WindBotCenterColumn");
+        centerColumnRoot = rootObject.transform;
+        centerColumnRoot.SetParent(mainWindow, false);
+        centerColumnRoot.localPosition = Vector3.zero;
+        centerColumnRoot.localRotation = Quaternion.identity;
+        centerColumnRoot.localScale = Vector3.one;
+
+        string[] names = { "unrand_", "first_", "start" };
+        for (int i = 0; i < names.Length; ++i)
+        {
+            Transform control = FindControl(names[i]);
+            if (control != null)
+                control.SetParent(centerColumnRoot, false);
+        }
+    }
+
+    void CenterChildHorizontally(Transform target)
+    {
+        if (target == null || centerColumnRoot == null)
+            return;
+
+        Bounds bounds = GetVisualBoundsInSpace(target, centerColumnRoot);
+        Vector3 p = target.localPosition;
+        p.x -= bounds.center.x;
+        target.localPosition = p;
+    }
+
+    void PositionSecondToggleBelowFirst()
+    {
+        if (centerColumnRoot == null)
+            return;
+
+        Transform unrand = FindControl("unrand_");
+        Transform first = FindControl("first_");
+        if (unrand == null || first == null)
+            return;
+
+        Bounds upper = GetVisualBoundsInSpace(unrand, centerColumnRoot);
+        Bounds lower = GetVisualBoundsInSpace(first, centerColumnRoot);
+        float gap = Mathf.Max(6f, Mathf.Min(upper.size.y, lower.size.y) * 0.25f);
+        float targetCenterY = upper.min.y - gap - lower.size.y * 0.5f;
+
+        Vector3 p = first.localPosition;
+        p.y += targetCenterY - lower.center.y;
+        first.localPosition = p;
+    }
+
+    void PositionBackBelowStart()
+    {
+        Transform start = FindControl("start_");
+        Transform back = FindControl("back_");
+        if (start == null || back == null || start.parent == null || start.parent != back.parent)
+            return;
+
+        Transform parent = start.parent;
+        Bounds startBounds = GetVisualBoundsInSpace(start, parent);
+        Bounds backBounds = GetVisualBoundsInSpace(back, parent);
+        float gap = Mathf.Max(6f, Mathf.Min(startBounds.size.y, backBounds.size.y) * 0.20f);
+        float targetCenterY = startBounds.min.y - gap - backBounds.size.y * 0.5f;
+
+        Vector3 p = back.localPosition;
+        p.x = start.localPosition.x;
+        p.y += targetCenterY - backBounds.center.y;
+        back.localPosition = p;
+    }
+
+    void PositionButtonGroupBelowToggles()
+    {
+        if (centerColumnRoot == null)
+            return;
+
+        Transform first = FindControl("first_");
+        Transform startGroup = FindControl("start");
+        Transform start = FindControl("start_");
+        if (first == null || startGroup == null || start == null)
+            return;
+
+        Bounds firstBounds = GetVisualBoundsInSpace(first, centerColumnRoot);
+        Bounds groupBounds = GetVisualBoundsInSpace(startGroup, centerColumnRoot);
+        Bounds startBounds = GetVisualBoundsInSpace(start, startGroup);
+
+        float sectionGap = Mathf.Max(
+            12f,
+            Mathf.Min(firstBounds.size.y, startBounds.size.y) * 0.65f);
+        float targetTop = firstBounds.min.y - sectionGap;
+
+        Vector3 p = startGroup.localPosition;
+        p.y += targetTop - groupBounds.max.y;
+        startGroup.localPosition = p;
+    }
+
+    void ArrangeCenterColumnContents()
+    {
+        if (centerColumnRoot == null)
+            return;
+
+        // Preserve one hierarchy and arrange inside it. Do not move each row in
+        // world space: NGUI child widgets and their parents use different origins.
+        PositionSecondToggleBelowFirst();
+        PositionBackBelowStart();
+
+        CenterChildHorizontally(FindControl("unrand_"));
+        CenterChildHorizontally(FindControl("first_"));
+        CenterChildHorizontally(FindControl("start"));
+
+        PositionButtonGroupBelowToggles();
+    }
+
     void ConfigureCenterOptions()
     {
         HideControl("life_");
@@ -631,6 +688,7 @@ public class AIRoom : WindowServantSP
         back.transform.localPosition = start.localPosition;
 
         ConfigureActionButton("back_", "戻る");
+        PositionBackBelowStart();
     }
 
 
@@ -651,60 +709,24 @@ public class AIRoom : WindowServantSP
 
     void ApplyDynamicCenterLayout()
     {
-        if (playerDeckList == null || aiDeckList == null)
+        if (playerDeckList == null || aiDeckList == null || centerColumnRoot == null)
             return;
 
         UIWidget playerFrame = playerDeckList.GetComponent<UIWidget>();
         UIWidget aiFrame = aiDeckList.GetComponent<UIWidget>();
-        Transform unrand = FindControl("unrand_");
-        Transform first = FindControl("first_");
-        Transform start = FindControl("start_");
-        Transform back = FindControl("back_");
-
-        if (playerFrame == null || aiFrame == null
-            || unrand == null || first == null || start == null || back == null)
+        if (playerFrame == null || aiFrame == null)
             return;
 
+        ArrangeCenterColumnContents();
+
         Bounds columnBounds = GetCenterColumnBounds(playerFrame, aiFrame);
+        Bounds contentBounds = GetVisualBoundsInLayout(centerColumnRoot);
 
-        Bounds unrandBounds = GetControlContentBoundsInLayout(unrand);
-        Bounds firstBounds = GetControlContentBoundsInLayout(first);
-        Bounds startBounds = GetControlContentBoundsInLayout(start);
-        Bounds backBounds = GetControlContentBoundsInLayout(back);
-
-        float unrandHeight = Mathf.Max(1f, unrandBounds.size.y);
-        float firstHeight = Mathf.Max(1f, firstBounds.size.y);
-        float startHeight = Mathf.Max(1f, startBounds.size.y);
-        float backHeight = Mathf.Max(1f, backBounds.size.y);
-
-        float rowGap = Mathf.Max(6f, Mathf.Min(unrandHeight, firstHeight) * 0.25f);
-        float sectionGap = Mathf.Max(
-            rowGap * 2f,
-            Mathf.Min(firstHeight, startHeight) * 0.65f);
-        float buttonGap = Mathf.Max(6f, Mathf.Min(startHeight, backHeight) * 0.20f);
-
-        float totalHeight =
-            unrandHeight + rowGap
-            + firstHeight + sectionGap
-            + startHeight + buttonGap
-            + backHeight;
-
-        float cursor = columnBounds.center.y + totalHeight * 0.5f;
-
-        float unrandY = cursor - unrandHeight * 0.5f;
-        MoveControlContentCenterInLayout(unrand, columnBounds, unrandY);
-        cursor -= unrandHeight + rowGap;
-
-        float firstY = cursor - firstHeight * 0.5f;
-        MoveControlContentCenterInLayout(first, columnBounds, firstY);
-        cursor -= firstHeight + sectionGap;
-
-        float startY = cursor - startHeight * 0.5f;
-        MoveControlContentCenterInLayout(start, columnBounds, startY);
-        cursor -= startHeight + buttonGap;
-
-        float backY = cursor - backHeight * 0.5f;
-        MoveControlContentCenterInLayout(back, columnBounds, backY);
+        Transform root = LayoutRoot();
+        Vector3 rootPosition = root.InverseTransformPoint(centerColumnRoot.position);
+        rootPosition.x += columnBounds.center.x - contentBounds.center.x;
+        rootPosition.y += columnBounds.center.y - contentBounds.center.y;
+        centerColumnRoot.position = root.TransformPoint(rootPosition);
     }
 
 
@@ -815,6 +837,7 @@ public class AIRoom : WindowServantSP
         ApplyDeckListRowStyle(aiDeckList);
         PositionDeckListTitle(playerDeckList, "PlayerDeckListTitle");
         PositionDeckListTitle(aiDeckList, "AiDeckListTitle");
+        ArrangeCenterColumnContents();
         ApplyDynamicCenterLayout();
     }
 

@@ -675,3 +675,35 @@ OFF時は画面上に補足文を出さず、KoishiPro2が通常対戦で使用�
 - 中央カラムの幅が変化しても、この算出を再実行して追従させる
 
 一般則として、動的配置でも『何のboundsを測るか』を明示する。親配下を無条件に全unionすると、不可視・anchor用Widgetが混ざって見た目と計算値がずれる可能性がある。
+
+
+---
+
+## 23. 中央オプションのグループ配置へ変更（2026-09-27）
+
+実機 #138 相当で、中央4項目を個別にworld-space移動する方式では、`unrand_` / `first_` と `start_` / `back_` が同じ領域へ収束し、表示が重なる回帰を確認した。
+
+固定KoishiPro2 Prefabの実構造:
+
+- `unrand_` / `first_` は `mainWindow` 直下
+- `start_` は `mainWindow/start` 配下
+- toggle内部には `Background` / `Checkmark` / `!lable` の子Widgetがある
+- start側にも独立した親Transformと子UILabelがある
+
+したがって、異なる親階層のcontrolを1個ずつworld-spaceで再配置する方式は今後使用しない。
+
+現在の方式:
+
+- `mainWindow` の下に `WindBotCenterColumn` 専用コンテナをruntime生成
+- `unrand_`、`first_`、`start` グループをそのコンテナへまとめる
+- checkbox row同士、開始/戻る同士の間隔は各要素の実visual boundsから相対的に計算する
+- 各行/ボタングループはコンテナ内で水平中央に揃える
+- 最後に中央4項目を個別移動せず、`WindBotCenterColumn` 全体のvisual bounds中心を左右deck frameから算出した中央カラム中心へ合わせる
+- `ApplyStableLayout()` 再適用時もコンテナ内部の相対配置を再計算してから、コンテナ全体だけを移動する
+
+UI共通原則への追加:
+
+- 複数の関連controlを同じカラムへ並べる場合、異なる親階層のまま各要素を個別にworld-space補正するより、専用コンテナへまとめて相対配置を保つ方式を優先する
+- 動的配置は『個々を何度も動かす』ことではなく、『基準となる親を作り、その親を実測値へ合わせる』ことを第一候補とする
+
+なお、見出しのdeck-frame基準配置は今回の実機で改善を確認できたため、その方式を維持する。
