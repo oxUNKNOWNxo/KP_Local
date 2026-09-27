@@ -1,0 +1,123 @@
+name: Temporary AI anchor inspection
+
+on:
+  push:
+    branches:
+      - diag-ai-anchors-20260927
+    paths:
+      - '.github/workflows/ai-anchor-inspect-temp.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SOURCE_COMMIT: c1850e1120df6a5885692eadacad8ad114a3cf11
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: control
+      - uses: actions/cache/restore@v6
+        with:
+          path: source
+          key: koishipro2-source-${{ env.SOURCE_COMMIT }}-v1
+      - name: Inspect AI room anchors
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          p=Path("source/Assets/transUI/prefab/trans_AIroom.prefab")
+          text=p.read_text(encoding="utf-8-sig", errors="replace")
+          parts=re.split(r"(?=--- !u!)", text)
+
+          def header(block):
+              m=re.match(r"--- !u!(\d+) &(\d+)", block)
+              return m.groups() if m else (None,None)
+
+          gos={}
+          transforms={}
+          comp_by_go={}
+          for block in parts:
+              typ,fid=header(block)
+              if not typ: continue
+              gm=re.search(r"(?m)^  m_GameObject: \{fileID: (\d+)\}", block)
+              if typ=="1":
+                  nm=re.search(r"(?m)^  m_Name: (.*?)\s*$", block)
+                  if nm: gos[fid]=nm.group(1)
+              elif typ=="4":
+                  father=re.search(r"(?m)^  m_Father: \{fileID: (\d+)\}", block)
+                  pos=re.search(r"(?m)^  m_LocalPosition: \{x: ([^,]+), y: ([^,]+), z: ([^}]+)\}", block)
+                  go=re.search(r"(?m)^  m_GameObject: \{fileID: (\d+)\}", block)
+                  if go:
+                      transforms[fid]={
+                          "go":go.group(1),
+                          "father":father.group(1) if father else "0",
+                          "pos":pos.groups() if pos else None,
+                          "raw":block,
+                      }
+              if gm:
+                  comp_by_go.setdefault(gm.group(1),[]).append((typ,fid,block))
+
+          tf_by_go={v["go"]:k for k,v in transforms.items()}
+          def path_of_go(goid):
+              out=[]
+              seen=set()
+              cur_go=goid
+              while cur_go and cur_go not in seen:
+                  seen.add(cur_go)
+                  out.append(gos.get(cur_go,cur_go))
+                  tfid=tf_by_go.get(cur_go)
+                  if not tfid: break
+                  father=transforms[tfid]["father"]
+                  if father=="0": break
+                  cur_go=transforms.get(father,{}).get("go")
+              return "/".join(reversed(out))
+
+          target_paths={
+              "trans_AIroom/GameObject/mainWindow/unrand_",
+              "trans_AIroom/GameObject/mainWindow/first_",
+              "trans_AIroom/GameObject/mainWindow/start",
+              "trans_AIroom/GameObject/mainWindow/start/start_",
+          }
+          target_gos=[go for go in gos if path_of_go(go) in target_paths]
+          print("=== TARGETS ===")
+          for go in target_gos:
+              tfid=tf_by_go.get(go)
+              print(path_of_go(go),"GO",go,"TF",tfid,"POS",transforms.get(tfid,{}).get("pos"))
+              for typ,fid,block in comp_by_go.get(go,[]):
+                  print(f"--- COMPONENT type={typ} id={fid} ---")
+                  for line in block.splitlines():
+                      if any(k in line for k in [
+                          "m_Script:","mWidth:","mHeight:","mPivot:","mDepth:",
+                          "leftAnchor:","rightAnchor:","bottomAnchor:","topAnchor:",
+                          "target:","relative:","absolute:","updateAnchors:",
+                          "m_LocalPosition:","m_LocalScale:","m_IsActive:",
+                      ]):
+                          print(line)
+
+          print("=== CHILD COMPONENTS ===")
+          target_prefixes=tuple(x+"/" for x in target_paths)
+          for go in gos:
+              path=path_of_go(go)
+              if any(path.startswith(pref) for pref in target_prefixes):
+                  print("PATH",path,"GO",go)
+                  tfid=tf_by_go.get(go)
+                  if tfid:
+                      print(" TF POS",transforms[tfid]["pos"])
+                  for typ,fid,block in comp_by_go.get(go,[]):
+                      if typ!="114": continue
+                      print(f"  --- MB {fid} ---")
+                      for line in block.splitlines():
+                          if any(k in line for k in [
+                              "m_Script:","mWidth:","mHeight:","mPivot:",
+                              "leftAnchor:","rightAnchor:","bottomAnchor:","topAnchor:",
+                              "target:","relative:","absolute:","updateAnchors:",
+                          ]):
+                              print(" ",line)
+          PY
