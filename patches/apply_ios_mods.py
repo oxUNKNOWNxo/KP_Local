@@ -171,6 +171,10 @@ subprocess.run(
     check=True,
 )
 subprocess.run(
+    [sys.executable, str(patch_root / "prepare_setting_japanese.py"), str(root)],
+    check=True,
+)
+subprocess.run(
     [sys.executable, str(patch_root / "prepare_main_menu_ui.py"), str(root)],
     check=True,
 )

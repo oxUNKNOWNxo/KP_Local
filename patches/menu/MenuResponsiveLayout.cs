@@ -31,17 +31,19 @@ public static class MenuResponsiveLayout
             { "退出游戏", "ゲーム終了" },
             { "退出遊戲", "ゲーム終了" },
             { "超先行卡", "超先行カード" },
-            { "资源下载", "リソースダウンロード" },
-            { "資源下載", "リソースダウンロード" },
+            { "资源下载", "素材DL" },
+            { "資源下載", "素材DL" },
             { "资源更新", "リソース更新" },
             { "資源更新", "リソース更新" },
-            { "资源下载中", "リソースをダウンロード中" },
-            { "資源下載中", "リソースをダウンロード中" },
+            { "资源下载中", "素材DL中" },
+            { "資源下載中", "素材DL中" },
         };
     const float LabelExtraWidth = 8f;
     const float HorizontalPadding = 22f;
     const float VerticalPadding = 14f;
-    const float MinimumHeaderGap = 10f;
+    const float MinimumHeaderGap = 18f;
+    const float IconAspectTolerance = 0.35f;
+    const float MaximumIconSize = 64f;
     const float MinimumRowGap = 4f;
 
     class MenuRow
@@ -108,6 +110,7 @@ public static class MenuResponsiveLayout
         {
             ConfigureLabel(rows[i].label, fixedFontSize);
             MoveWidgetLeftInSpace(rows[i].label, rows[i].root, sharedTextLeft);
+            AlignLabelToIconCenter(rows[i].root, rows[i].label);
         }
 
         UIWidget back = FindBackground(menuRoot, rows);
@@ -425,6 +428,53 @@ public static class MenuResponsiveLayout
             Mathf.CeilToInt(printed.y + 4f));
         label.overflowMethod = UILabel.Overflow.ClampContent;
         label.fontSize = fontSize;
+    }
+
+    static void AlignLabelToIconCenter(Transform rowRoot, UILabel label)
+    {
+        if (rowRoot == null || label == null)
+            return;
+
+        UIWidget[] widgets = rowRoot.GetComponentsInChildren<UIWidget>(true);
+        UIWidget icon = null;
+        float bestArea = float.PositiveInfinity;
+
+        for (int i = 0; i < widgets.Length; ++i)
+        {
+            UIWidget widget = widgets[i];
+            if (widget == null
+                || widget == label
+                || widget is UILabel
+                || !widget.gameObject.activeInHierarchy)
+                continue;
+
+            Bounds bounds = GetWidgetBoundsInSpace(widget, rowRoot);
+            float width = Mathf.Abs(bounds.size.x);
+            float height = Mathf.Abs(bounds.size.y);
+            if (width < 1f || height < 1f
+                || width > MaximumIconSize || height > MaximumIconSize)
+                continue;
+
+            float aspect = width / height;
+            if (Mathf.Abs(aspect - 1f) > IconAspectTolerance)
+                continue;
+
+            float area = width * height;
+            if (area < bestArea)
+            {
+                bestArea = area;
+                icon = widget;
+            }
+        }
+
+        if (icon == null)
+            return;
+
+        Bounds iconBounds = GetWidgetBoundsInSpace(icon, rowRoot);
+        Bounds labelBounds = GetWidgetBoundsInSpace(label, rowRoot);
+        Vector3 position = rowRoot.InverseTransformPoint(label.transform.position);
+        position.y += iconBounds.center.y - labelBounds.center.y;
+        label.transform.position = rowRoot.TransformPoint(position);
     }
 
     static UIWidget FindBackground(GameObject root, List<MenuRow> rows)

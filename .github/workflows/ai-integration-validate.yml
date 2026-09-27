@@ -243,6 +243,16 @@ jobs:
           grep -q 'panelHeight' "$MENU_LAYOUT"
           grep -q 'ResizeRootPanelClip' "$MENU_LAYOUT"
           grep -q 'panel.baseClipRegion = clip' "$MENU_LAYOUT"
+          grep -q '{ "资源下载", "素材DL" }' "$MENU_LAYOUT"
+          grep -q 'AlignLabelToIconCenter' "$MENU_LAYOUT"
+          grep -q 'const float MinimumHeaderGap = 18f' "$MENU_LAYOUT"
+          SETTING='source/Assets/SibylSystem/Setting/Setting.cs'
+          SETTING_JP='source/Assets/SibylSystem/Setting/SettingJapaneseLayout.cs'
+          test -s "$SETTING_JP"
+          grep -q 'SettingJapaneseLayout.Apply(gameObject);' "$SETTING"
+          grep -q '{ "系统设置", "システム設定" }' "$SETTING_JP"
+          grep -q '{ "连锁特效", "チェーン演出" }' "$SETTING_JP"
+          grep -q '{ "启用音乐", "BGMを有効化" }' "$SETTING_JP"
           grep -q 'PlayerDeckList' "$AIROOM"
           grep -q 'AiDeckList' "$AIROOM"
           grep -q 'OnPlayerDeckSelected' "$AIROOM"
