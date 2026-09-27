@@ -762,3 +762,25 @@ UI共通原則として、画面を閉じて再度開く操作を必ず考慮し
 - `onStart()` は旧toggle名検索ではなく、runtime toggle参照から値を読む
 
 この方式では、画面再入場時のNGUI旧Anchor再計算を中央レイアウトから切り離す。今後、旧Prefab UIを大幅に別位置へ移動して再利用する場合も、Anchor付き元オブジェクトを直接移動するより、表示用cloneを専用コンテナへ分離し正規化する方法を優先する。
+
+
+---
+
+## 26. 初回表示のデッキ見出しと中央文字サイズ（2026-09-27）
+
+実機で、再入場時の中央UI安定化後も、アプリ初期起動から最初にAI画面を開いた時だけ「自分のデッキ」「AIデッキ」の見出し位置がずれることを確認した。また「シャッフルしない」だけが枠に合わせて小さく表示されることを確認した。
+
+対処:
+
+- deck見出しは各deck listの子要素であるため、初回有効化タイミングに依存する `worldCorners` で配置しない
+- 見出し位置は親frameの `UIWidget.localCorners` から中心Xと上端Yを取得し、同じ親座標系の `localPosition` へ直接設定する
+- 見出しUILabelは旧オプションlabelから複製しているため、複製直後・再利用時ともAnchor targetを外す
+- 見出しUILabelのoverflowは `ClampContent` に固定し、旧Prefabの `ShrinkContent` を引き継がない
+- 中央toggleの文字列を測る時は一時的に `ResizeFreely` にして指定フォントサイズ22の自然幅を取得する
+- 行幅決定後は `ClampContent` に戻し、`OptionFontSize = 22` を再適用する
+- 「シャッフルしない」「自分が先攻」「対戦開始」「戻る」はすべて同じ22px基準とし、枠へ収めるための自動縮小は行わない
+
+UI共通原則への追加:
+
+- 対象UIと配置先が同じ親座標系にある場合、world-spaceへ変換して戻すより `localCorners` / local boundsを優先する
+- テンプレートUILabelを複製する場合は位置Anchorだけでなく `overflowMethod` も確認し、意図しない `ShrinkContent` を持ち越さない

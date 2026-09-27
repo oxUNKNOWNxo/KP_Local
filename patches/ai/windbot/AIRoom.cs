@@ -226,6 +226,9 @@ public class AIRoom : WindowServantSP
         label.depth = depth;
         label.pivot = UIWidget.Pivot.Center;
         label.alignment = NGUIText.Alignment.Center;
+        label.overflowMethod = UILabel.Overflow.ClampContent;
+        label.multiLine = false;
+        ClearAnchors(label);
         label.enabled = true;
 
         Collider[] colliders = display.GetComponentsInChildren<Collider>(true);
@@ -266,6 +269,9 @@ public class AIRoom : WindowServantSP
         label.depth = depth;
         label.pivot = UIWidget.Pivot.Center;
         label.alignment = NGUIText.Alignment.Center;
+        label.overflowMethod = UILabel.Overflow.ClampContent;
+        label.multiLine = false;
+        ClearAnchors(label);
         label.enabled = true;
 
         Collider[] colliders = existing.GetComponentsInChildren<Collider>(true);
@@ -623,12 +629,20 @@ public class AIRoom : WindowServantSP
         if (frame == null || title == null || label == null)
             return;
 
-        Bounds frameBounds = GetWidgetBoundsInLayout(frame);
+        Vector3[] corners = frame.localCorners;
+        float centerX = (corners[0].x + corners[2].x) * 0.5f;
+        float topY = Mathf.Max(corners[1].y, corners[2].y);
+
         label.width = frame.width;
+        label.overflowMethod = UILabel.Overflow.ClampContent;
+        label.fontSize = DeckListFontSize;
+        ClearAnchors(label);
 
         float gap = Mathf.Max(4f, label.fontSize * 0.35f);
-        float targetY = frameBounds.max.y + label.height * 0.5f + gap;
-        MoveVisualCenterInLayout(title, frameBounds.center.x, targetY);
+        Vector3 position = title.localPosition;
+        position.x = centerX;
+        position.y = topY + label.height * 0.5f + gap;
+        title.localPosition = position;
     }
 
 
@@ -715,8 +729,14 @@ public class AIRoom : WindowServantSP
         label.fontSize = OptionFontSize;
         label.pivot = UIWidget.Pivot.Left;
         label.alignment = NGUIText.Alignment.Left;
+        label.multiLine = false;
         ClearAnchors(label);
 
+        // Legacy Percy labels default to ShrinkContent. Measure at the real
+        // 22px font size first, then clamp without shrinking.
+        label.overflowMethod = UILabel.Overflow.ResizeFreely;
+        label.width = Mathf.Max(1, Mathf.RoundToInt(availableWidth));
+        label.height = Mathf.Max(label.height, OptionFontSize + 4);
         Vector2 printed = label.printedSize;
         float checkWidth = backgroundWidget == null
             ? Mathf.Max(18f, OptionFontSize * 0.8f)
@@ -748,6 +768,8 @@ public class AIRoom : WindowServantSP
             1,
             Mathf.RoundToInt(rowWidth - checkWidth - gap));
         label.height = Mathf.Max(label.height, OptionFontSize + 4);
+        label.overflowMethod = UILabel.Overflow.ClampContent;
+        label.fontSize = OptionFontSize;
 
         Vector3 lp = label.transform.localPosition;
         lp.x = left + checkWidth + gap;
@@ -807,6 +829,8 @@ public class AIRoom : WindowServantSP
             label.height = ActionButtonHeight;
             label.pivot = UIWidget.Pivot.Center;
             label.alignment = NGUIText.Alignment.Center;
+            label.overflowMethod = UILabel.Overflow.ClampContent;
+            label.multiLine = false;
 
             Vector3 p = label.transform.localPosition;
             p.x = 0f;
