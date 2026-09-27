@@ -9,7 +9,7 @@ public class AIRoom : WindowServantSP
     const int OptionFontSize = 22;
     const int DeckListFontSize = 22;
     const int TitleFontSize = 28;
-    const int MainWindowWidth = 1100;
+    const int SerializedMainWindowWidth = 1066;
     const int MainWindowHeight = 480;
     const int DeckListWidth = 330;
     const int DeckListClipWidth = 290;
@@ -52,8 +52,8 @@ public class AIRoom : WindowServantSP
         if (playerDeckList == null)
             throw new InvalidOperationException("AI room player deck list was not found.");
 
-        ConfigureMainWindow();
         CreateSideBySideDeckLists();
+        ConfigureMainWindow();
 
         CreateCenterColumnRoot();
         EnsureCenterColumnControls();
@@ -418,16 +418,48 @@ public class AIRoom : WindowServantSP
             child.gameObject.SetActive(visible);
     }
 
+    int CalculateMainWindowWidth(Transform mainWindow)
+    {
+        UIWidget mainFrame = mainWindow == null
+            ? null
+            : mainWindow.GetComponent<UIWidget>();
+        UIWidget playerFrame = playerDeckList == null
+            ? null
+            : playerDeckList.GetComponent<UIWidget>();
+        UIWidget aiFrame = aiDeckList == null
+            ? null
+            : aiDeckList.GetComponent<UIWidget>();
+
+        if (mainFrame == null || playerFrame == null || aiFrame == null)
+            return SerializedMainWindowWidth;
+
+        Bounds mainBounds = GetWidgetBoundsInLayout(mainFrame);
+        Bounds playerBounds = GetWidgetBoundsInLayout(playerFrame);
+        Bounds aiBounds = GetWidgetBoundsInLayout(aiFrame);
+
+        float deckBottom = Mathf.Min(playerBounds.min.y, aiBounds.min.y);
+        float bottomMargin = Mathf.Max(0f, deckBottom - mainBounds.min.y);
+        float deckLeft = Mathf.Min(playerBounds.min.x, aiBounds.min.x);
+        float deckRight = Mathf.Max(playerBounds.max.x, aiBounds.max.x);
+        float halfContentWidth = Mathf.Max(
+            mainBounds.center.x - deckLeft,
+            deckRight - mainBounds.center.x);
+
+        float desiredWidth = (halfContentWidth + bottomMargin) * 2f;
+        return Mathf.Max(1, Mathf.RoundToInt(desiredWidth));
+    }
+
     void ConfigureMainWindow()
     {
         Transform mainWindow = FindControl("mainWindow");
         if (mainWindow == null)
             throw new InvalidOperationException("AI room mainWindow was not found.");
 
+        int mainWindowWidth = CalculateMainWindowWidth(mainWindow);
         UIWidget frame = mainWindow.GetComponent<UIWidget>();
         if (frame != null)
         {
-            frame.width = MainWindowWidth;
+            frame.width = mainWindowWidth;
             frame.height = MainWindowHeight;
         }
 
@@ -439,7 +471,7 @@ public class AIRoom : WindowServantSP
             Vector4 clip = rootPanel.baseClipRegion;
             clip.x = 0f;
             clip.y = 0f;
-            clip.z = MainWindowWidth;
+            clip.z = mainWindowWidth;
             clip.w = MainWindowHeight;
             rootPanel.baseClipRegion = clip;
         }
@@ -450,7 +482,7 @@ public class AIRoom : WindowServantSP
             UIWidget glassWidget = glass.GetComponent<UIWidget>();
             if (glassWidget != null)
             {
-                glassWidget.width = MainWindowWidth - 36;
+                glassWidget.width = mainWindowWidth - 36;
                 glassWidget.height = MainWindowHeight - 50;
             }
         }
@@ -459,7 +491,7 @@ public class AIRoom : WindowServantSP
         if (collider != null)
         {
             Vector3 size = collider.size;
-            size.x = MainWindowWidth;
+            size.x = mainWindowWidth;
             size.y = MainWindowHeight;
             collider.size = size;
         }
@@ -469,12 +501,12 @@ public class AIRoom : WindowServantSP
         {
             UIWidget line = separator.GetComponent<UIWidget>();
             if (line != null)
-                line.width = MainWindowWidth - 32;
+                line.width = mainWindowWidth - 32;
         }
 
         SetControlPosition(
             "exit_",
-            MainWindowWidth * 0.5f - 28f,
+            mainWindowWidth * 0.5f - 28f,
             MainWindowHeight * 0.5f - 35f);
 
         Transform title = FindControl("percyHint");
@@ -492,7 +524,7 @@ public class AIRoom : WindowServantSP
             {
                 titleLabel.text = "WindBot AI対戦";
                 titleLabel.fontSize = TitleFontSize;
-                titleLabel.width = MainWindowWidth - 120;
+                titleLabel.width = mainWindowWidth - 120;
                 titleLabel.depth = 30;
             }
         }
@@ -705,10 +737,46 @@ public class AIRoom : WindowServantSP
         return existing;
     }
 
+    void MeasureCenterToggle(
+        Transform control,
+        string text,
+        float availableWidth,
+        out float checkWidth,
+        out float gap,
+        out float textWidth)
+    {
+        checkWidth = Mathf.Max(18f, OptionFontSize * 0.8f);
+        gap = Mathf.Max(8f, OptionFontSize * 0.35f);
+        textWidth = 1f;
+
+        if (control == null)
+            return;
+
+        UILabel label = control.GetComponentInChildren<UILabel>(true);
+        Transform background = control.Find("Background");
+        UIWidget backgroundWidget =
+            background == null ? null : background.GetComponent<UIWidget>();
+
+        if (backgroundWidget != null)
+            checkWidth = Mathf.Max(1f, backgroundWidget.width);
+        if (label == null)
+            return;
+
+        label.text = text;
+        label.fontSize = OptionFontSize;
+        label.multiLine = false;
+        label.overflowMethod = UILabel.Overflow.ResizeFreely;
+        label.width = Mathf.Max(1, Mathf.RoundToInt(availableWidth));
+        label.height = Mathf.Max(label.height, OptionFontSize + 4);
+        textWidth = Mathf.Max(1f, Mathf.Ceil(label.printedSize.x));
+    }
+
     void ConfigureCenterToggle(
         Transform control,
         string text,
-        float availableWidth)
+        float rowWidth,
+        float checkWidth,
+        float gap)
     {
         if (control == null)
             return;
@@ -731,22 +799,6 @@ public class AIRoom : WindowServantSP
         label.alignment = NGUIText.Alignment.Left;
         label.multiLine = false;
         ClearAnchors(label);
-
-        // Legacy Percy labels default to ShrinkContent. Measure at the real
-        // 22px font size first, then clamp without shrinking.
-        label.overflowMethod = UILabel.Overflow.ResizeFreely;
-        label.width = Mathf.Max(1, Mathf.RoundToInt(availableWidth));
-        label.height = Mathf.Max(label.height, OptionFontSize + 4);
-        Vector2 printed = label.printedSize;
-        float checkWidth = backgroundWidget == null
-            ? Mathf.Max(18f, OptionFontSize * 0.8f)
-            : Mathf.Max(1f, backgroundWidget.width);
-        float gap = Mathf.Max(8f, OptionFontSize * 0.35f);
-        float textWidth = Mathf.Max(1f, Mathf.Ceil(printed.x));
-        float desiredWidth = checkWidth + gap + textWidth;
-        float rowWidth = Mathf.Min(
-            Mathf.Max(desiredWidth, OptionFontSize * 5f),
-            Mathf.Max(1f, availableWidth));
 
         widget.width = Mathf.RoundToInt(rowWidth);
         widget.height = Mathf.Max(widget.height, OptionFontSize + 6);
@@ -906,10 +958,52 @@ public class AIRoom : WindowServantSP
         float margin = Mathf.Max(10f, OptionFontSize * 0.5f);
         float usableWidth = Mathf.Max(1f, columnWidth - margin * 2f);
 
+        float noShuffleCheckWidth;
+        float noShuffleGap;
+        float noShuffleTextWidth;
+        float playerFirstCheckWidth;
+        float playerFirstGap;
+        float playerFirstTextWidth;
+        MeasureCenterToggle(
+            noShuffle,
+            "シャッフルしない",
+            usableWidth,
+            out noShuffleCheckWidth,
+            out noShuffleGap,
+            out noShuffleTextWidth);
+        MeasureCenterToggle(
+            playerFirst,
+            "自分が先攻",
+            usableWidth,
+            out playerFirstCheckWidth,
+            out playerFirstGap,
+            out playerFirstTextWidth);
+
+        float sharedCheckWidth = Mathf.Max(
+            noShuffleCheckWidth,
+            playerFirstCheckWidth);
+        float sharedGap = Mathf.Max(noShuffleGap, playerFirstGap);
+        float sharedTextWidth = Mathf.Max(
+            noShuffleTextWidth,
+            playerFirstTextWidth);
+        float sharedToggleWidth = Mathf.Min(
+            Mathf.Max(
+                sharedCheckWidth + sharedGap + sharedTextWidth,
+                OptionFontSize * 5f),
+            usableWidth);
+
         ConfigureCenterToggle(
-            noShuffle, "シャッフルしない", usableWidth);
+            noShuffle,
+            "シャッフルしない",
+            sharedToggleWidth,
+            sharedCheckWidth,
+            sharedGap);
         ConfigureCenterToggle(
-            playerFirst, "自分が先攻", usableWidth);
+            playerFirst,
+            "自分が先攻",
+            sharedToggleWidth,
+            sharedCheckWidth,
+            sharedGap);
         ConfigureCenterButton(
             startButton, "対戦開始", usableWidth);
         ConfigureCenterButton(
@@ -1097,9 +1191,9 @@ public class AIRoom : WindowServantSP
 
     void ApplyStableLayout()
     {
-        ConfigureMainWindow();
         ConfigureDeckListGeometry(playerDeckList, -DeckListOffset);
         ConfigureDeckListGeometry(aiDeckList, DeckListOffset);
+        ConfigureMainWindow();
         ConfigureCenterOptions();
         ApplyDeckListRowStyle(playerDeckList);
         ApplyDeckListRowStyle(aiDeckList);
