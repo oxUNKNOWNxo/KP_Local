@@ -125,9 +125,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          echo '=== locate NGUI files ==='
+          find source/Assets -type f \( -name 'UIRect.cs' -o -name 'UIWidget.cs' -o -name 'UILabel.cs' \) -print
+          UIR=$(find source/Assets -type f -name 'UIRect.cs' | head -1)
+          UIW=$(find source/Assets -type f -name 'UIWidget.cs' | head -1)
+          UIL=$(find source/Assets -type f -name 'UILabel.cs' | head -1)
+          echo "UIR=$UIR"
+          echo "UIW=$UIW"
+          echo "UIL=$UIL"
           echo '=== UIRect anchor API ==='
-          grep -n -B25 -A90 -E 'class AnchorPoint|ResetAnchors|SetAnchor|UpdateAnchors|OnAnchor|updateAnchors' source/Assets/NGUI/Scripts/UI/UIRect.cs | head -1000 || true
+          grep -n -B25 -A100 -E 'class AnchorPoint|ResetAnchors|SetAnchor|UpdateAnchors|OnAnchor|updateAnchors' "$UIR" | head -1200 || true
           echo '=== UIWidget anchor API ==='
-          grep -n -B25 -A90 -E 'ResetAnchors|SetAnchor|UpdateAnchors|OnAnchor|updateAnchors|leftAnchor|rightAnchor' source/Assets/NGUI/Scripts/UI/UIWidget.cs | head -1000 || true
+          grep -n -B25 -A100 -E 'ResetAnchors|SetAnchor|UpdateAnchors|OnAnchor|updateAnchors|leftAnchor|rightAnchor' "$UIW" | head -1200 || true
           echo '=== UILabel anchor API ==='
-          grep -n -B15 -A60 -E 'OnAnchor|UpdateAnchors|ResetAnchors' source/Assets/NGUI/Scripts/UI/UILabel.cs | head -600 || true
+          grep -n -B15 -A70 -E 'OnAnchor|UpdateAnchors|ResetAnchors' "$UIL" | head -700 || true
