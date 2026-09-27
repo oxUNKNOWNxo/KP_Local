@@ -121,3 +121,13 @@ jobs:
                           ]):
                               print(" ",line)
           PY
+      - name: Inspect NGUI anchor API
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== UIRect anchor API ==='
+          grep -n -B25 -A90 -E 'class AnchorPoint|ResetAnchors|SetAnchor|UpdateAnchors|OnAnchor|updateAnchors' source/Assets/NGUI/Scripts/UI/UIRect.cs | head -1000 || true
+          echo '=== UIWidget anchor API ==='
+          grep -n -B25 -A90 -E 'ResetAnchors|SetAnchor|UpdateAnchors|OnAnchor|updateAnchors|leftAnchor|rightAnchor' source/Assets/NGUI/Scripts/UI/UIWidget.cs | head -1000 || true
+          echo '=== UILabel anchor API ==='
+          grep -n -B15 -A60 -E 'OnAnchor|UpdateAnchors|ResetAnchors' source/Assets/NGUI/Scripts/UI/UILabel.cs | head -600 || true
