@@ -166,6 +166,10 @@ subprocess.run(
     [sys.executable, str(patch_root / "patch_ai_room_prefab.py"), str(root)],
     check=True,
 )
+subprocess.run(
+    [sys.executable, str(patch_root / "prepare_japanese_ui.py"), str(root)],
+    check=True,
+)
 legacy = patch_root / "ai" / "legacy"
 required_legacy = [legacy / "coreWrapper.cs", legacy / "precy.cs", legacy / "AIRoom.cs"]
 missing = [str(p) for p in required_legacy if not p.is_file()]

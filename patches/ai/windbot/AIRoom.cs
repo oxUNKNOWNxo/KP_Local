@@ -9,7 +9,7 @@ public class AIRoom : WindowServantSP
     const int OptionFontSize = 22;
     const int DeckListFontSize = 22;
     const int TitleFontSize = 28;
-    const int SerializedMainWindowWidth = 1066;
+    const int SerializedMainWindowWidth = 1052;
     const int MainWindowHeight = 480;
     const int DeckListWidth = 330;
     const int DeckListClipWidth = 290;
@@ -429,23 +429,39 @@ public class AIRoom : WindowServantSP
         UIWidget aiFrame = aiDeckList == null
             ? null
             : aiDeckList.GetComponent<UIWidget>();
+        Transform glass = FindControl("glass");
+        UIWidget glassFrame =
+            glass == null ? null : glass.GetComponent<UIWidget>();
 
-        if (mainFrame == null || playerFrame == null || aiFrame == null)
+        if (mainFrame == null || playerFrame == null
+            || aiFrame == null || glassFrame == null)
             return SerializedMainWindowWidth;
 
         Bounds mainBounds = GetWidgetBoundsInLayout(mainFrame);
+        Bounds glassBounds = GetWidgetBoundsInLayout(glassFrame);
         Bounds playerBounds = GetWidgetBoundsInLayout(playerFrame);
         Bounds aiBounds = GetWidgetBoundsInLayout(aiFrame);
 
+        // Match what is actually visible on-device: the translucent glass is
+        // inset farther vertically than horizontally. Measuring against the
+        // outer mainWindow therefore makes the side gap look slightly wider.
         float deckBottom = Mathf.Min(playerBounds.min.y, aiBounds.min.y);
-        float bottomMargin = Mathf.Max(0f, deckBottom - mainBounds.min.y);
+        float visibleBottomMargin =
+            Mathf.Max(0f, deckBottom - glassBounds.min.y);
         float deckLeft = Mathf.Min(playerBounds.min.x, aiBounds.min.x);
         float deckRight = Mathf.Max(playerBounds.max.x, aiBounds.max.x);
         float halfContentWidth = Mathf.Max(
             mainBounds.center.x - deckLeft,
             deckRight - mainBounds.center.x);
+        float leftGlassInset =
+            Mathf.Max(0f, glassBounds.min.x - mainBounds.min.x);
+        float rightGlassInset =
+            Mathf.Max(0f, mainBounds.max.x - glassBounds.max.x);
+        float horizontalGlassInset =
+            Mathf.Max(leftGlassInset, rightGlassInset);
 
-        float desiredWidth = (halfContentWidth + bottomMargin) * 2f;
+        float desiredWidth =
+            (halfContentWidth + visibleBottomMargin + horizontalGlassInset) * 2f;
         return Mathf.Max(1, Mathf.RoundToInt(desiredWidth));
     }
 
