@@ -997,3 +997,40 @@ build #144 で導入した日本語化は範囲が広すぎた。
 
 これによりデュエル画面へ新しい翻訳処理・フォント文字列を流さず、
 メインメニューの固定文字サイズ＋可変UIだけを独立して維持する。
+
+
+---
+
+## 31. メインメニュー可変枠が見えない原因（2026-09-28）
+
+build #146 は成功。実機確認:
+
+- 対戦中のチェーン確認UI崩れは解消
+- missing glyph（×表示）も解消
+- メインメニューの文字側は改善
+- ただし黒いメニュー枠が拡張されて見えない
+
+原因:
+
+メインメニューPrefabは黒背景Widgetとは別に、ルート側の `UIPanel` が
+固定のclip rectangleを持っている構造。
+
+前版は:
+
+- 黒背景Widgetの width / height を可変化
+- row colliderを可変化
+
+までは実施したが、`UIPanel.baseClipRegion` は元の固定サイズのままだった。
+
+そのため背景Widgetを広げても、広げた部分が親UIPanelの旧clip幅で切り落とされ、
+実機上では「枠が拡張されていない」ように見えた。
+
+次版:
+
+- `MenuResponsiveLayout.ResizeRootPanelClip()` を追加
+- 実文字幅から計算した `panelWidth / panelHeight` を
+  黒背景WidgetだけでなくルートUIPanelの `baseClipRegion.z / w` にも同期
+- clip centerも背景パネル中心へ同期
+- root直下にUIPanelがないソース差分では最初の子UIPanelへfallback
+
+対戦UIの翻訳処理・フォント処理は引き続き変更しない。

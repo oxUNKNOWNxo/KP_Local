@@ -173,6 +173,18 @@ public static class MenuResponsiveLayout
             }
         }
 
+        // The menu root itself is a clipped UIPanel in the Koishi/YGOPro2
+        // prefab. Growing only the dark background widget leaves the new area
+        // invisible because the old panel clip still cuts it to the original
+        // Chinese-sized rectangle. Keep the clip synchronized with the same
+        // responsive bounds.
+        ResizeRootPanelClip(
+            menuRoot,
+            panelCenterX,
+            panelCenterY,
+            panelWidth,
+            panelHeight);
+
         float panelTop = panelCenterY + panelHeight * 0.5f;
         float cursor = panelTop - VerticalPadding;
 
@@ -219,6 +231,43 @@ public static class MenuResponsiveLayout
             center.x = centerLocal.x;
             collider.center = center;
         }
+    }
+
+    static void ResizeRootPanelClip(
+        GameObject menuRoot,
+        float centerX,
+        float centerY,
+        float width,
+        float height)
+    {
+        if (menuRoot == null)
+            return;
+
+        UIPanel panel = menuRoot.GetComponent<UIPanel>();
+        if (panel == null)
+        {
+            // Some source revisions put the UIPanel one level below the
+            // instantiated root. Accept only a panel whose transform is still
+            // part of this menu hierarchy.
+            UIPanel[] panels = menuRoot.GetComponentsInChildren<UIPanel>(true);
+            if (panels != null && panels.Length > 0)
+                panel = panels[0];
+        }
+
+        if (panel == null)
+            return;
+
+        Transform root = menuRoot.transform;
+        Vector3 centerWorld = root.TransformPoint(
+            new Vector3(centerX, centerY, 0f));
+        Vector3 panelCenter = panel.transform.InverseTransformPoint(centerWorld);
+
+        Vector4 clip = panel.baseClipRegion;
+        clip.x = panelCenter.x;
+        clip.y = panelCenter.y;
+        clip.z = Mathf.Max(1f, Mathf.Ceil(width));
+        clip.w = Mathf.Max(1f, Mathf.Ceil(height));
+        panel.baseClipRegion = clip;
     }
 
     static void TranslateMenuLabels(GameObject menuRoot)

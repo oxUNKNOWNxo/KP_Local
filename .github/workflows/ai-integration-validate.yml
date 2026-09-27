@@ -241,6 +241,8 @@ jobs:
           grep -q 'UILabel.Overflow.ClampContent' "$MENU_LAYOUT"
           grep -q 'panelWidth' "$MENU_LAYOUT"
           grep -q 'panelHeight' "$MENU_LAYOUT"
+          grep -q 'ResizeRootPanelClip' "$MENU_LAYOUT"
+          grep -q 'panel.baseClipRegion = clip' "$MENU_LAYOUT"
           grep -q 'PlayerDeckList' "$AIROOM"
           grep -q 'AiDeckList' "$AIROOM"
           grep -q 'OnPlayerDeckSelected' "$AIROOM"
