@@ -232,6 +232,17 @@ jobs:
           grep -q 'InterString.TranslateUiText(original)' "$UIHELPER"
           grep -q 'InterString.TranslateUiText(text)' "$UIHELPER"
           grep -q 'Koishi iOS Japanese UI pass' "$SERVANT"
+          MENU='source/Assets/SibylSystem/Menu/Menu.cs'
+          MENU_LAYOUT='source/Assets/SibylSystem/Menu/MenuResponsiveLayout.cs'
+          test -s "$MENU_LAYOUT"
+          grep -q 'MenuResponsiveLayout.Apply(gameObject);' "$MENU"
+          grep -q 'safeGogo(50, () => MenuResponsiveLayout.Apply(gameObject));' "$MENU"
+          grep -q 'UILabel.Overflow.ResizeFreely' "$MENU_LAYOUT"
+          grep -q 'UILabel.Overflow.ClampContent' "$MENU_LAYOUT"
+          grep -q 'panelWidth' "$MENU_LAYOUT"
+          grep -q 'panelHeight' "$MENU_LAYOUT"
+          grep -q '超先行卡->超先行カード' "$JA_TRANSLATION"
+          grep -q '资源下载->リソースダウンロード' "$JA_TRANSLATION"
           grep -q 'PlayerDeckList' "$AIROOM"
           grep -q 'AiDeckList' "$AIROOM"
           grep -q 'OnPlayerDeckSelected' "$AIROOM"
