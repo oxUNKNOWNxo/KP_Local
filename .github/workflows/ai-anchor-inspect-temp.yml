@@ -139,3 +139,9 @@ jobs:
           grep -n -B25 -A100 -E 'ResetAnchors|SetAnchor|UpdateAnchors|OnAnchor|updateAnchors|leftAnchor|rightAnchor' "$UIW" | head -1200 || true
           echo '=== UILabel anchor API ==='
           grep -n -B15 -A70 -E 'OnAnchor|UpdateAnchors|ResetAnchors' "$UIL" | head -700 || true
+      - name: Inspect UILabel overflow API
+        shell: bash
+        run: |
+          set -euo pipefail
+          UIL=$(find source/Assets -type f -name 'UILabel.cs' | head -1)
+          grep -n -B20 -A80 -E 'enum Overflow|overflowMethod|mOverflow' "$UIL" | head -900 || true
