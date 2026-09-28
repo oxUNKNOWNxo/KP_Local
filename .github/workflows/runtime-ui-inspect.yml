@@ -477,6 +477,51 @@ jobs:
           print(out.read_text(encoding='utf-8'))
           PY
 
+      - name: Resolve serialized new_ui_setting target
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          assets=Path('source/Assets')
+          out=Path('settings-active-prefab-report.txt')
+          guid_to_asset={}
+          for meta in assets.rglob('*.meta'):
+              try:
+                  t=meta.read_text(encoding='utf-8-sig',errors='replace')
+              except Exception:
+                  continue
+              m=re.search(r'^guid:\s*([0-9a-fA-F]+)',t,re.M)
+              if m:
+                  guid_to_asset[m.group(1)] = meta.with_suffix('')
+
+          lines=[]
+          hits=0
+          for p in list(assets.rglob('*.prefab'))+list(assets.rglob('*.unity'))+list(assets.rglob('*.asset')):
+              try:
+                  rows=p.read_text(encoding='utf-8-sig',errors='replace').splitlines()
+              except Exception:
+                  continue
+              for i,row in enumerate(rows):
+                  if 'new_ui_setting:' not in row:
+                      continue
+                  hits += 1
+                  m=re.search(r'guid:\s*([0-9a-fA-F]+)',row)
+                  target=guid_to_asset.get(m.group(1)) if m else None
+                  lines.append(f'{p}:{i+1}: {row.strip()}')
+                  lines.append(f'  -> {target}')
+                  lo=max(0,i-4); hi=min(len(rows),i+5)
+                  for j in range(lo,hi):
+                      if j != i:
+                          lines.append(f'  {j+1}: {rows[j].strip()}')
+
+          lines.insert(0,f'hit_count={hits}')
+          out.write_text('\n'.join(lines)+'\n',encoding='utf-8')
+          print(out.read_text(encoding='utf-8'))
+          PY
+
       - name: Audit full Settings UI text graph
         shell: bash
         run: |
@@ -694,5 +739,6 @@ jobs:
             settings-untranslated-report.txt
             setting-timing-report.txt
             settings-full-audit.txt
+            settings-active-prefab-report.txt
           if-no-files-found: error
           retention-days: 1
