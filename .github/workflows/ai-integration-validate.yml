@@ -116,8 +116,6 @@ jobs:
             test -s "$f"
           done
 
-          grep -q 'private const int MAX_CONCURRENT_DOWNLOADS = 4;' "$PROGRAM"
-          grep -q 'int maxTasksPerFrame = 2;' "$PROGRAM"
           grep -q 'KoishiWindBotBridge' "$AIROOM"
           grep -q 'GetDeckNames' "$AIROOM"
           grep -q 'HideControl("life_")' "$AIROOM"

@@ -70,65 +70,10 @@ if already_synced_old not in text:
     raise SystemExit("Could not locate already-synced UseBundledBasicData branch")
 text = text.replace(already_synced_old, already_synced_new, 1)
 
-# iPhone X responsiveness: keep the upstream background texture system, but
-# avoid its full 8-download / 5-decode burst on older iPhones. The first iOS
-# throttle (2 downloads / 1 decode) eliminated large stalls but made deck-editor
-# art visibly slower than stock KoishiPro2. Use a middle ground: four network
-# jobs and two main-thread texture creations, while retaining touch-frame
-# prioritization below.
-download_limit_old = "    private const int MAX_CONCURRENT_DOWNLOADS = 8;"
-download_limit_new = """#if UNITY_IOS || UNITY_IPHONE
-    private const int MAX_CONCURRENT_DOWNLOADS = 4;
-#else
-    private const int MAX_CONCURRENT_DOWNLOADS = 8;
-#endif"""
-if download_limit_old not in text:
-    raise SystemExit("Could not locate texture download concurrency constant")
-text = text.replace(download_limit_old, download_limit_new, 1)
-
-texture_method_marker = "    private void ProcessTextureManagerUpdates()"
-texture_method_index = text.find(texture_method_marker)
-if texture_method_index < 0:
-    raise SystemExit("Could not locate ProcessTextureManagerUpdates")
-texture_tail = text[texture_method_index:]
-texture_tasks_old = "        int maxTasksPerFrame = 5;"
-texture_tasks_index = texture_tail.find(texture_tasks_old)
-if texture_tasks_index < 0:
-    raise SystemExit("Could not locate texture per-frame task limit")
-texture_abs = texture_method_index + texture_tasks_index
-texture_tasks_new = """#if UNITY_IOS || UNITY_IPHONE
-        int maxTasksPerFrame = 2;
-#else
-        int maxTasksPerFrame = 5;
-#endif"""
-text = text[:texture_abs] + texture_tasks_new + text[texture_abs + len(texture_tasks_old):]
-
-# Never run main-thread texture creation on the same iOS frame that is
-# handling a touch/click. This guarantees that a menu tap is dispatched and
-# rendered before background card-art work resumes on following frames.
-texture_pump_old = """        if (GameTextureManager.IsInitialized)
-        {
-            ProcessTextureManagerUpdates();
-        }"""
-texture_pump_new = """        if (GameTextureManager.IsInitialized)
-        {
-#if UNITY_IOS || UNITY_IPHONE
-            if (
-                !Input.GetMouseButton(0)
-                && !Input.GetMouseButtonDown(0)
-                && !Input.GetMouseButtonUp(0)
-            )
-            {
-                ProcessTextureManagerUpdates();
-            }
-#else
-            ProcessTextureManagerUpdates();
-#endif
-        }"""
-if texture_pump_old not in text:
-    raise SystemExit("Could not locate per-frame texture pump call")
-text = text.replace(texture_pump_old, texture_pump_new, 1)
-
+# Keep the fixed KoishiPro2 texture download/decode behavior unchanged.
+# Image-loading delay was traced to card/script content rather than this queue,
+# so do not throttle download concurrency, per-frame texture creation, or the
+# texture pump on iOS.
 # Do not invoke Unity's global unused-asset unload merely because the native
 # iOS compatibility container reports a size transition. This operation can
 # synchronously stall the main thread and is unnecessary for normal rotation/
@@ -153,8 +98,6 @@ program_path.write_text(text, encoding="utf-8")
 print(f"Patched: {program_path}")
 print("  - disabled forced basic-data sync at startup")
 print("  - normalized already-synced basic-data state to Ready")
-print("  - limited iOS texture decode/download pressure for UI responsiveness")
-print("  - skips iOS main-thread texture creation on touch frames")
 print("  - disabled resize-time Resources.UnloadUnusedAssets on iOS")
 print("  - left explicit/manual Resource Update behavior unchanged")
 

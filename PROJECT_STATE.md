@@ -1132,3 +1132,26 @@ AI対戦実装がゲーム全体の `UILabel.fontSize` や文字間隔を直接�
 これはAI対戦コードではなく `prepare_notch_compat.py` の表示領域変更によるもの。
 現在正常確認済みのノッチ対応を壊さないため、具体的な画面が特定されるまでは
 グローバルUI scale/font補正は追加しない。
+
+
+---
+
+## 34. 2026-09-28 画像ロード原状復帰・デッキ一覧UI再調査
+
+ユーザー確認により、カード画像読み込みの遅さは画像キューではなくスクリプトファイル側が原因と判明。
+そのため §33 で導入した iOS限定 4 download / 2 decode の折衷案を撤回し、
+固定KoishiPro2本来の画像処理をそのまま使用する。
+
+- `MAX_CONCURRENT_DOWNLOADS = 8` を変更しない
+- `ProcessTextureManagerUpdates()` の `maxTasksPerFrame = 5` を変更しない
+- タッチ中だけTexture処理を止めるiOS専用分岐も撤回
+- resize時の `Resources.UnloadUnusedAssets()` 抑止は画像キューとは別のiPhone X表示安定化なので維持
+
+新たに実機で気になる点:
+
+- デッキ編集画面など、一覧表示されるデッキ同士の縦間隔が元KoishiPro2より広く見える
+- 同時に一覧文字が小さく見える
+
+AI対戦画面専用のデッキ一覧は22pxへ明示調整しているが、デッキ編集など他画面の一覧には直接触れていない。
+次に固定KoishiPro2 source の `UIselectableList`、デッキ管理/編集画面、関連Prefabの
+row template・fontSize・row height/position/clipを調べ、iPhone X viewport拡張との関係を切り分ける。

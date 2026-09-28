@@ -101,6 +101,79 @@ jobs:
           print(out.read_text(encoding='utf-8'))
           PY
 
+      - name: Inspect deck-list density and font geometry
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          root = Path('source/Assets')
+          out = Path('deck-ui-report.txt')
+          lines = []
+          def add(s=''):
+              lines.append(str(s))
+
+          add('=== C# files referencing deck lists / UIselectableList ===')
+          terms = (
+              'UIselectableList', 'deckManager', 'DeckManager', 'deckInUse',
+              'sortByTimeDeck', '卡组管理', '卡组管理器'
+          )
+          for path in root.rglob('*.cs'):
+              try:
+                  text = path.read_text(encoding='utf-8-sig', errors='replace')
+              except Exception:
+                  continue
+              rows = text.splitlines()
+              hits = [i for i,row in enumerate(rows) if any(t in row for t in terms)]
+              if not hits:
+                  continue
+              add(f'--- {path} ---')
+              shown = set()
+              for idx in hits:
+                  lo=max(0,idx-12); hi=min(len(rows),idx+20)
+                  for j in range(lo,hi):
+                      if j in shown:
+                          continue
+                      shown.add(j)
+                      add(f'{j+1}: {rows[j]}')
+
+          add('\n=== Prefabs/assets with deck list names and typography/spacing ===')
+          yaml_terms = ('deck', 'Deck', '卡组', 'list_', 'UIselectableList')
+          prop_terms = (
+              'm_Name:', 'm_LocalPosition:', 'm_LocalScale:', 'mFontSize:',
+              'fontSize:', 'mWidth:', 'mHeight:', 'mClipRange:', 'mSpacing:',
+              'cellHeight', 'padding', 'mPivot:', 'mOverflow:', 'mMaxLineCount:'
+          )
+          for path in list(root.rglob('*.prefab')) + list(root.rglob('*.asset')):
+              try:
+                  raw = path.read_text(encoding='utf-8-sig', errors='replace')
+              except Exception:
+                  continue
+              rows = raw.splitlines()
+              hits = [i for i,row in enumerate(rows) if any(t in row for t in yaml_terms)]
+              if not hits:
+                  continue
+              relevant=[]
+              for idx in hits[:80]:
+                  lo=max(0,idx-45); hi=min(len(rows),idx+90)
+                  chunk=[f'{j+1}: {rows[j]}' for j in range(lo,hi)
+                         if any(p in rows[j] for p in prop_terms)]
+                  if chunk:
+                      relevant.extend(chunk)
+              if relevant:
+                  add(f'--- {path} ---')
+                  # preserve order while removing duplicate lines
+                  seen=set()
+                  for row in relevant:
+                      if row not in seen:
+                          seen.add(row)
+                          add(row)
+
+          out.write_text('\n'.join(lines)+'\n', encoding='utf-8')
+          print(out.read_text(encoding='utf-8'))
+          PY
+
       - name: Inspect pre-removal AI/menu source
         shell: bash
         run: |
@@ -126,5 +199,6 @@ jobs:
           path: |
             runtime-ui-report.txt
             pre-removal-report.txt
+            deck-ui-report.txt
           if-no-files-found: error
           retention-days: 1
