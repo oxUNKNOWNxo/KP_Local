@@ -1175,13 +1175,22 @@ public class AIRoom : WindowServantSP
         playerDeckList.clear();
         string selected = Config.Get("deckInUse", "miaowu");
 
-        for (int i = 0; i < playerDeckNames.Count; ++i)
-            playerDeckList.add(playerDeckNames[i]);
-
         if (!playerDeckNames.Contains(selected) && playerDeckNames.Count > 0)
         {
             selected = playerDeckNames[0];
             Config.Set("deckInUse", selected);
+        }
+
+        // Match KoishiPro2's normal deck selector behavior: when this screen
+        // is rebuilt, place the persisted deck first so it is immediately
+        // visible. Selecting a different row does not reorder the live list.
+        if (!String.IsNullOrWhiteSpace(selected))
+            playerDeckList.add(selected);
+
+        for (int i = 0; i < playerDeckNames.Count; ++i)
+        {
+            if (playerDeckNames[i] != selected)
+                playerDeckList.add(playerDeckNames[i]);
         }
 
         playerDeckList.selectedString = selected;
