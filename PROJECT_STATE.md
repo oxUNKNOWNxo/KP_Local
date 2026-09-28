@@ -1155,3 +1155,27 @@ AI対戦実装がゲーム全体の `UILabel.fontSize` や文字間隔を直接�
 AI対戦画面専用のデッキ一覧は22pxへ明示調整しているが、デッキ編集など他画面の一覧には直接触れていない。
 次に固定KoishiPro2 source の `UIselectableList`、デッキ管理/編集画面、関連Prefabの
 row template・fontSize・row height/position/clipを調べ、iPhone X viewport拡張との関係を切り分ける。
+
+
+---
+
+## 35. 2026-09-28 デッキ名一覧の密度補正
+
+固定KoishiPro2 sourceを実測して一覧UIの構造を確認した。
+
+- 共通 `UIselectableList` の標準行ピッチ: 45
+- 共通行Prefab `trans_selection.prefab` のUILabel: fontSize 38 / height 33
+- デッキ選択 `trans_selectDeck.prefab` の一覧clip: 240 x 540
+- `selectDeck.cs` 自体は行間・fontSizeを変更しておらず、共通 `UIselectableList` をそのまま使用
+
+ユーザー実機では改変前より「デッキ名一覧の間隔が広く、文字が小さく見える」とのこと。
+全UIや共通リストのデフォルト値は変更せず、デッキ名を選択する一覧だけを局所補正する。
+
+- `UIselectableList` の標準45は維持
+- opt-in API `ConfigureDeckNameRows()` を追加
+- デッキ選択/管理画面: row pitch 40 / font 40 / item height 36
+- オンライン部屋のデッキ選択: 同じ40 / 40 / 36
+- リプレイ一覧、ルーム一覧、詰めデュエル一覧などは変更しない
+- WindBot AI画面は既存の専用レイアウトを維持し、この補正の対象外
+
+これによりデッキ名一覧だけ縦の空白を約11%縮め、文字基準を38→40へ僅かに拡大する。

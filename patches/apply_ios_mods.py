@@ -122,6 +122,10 @@ subprocess.run(
     [sys.executable, str(patch_root / "prepare_main_menu_ui.py"), str(root)],
     check=True,
 )
+subprocess.run(
+    [sys.executable, str(patch_root / "prepare_deck_list_density.py"), str(root)],
+    check=True,
+)
 legacy = patch_root / "ai" / "legacy"
 required_legacy = [legacy / "coreWrapper.cs", legacy / "precy.cs", legacy / "AIRoom.cs"]
 missing = [str(p) for p in required_legacy if not p.is_file()]
