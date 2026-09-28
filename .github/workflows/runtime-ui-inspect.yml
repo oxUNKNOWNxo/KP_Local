@@ -367,6 +367,117 @@ jobs:
           print(out.read_text(encoding='utf-8'))
           PY
 
+      - name: Inspect untranslated Settings strings
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          assets = Path('source/Assets')
+          control = Path('control')
+          out = Path('settings-untranslated-report.txt')
+
+          layout = (control/'patches/settings/SettingJapaneseLayout.cs').read_text(
+              encoding='utf-8-sig', errors='replace')
+          translated_keys = set(re.findall(
+              r'\{\s*"((?:\\.|[^"])*)"\s*,\s*"',
+              layout
+          ))
+
+          sources = []
+          setting_cs = assets/'SibylSystem/Setting/Setting.cs'
+          if setting_cs.is_file():
+              sources.append(setting_cs)
+
+          for p in assets.rglob('*.prefab'):
+              if 'setting' in p.name.lower():
+                  sources.append(p)
+
+          # Also include any prefab explicitly referenced by new_ui_setting's
+          # serialized GUID, if available.
+          for p in list(assets.rglob('*.prefab')) + list(assets.rglob('*.unity')):
+              try:
+                  t = p.read_text(encoding='utf-8-sig', errors='replace')
+              except Exception:
+                  continue
+              if 'new_ui_setting:' not in t:
+                  continue
+              for line in t.splitlines():
+                  if 'new_ui_setting:' not in line:
+                      continue
+                  m = re.search(r'guid:\s*([0-9a-fA-F]+)', line)
+                  if not m:
+                      continue
+                  guid = m.group(1)
+                  for meta in assets.rglob('*.meta'):
+                      try:
+                          mt = meta.read_text(encoding='utf-8-sig', errors='replace')
+                      except Exception:
+                          continue
+                      if f'guid: {guid}' in mt:
+                          candidate = meta.with_suffix('')
+                          if candidate.is_file():
+                              sources.append(candidate)
+
+          # Collect visible/static Chinese strings from UILabel YAML and string
+          # literals in Setting.cs. Ignore comments and very long prose.
+          chinese = re.compile(r'[\u3400-\u9fff]')
+          candidates = {}
+          def add(value, source):
+              value = value.strip()
+              if not value or not chinese.search(value):
+                  return
+              if len(value) > 80:
+                  return
+              candidates.setdefault(value, set()).add(str(source))
+
+          for p in dict.fromkeys(sources):
+              try:
+                  text = p.read_text(encoding='utf-8-sig', errors='replace')
+              except Exception:
+                  continue
+              if p.suffix == '.cs':
+                  # Remove // comments before extracting string literals.
+                  for lineno, row in enumerate(text.splitlines(), 1):
+                      code = row.split('//', 1)[0]
+                      for m in re.finditer(r'"((?:\\.|[^"])*)"', code):
+                          add(bytes(m.group(1), 'utf-8').decode('unicode_escape', errors='ignore'),
+                              f'{p}:{lineno}')
+              else:
+                  for lineno, row in enumerate(text.splitlines(), 1):
+                      stripped = row.strip()
+                      for prefix in ('mText:', 'text:', 'm_Text:'):
+                          if stripped.startswith(prefix):
+                              add(stripped[len(prefix):].strip().strip('"'),
+                                  f'{p}:{lineno}')
+
+          missing = [(k, sorted(v)) for k,v in candidates.items()
+                     if k not in translated_keys]
+          missing.sort(key=lambda x: x[0])
+
+          lines = [
+              f'translated_key_count={len(translated_keys)}',
+              f'source_count={len(set(map(str, sources)))}',
+              f'chinese_candidate_count={len(candidates)}',
+              f'missing_count={len(missing)}',
+              '',
+              '=== Missing exact-match strings ==='
+          ]
+          for value, refs in missing:
+              lines.append(f'{value} -> {refs}')
+
+          lines.append('')
+          lines.append('=== All Setting candidates ===')
+          for value in sorted(candidates):
+              state = 'OK' if value in translated_keys else 'MISSING'
+              lines.append(f'[{state}] {value}')
+
+          out.write_text('\n'.join(lines)+'\n', encoding='utf-8')
+          print(out.read_text(encoding='utf-8'))
+          PY
+
       - name: Upload UI inspection
         uses: actions/upload-artifact@v4
         with:
@@ -377,5 +488,6 @@ jobs:
             deck-list-definition-report.txt
             selectable-prefab-report.txt
             selectable-row-prefab.txt
+            settings-untranslated-report.txt
           if-no-files-found: error
           retention-days: 1
