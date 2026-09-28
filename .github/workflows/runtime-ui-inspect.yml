@@ -339,6 +339,34 @@ jobs:
           print(out.read_text(encoding='utf-8'))
           PY
 
+      - name: Resolve shared selectable-row prefab
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          root=Path('source/Assets')
+          guid='b102b714e94a8bf4abf4b4ada52e4158'
+          out=Path('selectable-row-prefab.txt')
+          lines=[]
+          target=None
+          for meta in root.rglob('*.meta'):
+              try: text=meta.read_text(encoding='utf-8-sig',errors='replace')
+              except: continue
+              if f'guid: {guid}' in text:
+                  target=meta.with_suffix('')
+                  break
+          lines.append(f'guid={guid}')
+          lines.append(f'target={target}')
+          if target and target.is_file():
+              text=target.read_text(encoding='utf-8-sig',errors='replace')
+              for i,row in enumerate(text.splitlines(),1):
+                  lines.append(f'{i}: {row}')
+          out.write_text('\n'.join(lines)+'\n',encoding='utf-8')
+          print(out.read_text(encoding='utf-8'))
+          PY
+
       - name: Upload UI inspection
         uses: actions/upload-artifact@v4
         with:
@@ -348,5 +376,6 @@ jobs:
             deck-ui-report.txt
             deck-list-definition-report.txt
             selectable-prefab-report.txt
+            selectable-row-prefab.txt
           if-no-files-found: error
           retention-days: 1
