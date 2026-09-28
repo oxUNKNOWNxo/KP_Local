@@ -983,7 +983,7 @@ public class AIRoom : WindowServantSP
         float playerFirstTextWidth;
         MeasureCenterToggle(
             noShuffle,
-            "シャッフルしない",
+            "シャッフルなし",
             usableWidth,
             out noShuffleCheckWidth,
             out noShuffleGap,
@@ -1011,7 +1011,7 @@ public class AIRoom : WindowServantSP
 
         ConfigureCenterToggle(
             noShuffle,
-            "シャッフルしない",
+            "シャッフルなし",
             sharedToggleWidth,
             sharedCheckWidth,
             sharedGap);
@@ -1049,14 +1049,18 @@ public class AIRoom : WindowServantSP
 
         float cursor = totalHeight * 0.5f;
 
+        // Shift the two option rows slightly right while preserving their
+        // shared left edge. Action buttons remain centered.
+        float toggleOffsetX = OptionFontSize * 0.5f;
+
         Vector3 p = noShuffle.localPosition;
-        p.x = 0f;
+        p.x = toggleOffsetX;
         p.y = cursor - noShuffleHeight * 0.5f;
         noShuffle.localPosition = p;
         cursor -= noShuffleHeight + rowGap;
 
         p = playerFirst.localPosition;
-        p.x = 0f;
+        p.x = toggleOffsetX;
         p.y = cursor - playerFirstHeight * 0.5f;
         playerFirst.localPosition = p;
         cursor -= playerFirstHeight + sectionGap;
@@ -1102,9 +1106,9 @@ public class AIRoom : WindowServantSP
         Bounds columnBounds = GetCenterColumnBounds(playerFrame, aiFrame);
 
         // Runtime controls are normalized to center pivots and no parent anchors.
-        // Their local X is always zero; only the measured column determines
-        // the container position. Re-entering the room therefore cannot add
-        // another positional correction.
+        // The measured column determines the container position. The option
+        // rows may share one small local-X offset without accumulating drift
+        // when the room is entered again.
         ArrangeCenterColumnContents(columnBounds.size.x);
         PositionCenterColumn(columnBounds);
     }
@@ -1191,18 +1195,29 @@ public class AIRoom : WindowServantSP
         aiDeckList.clear();
         string selected = Config.Get("list_aideck", "RadiantTyphoon");
 
-        // "ランダム" is UI-only. Resolve it to a real registered deck before
-        // the WindBot pregame/duel code receives the selection.
-        aiDeckList.add(RandomAiDeckLabel);
-        for (int i = 0; i < aiDeckNames.Length; ++i)
-            aiDeckList.add(aiDeckNames[i]);
-
+        // Match the normal player-deck selector: persist the choice immediately,
+        // then place that saved choice first only when this screen is rebuilt.
+        // Clicking a different AI deck does not auto-scroll or reorder the live
+        // list; returning here (or restarting) makes the saved choice visible
+        // at the top and highlighted.
         if (selected != RandomAiDeckLabel
-            && Array.IndexOf(aiDeckNames, selected) < 0
-            && aiDeckNames.Length > 0)
+            && Array.IndexOf(aiDeckNames, selected) < 0)
         {
-            selected = aiDeckNames[0];
+            selected = aiDeckNames.Length > 0
+                ? aiDeckNames[0]
+                : RandomAiDeckLabel;
             Config.Set("list_aideck", selected);
+        }
+
+        aiDeckList.add(selected);
+
+        if (selected != RandomAiDeckLabel)
+            aiDeckList.add(RandomAiDeckLabel);
+
+        for (int i = 0; i < aiDeckNames.Length; ++i)
+        {
+            if (aiDeckNames[i] != selected)
+                aiDeckList.add(aiDeckNames[i]);
         }
 
         aiDeckList.selectedString = selected;
