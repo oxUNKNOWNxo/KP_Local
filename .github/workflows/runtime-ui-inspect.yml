@@ -477,6 +477,25 @@ jobs:
           print(out.read_text(encoding='utf-8'))
           PY
 
+      - name: Inspect Setting.cs localization timing
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('source/Assets/SibylSystem/Setting/Setting.cs')
+          rows=p.read_text(encoding='utf-8-sig',errors='replace').splitlines()
+          ranges=((1,230),(570,665))
+          out=Path('setting-timing-report.txt')
+          lines=[]
+          for lo,hi in ranges:
+              lines.append(f'=== Setting.cs {lo}-{hi} ===')
+              for i in range(lo-1,min(hi,len(rows))):
+                  lines.append(f'{i+1}: {rows[i]}')
+          out.write_text('\n'.join(lines)+'\n',encoding='utf-8')
+          print(out.read_text(encoding='utf-8'))
+          PY
+
       - name: Upload UI inspection
         uses: actions/upload-artifact@v4
         with:
@@ -488,5 +507,6 @@ jobs:
             selectable-prefab-report.txt
             selectable-row-prefab.txt
             settings-untranslated-report.txt
+            setting-timing-report.txt
           if-no-files-found: error
           retention-days: 1
