@@ -118,6 +118,7 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
           root = Path('source/Assets')
           out = Path('deck-ui-report.txt')
@@ -125,61 +126,88 @@ jobs:
           def add(s=''):
               lines.append(str(s))
 
-          add('=== C# files referencing deck lists / UIselectableList ===')
-          terms = (
-              'UIselectableList', 'deckManager', 'DeckManager', 'deckInUse',
-              'sortByTimeDeck', '卡组管理', '卡组管理器'
+          # First locate only the managed sources that actually mention the
+          # selectable-list/deck-manager mechanisms.
+          source_hits = []
+          source_terms = (
+              'UIselectableList', 'deckInUse', 'sortByTimeDeck',
+              'DeckManager', 'deckManager'
           )
-          for path in root.rglob('*.cs'):
+          for path in (root/'SibylSystem').rglob('*.cs'):
               try:
                   text = path.read_text(encoding='utf-8-sig', errors='replace')
               except Exception:
                   continue
-              rows = text.splitlines()
-              hits = [i for i,row in enumerate(rows) if any(t in row for t in terms)]
-              if not hits:
-                  continue
+              if any(term in text for term in source_terms):
+                  source_hits.append((path, text))
+
+          add('=== Relevant managed sources ===')
+          prefab_tokens = set()
+          for path,text in source_hits:
               add(f'--- {path} ---')
-              shown = set()
-              for idx in hits:
-                  lo=max(0,idx-12); hi=min(len(rows),idx+20)
+              rows=text.splitlines()
+              hit_lines=[i for i,row in enumerate(rows) if any(term in row for term in source_terms)]
+              shown=set()
+              for idx in hit_lines:
+                  lo=max(0,idx-16); hi=min(len(rows),idx+28)
                   for j in range(lo,hi):
                       if j in shown:
                           continue
                       shown.add(j)
-                      add(f'{j+1}: {rows[j]}')
+                      row=rows[j]
+                      add(f'{j+1}: {row}')
+                      for m in re.finditer(r'new_ui_[A-Za-z0-9_]+|trans_[A-Za-z0-9_]+', row):
+                          prefab_tokens.add(m.group(0))
 
-          add('\n=== Prefabs/assets with deck list names and typography/spacing ===')
-          yaml_terms = ('deck', 'Deck', '卡组', 'list_', 'UIselectableList')
-          prop_terms = (
-              'm_Name:', 'm_LocalPosition:', 'm_LocalScale:', 'mFontSize:',
-              'fontSize:', 'mWidth:', 'mHeight:', 'mClipRange:', 'mSpacing:',
-              'cellHeight', 'padding', 'mPivot:', 'mOverflow:', 'mMaxLineCount:'
-          )
-          for path in list(root.rglob('*.prefab')) + list(root.rglob('*.asset')):
+          # Then inspect only prefabs that either contain UIselectableList
+          # serialization or are obvious deck-related UI assets.
+          candidates=[]
+          for path in root.rglob('*.prefab'):
+              name=path.name.lower()
+              if 'deck' in name or 'card' in name:
+                  candidates.append(path)
+                  continue
               try:
-                  raw = path.read_text(encoding='utf-8-sig', errors='replace')
+                  raw=path.read_text(encoding='utf-8-sig', errors='replace')
               except Exception:
                   continue
-              rows = raw.splitlines()
-              hits = [i for i,row in enumerate(rows) if any(t in row for t in yaml_terms)]
+              if 'UIselectableList' in raw or any(tok in raw for tok in prefab_tokens):
+                  candidates.append(path)
+
+          add('\n=== Relevant prefab geometry ===')
+          props = (
+              'm_Name:', 'm_LocalPosition:', 'm_LocalScale:', 'mFontSize:',
+              'mWidth:', 'mHeight:', 'mClipRange:', 'mOverflow:', 'mPivot:',
+              'mod:', 'panel:', 'bar_', 'list_', 'deck'
+          )
+          seen_paths=set()
+          for path in candidates[:80]:
+              if path in seen_paths:
+                  continue
+              seen_paths.add(path)
+              try:
+                  raw=path.read_text(encoding='utf-8-sig', errors='replace')
+              except Exception:
+                  continue
+              rows=raw.splitlines()
+              # Only show windows around likely list/template objects.
+              hits=[i for i,row in enumerate(rows)
+                    if ('UIselectableList' in row
+                        or 'm_Name: list_' in row
+                        or 'm_Name: deck' in row.lower()
+                        or 'm_Name: mod' in row)]
               if not hits:
                   continue
-              relevant=[]
-              for idx in hits[:80]:
-                  lo=max(0,idx-45); hi=min(len(rows),idx+90)
-                  chunk=[f'{j+1}: {rows[j]}' for j in range(lo,hi)
-                         if any(p in rows[j] for p in prop_terms)]
-                  if chunk:
-                      relevant.extend(chunk)
-              if relevant:
-                  add(f'--- {path} ---')
-                  # preserve order while removing duplicate lines
-                  seen=set()
-                  for row in relevant:
-                      if row not in seen:
-                          seen.add(row)
-                          add(row)
+              add(f'--- {path} ---')
+              shown=set()
+              for idx in hits[:30]:
+                  lo=max(0,idx-55); hi=min(len(rows),idx+110)
+                  for j in range(lo,hi):
+                      if j in shown:
+                          continue
+                      if any(p in rows[j] for p in props):
+                          shown.add(j)
+                          add(f'{j+1}: {rows[j]}')
 
           out.write_text('\n'.join(lines)+'\n', encoding='utf-8')
           print(out.read_text(encoding='utf-8'))
