@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   inspect:
-    runs-on: ubuntu-latest
+    runs-on: macos-15-intel
     timeout-minutes: 15
     env:
       SOURCE_REPO: https://code.moenext.com/hex/ygopro2.git
@@ -25,17 +25,28 @@ jobs:
         with:
           path: control
 
+      - name: Restore fixed KoishiPro2 source snapshot
+        id: source-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: source
+          key: koishipro2-source-${{ env.SOURCE_COMMIT }}-v1
+
       - name: Fetch current and pre-removal source
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf source
-          git init -q source
-          git -C source remote add origin "$SOURCE_REPO"
-          git -C source config http.version HTTP/1.1
-          git -C source fetch --quiet --no-tags --depth=1 origin "$SOURCE_COMMIT"
-          git -C source checkout --quiet --detach FETCH_HEAD
-          git -C source fetch --quiet --no-tags --depth=2 origin "$AI_REMOVAL_COMMIT" || true
+          if [ -d source/.git ] && [ "$(git -C source rev-parse HEAD 2>/dev/null || true)" = "$SOURCE_COMMIT" ]; then
+            echo "Using cached KoishiPro2 source snapshot."
+          else
+            rm -rf source
+            git init -q source
+            git -C source remote add origin "$SOURCE_REPO"
+            git -C source config http.version HTTP/1.1
+            git -C source fetch --quiet --no-tags --depth=1 origin "$SOURCE_COMMIT"
+            git -C source checkout --quiet --detach FETCH_HEAD
+          fi
+          test "$(git -C source rev-parse HEAD)" = "$SOURCE_COMMIT"
 
       - name: Inspect live menu and AI asset wiring
         shell: bash
@@ -174,31 +185,12 @@ jobs:
           print(out.read_text(encoding='utf-8'))
           PY
 
-      - name: Inspect pre-removal AI/menu source
-        shell: bash
-        run: |
-          set -euo pipefail
-          PRE=$(git -C source rev-parse "$AI_REMOVAL_COMMIT^" 2>/dev/null || true)
-          echo "pre-removal commit: $PRE" | tee pre-removal-report.txt
-          if [ -n "$PRE" ]; then
-            for f in \
-              Assets/SibylSystem/Menu/Menu.cs \
-              Assets/SibylSystem/Program.cs \
-              Assets/ArtSystem/MainMenu/new_main_menu.prefab \
-              Assets/ArtSystem/MainMenu/new_main_menuR.prefab \
-              Assets/transUI/prefab/trans_menu.prefab; do
-              echo "===== $f =====" | tee -a pre-removal-report.txt
-              git -C source show "$PRE:$f" 2>/dev/null | grep -n -B28 -A70 -E 'm_Name: ai_|m_Name: single_|onClickAI|onClickPizzle|new_ui_menu|new_ui_aiRoom|aiRoom' | tee -a pre-removal-report.txt || true
-            done
-          fi
-
       - name: Upload UI inspection
         uses: actions/upload-artifact@v4
         with:
           name: KoishiPro2-runtime-ui-inspection
           path: |
             runtime-ui-report.txt
-            pre-removal-report.txt
             deck-ui-report.txt
           if-no-files-found: error
           retention-days: 1
