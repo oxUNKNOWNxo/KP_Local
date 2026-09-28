@@ -286,6 +286,59 @@ jobs:
           print(out.read_text(encoding='utf-8'))
           PY
 
+      - name: Resolve UIselectableList prefab instances
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          root=Path('source/Assets')
+          meta=root/'transUI/UIselectableList.cs.meta'
+          out=Path('selectable-prefab-report.txt')
+          lines=[]
+          def add(x=''): lines.append(str(x))
+
+          mt=meta.read_text(encoding='utf-8-sig',errors='replace')
+          m=re.search(r'^guid:\s*([0-9a-fA-F]+)',mt,re.M)
+          if not m:
+              raise SystemExit('UIselectableList guid not found')
+          guid=m.group(1)
+          add(f'UIselectableList guid={guid}')
+
+          matches=[]
+          for p in root.rglob('*.prefab'):
+              try: t=p.read_text(encoding='utf-8-sig',errors='replace')
+              except: continue
+              if guid in t:
+                  matches.append((p,t))
+
+          add(f'prefab_count={len(matches)}')
+          for p,t in matches:
+              add(f'\n===== {p} =====')
+              rows=t.splitlines()
+              hit=[i for i,row in enumerate(rows) if guid in row]
+              # Print component around UIselectableList reference.
+              for idx in hit:
+                  lo=max(0,idx-22); hi=min(len(rows),idx+32)
+                  add(f'--- selectable component around line {idx+1} ---')
+                  for j in range(lo,hi):
+                      add(f'{j+1}: {rows[j]}')
+              # Print all names and typography/geometry in this relatively
+              # small UI prefab so mod/label relationships are visible.
+              add('--- names / typography / geometry ---')
+              keys=('m_Name:','m_LocalPosition:','m_LocalScale:','mFontSize:',
+                    'mWidth:','mHeight:','mClipRange:','mOverflow:','mPivot:',
+                    'm_Script:','mod:','panel:','scrollBar:')
+              for i,row in enumerate(rows,1):
+                  if any(k in row for k in keys):
+                      add(f'{i}: {row}')
+
+          out.write_text('\n'.join(lines)+'\n',encoding='utf-8')
+          print(out.read_text(encoding='utf-8'))
+          PY
+
       - name: Upload UI inspection
         uses: actions/upload-artifact@v4
         with:
@@ -294,5 +347,6 @@ jobs:
             runtime-ui-report.txt
             deck-ui-report.txt
             deck-list-definition-report.txt
+            selectable-prefab-report.txt
           if-no-files-found: error
           retention-days: 1
