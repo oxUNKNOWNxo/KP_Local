@@ -443,8 +443,7 @@ jobs:
                   for lineno, row in enumerate(text.splitlines(), 1):
                       code = row.split('//', 1)[0]
                       for m in re.finditer(r'"((?:\\.|[^"])*)"', code):
-                          add(bytes(m.group(1), 'utf-8').decode('unicode_escape', errors='ignore'),
-                              f'{p}:{lineno}')
+                          add(m.group(1), f'{p}:{lineno}')
               else:
                   for lineno, row in enumerate(text.splitlines(), 1):
                       stripped = row.strip()
