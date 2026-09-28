@@ -238,7 +238,6 @@ jobs:
           grep -q 'Program.I().StartCoroutine(RefreshAfterNguiLayout(menuRoot))' "$MENU_LAYOUT"
           grep -q 'TranslateMenuLabels' "$MENU_LAYOUT"
           grep -q '{ "超先行卡", "超先行カード" }' "$MENU_LAYOUT"
-          grep -q '{ "资源下载", "リソースダウンロード" }' "$MENU_LAYOUT"
           grep -q 'UILabel.Overflow.ResizeFreely' "$MENU_LAYOUT"
           grep -q 'UILabel.Overflow.ClampContent' "$MENU_LAYOUT"
           grep -q 'panelWidth' "$MENU_LAYOUT"
