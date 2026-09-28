@@ -477,6 +477,191 @@ jobs:
           print(out.read_text(encoding='utf-8'))
           PY
 
+      - name: Audit full Settings UI text graph
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          import re
+
+          assets = Path('source/Assets')
+          control = Path('control')
+          out = Path('settings-full-audit.txt')
+
+          helper = (control/'patches/settings/SettingJapaneseLayout.cs').read_text(
+              encoding='utf-8-sig', errors='replace')
+          prepare = (control/'patches/prepare_setting_japanese.py').read_text(
+              encoding='utf-8-sig', errors='replace')
+
+          dictionary_keys = set(re.findall(
+              r'\{\s*"((?:\\.|[^"])*)"\s*,\s*"',
+              helper
+          ))
+
+          chinese = re.compile(r'[\u3400-\u9fff]')
+          handled = set(dictionary_keys)
+          # Strings directly replaced in the Settings-only patch also count as
+          # handled even though they are not dictionary entries.
+          for m in re.finditer(r'["\']([^"\']*[\u3400-\u9fff][^"\']*)["\']', prepare):
+              handled.add(m.group(1))
+
+          def decode_yaml_scalar(raw):
+              value = raw.strip()
+              if value.startswith('"') and value.endswith('"'):
+                  try:
+                      return json.loads(value)
+                  except Exception:
+                      value = value[1:-1]
+              def repl(match):
+                  try:
+                      return chr(int(match.group(1), 16))
+                  except Exception:
+                      return match.group(0)
+              value = re.sub(r'\\u([0-9a-fA-F]{4})', repl, value)
+              return value
+
+          # Resolve the prefab assigned to Program.new_ui_setting and recursively
+          # follow nested prefab references only (not scripts/textures/materials).
+          guid_to_asset = {}
+          for meta in assets.rglob('*.meta'):
+              try:
+                  mt = meta.read_text(encoding='utf-8-sig', errors='replace')
+              except Exception:
+                  continue
+              gm = re.search(r'^guid:\s*([0-9a-fA-F]+)', mt, re.M)
+              if gm:
+                  guid_to_asset[gm.group(1)] = meta.with_suffix('')
+
+          root_prefabs = set()
+          for p in list(assets.rglob('*.prefab')) + list(assets.rglob('*.unity')):
+              try:
+                  text = p.read_text(encoding='utf-8-sig', errors='replace')
+              except Exception:
+                  continue
+              for row in text.splitlines():
+                  if 'new_ui_setting:' not in row:
+                      continue
+                  m = re.search(r'guid:\s*([0-9a-fA-F]+)', row)
+                  if m:
+                      target = guid_to_asset.get(m.group(1))
+                      if target is not None and target.suffix == '.prefab':
+                          root_prefabs.add(target)
+
+          # Fallback/name-based candidates help if the serialized field is in a
+          # binary or differently formatted asset.
+          for p in assets.rglob('*.prefab'):
+              if 'setting' in p.name.lower():
+                  root_prefabs.add(p)
+
+          prefab_graph = set()
+          queue = list(root_prefabs)
+          while queue:
+              p = queue.pop()
+              if p in prefab_graph or not p.is_file():
+                  continue
+              prefab_graph.add(p)
+              try:
+                  text = p.read_text(encoding='utf-8-sig', errors='replace')
+              except Exception:
+                  continue
+              for g in re.findall(r'guid:\s*([0-9a-fA-F]+)', text):
+                  target = guid_to_asset.get(g)
+                  if target is not None and target.suffix == '.prefab' and target not in prefab_graph:
+                      queue.append(target)
+
+          # Related managed sources: everything in SibylSystem/Setting plus
+          # source files defining the helpers/components used by this screen.
+          code_files = set((assets/'SibylSystem/Setting').rglob('*.cs'))
+          for p in assets.rglob('*.cs'):
+              try:
+                  text = p.read_text(encoding='utf-8-sig', errors='replace')
+              except Exception:
+                  continue
+              if any(token in text for token in (
+                  'class LAZYsetting', 'class SettingLayout',
+                  'new_ui_setting', 'HideReplayDescriptionKey',
+                  'AutoSaveReplayKey', 'DisablePhaseBarClickKey'
+              )):
+                  code_files.add(p)
+
+          candidates = {}
+          def add(value, ref, kind):
+              value = value.strip()
+              if not value or not chinese.search(value):
+                  return
+              if len(value) > 120:
+                  return
+              candidates.setdefault(value, {'refs': set(), 'kinds': set()})
+              candidates[value]['refs'].add(ref)
+              candidates[value]['kinds'].add(kind)
+
+          # C# string literals.
+          for p in sorted(code_files):
+              try:
+                  rows = p.read_text(encoding='utf-8-sig', errors='replace').splitlines()
+              except Exception:
+                  continue
+              for lineno,row in enumerate(rows,1):
+                  code = row.split('//',1)[0]
+                  for m in re.finditer(r'"((?:\\.|[^"])*)"', code):
+                      add(m.group(1), f'{p}:{lineno}', 'code')
+
+          # Prefab-visible label text. Decode Unity's \uXXXX escaped scalars.
+          label_prefixes = ('mText:', 'm_Text:', 'text:')
+          for p in sorted(prefab_graph):
+              try:
+                  rows = p.read_text(encoding='utf-8-sig', errors='replace').splitlines()
+              except Exception:
+                  continue
+              for lineno,row in enumerate(rows,1):
+                  stripped = row.strip()
+                  for prefix in label_prefixes:
+                      if stripped.startswith(prefix):
+                          add(decode_yaml_scalar(stripped[len(prefix):]),
+                              f'{p}:{lineno}', 'prefab-label')
+                          break
+
+          lines = [
+              f'dictionary_key_count={len(dictionary_keys)}',
+              f'handled_key_count={len(handled)}',
+              f'root_prefab_count={len(root_prefabs)}',
+              f'prefab_graph_count={len(prefab_graph)}',
+              f'code_file_count={len(code_files)}',
+              f'chinese_candidate_count={len(candidates)}',
+              '',
+              '=== Root Settings prefabs ==='
+          ]
+          for p in sorted(root_prefabs):
+              lines.append(str(p))
+          lines.append('')
+          lines.append('=== Prefab graph ===')
+          for p in sorted(prefab_graph):
+              lines.append(str(p))
+
+          missing = []
+          lines.append('')
+          lines.append('=== All candidates ===')
+          for value in sorted(candidates):
+              entry = candidates[value]
+              state = 'HANDLED' if value in handled else 'MISSING'
+              refs = sorted(entry['refs'])
+              kinds = sorted(entry['kinds'])
+              lines.append(f'[{state}] {value} | kinds={kinds} | refs={refs}')
+              if state == 'MISSING':
+                  missing.append(value)
+
+          lines.append('')
+          lines.append(f'=== Missing ({len(missing)}) ===')
+          for value in missing:
+              entry = candidates[value]
+              lines.append(f'{value} -> {sorted(entry["refs"])}')
+
+          out.write_text('\n'.join(lines)+'\n', encoding='utf-8')
+          print(out.read_text(encoding='utf-8'))
+          PY
+
       - name: Inspect Setting.cs localization timing
         shell: bash
         run: |
@@ -508,5 +693,6 @@ jobs:
             selectable-row-prefab.txt
             settings-untranslated-report.txt
             setting-timing-report.txt
+            settings-full-audit.txt
           if-no-files-found: error
           retention-days: 1
