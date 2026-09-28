@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout control repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Build current KoishiPro ocgcore for iOS
         shell: bash
@@ -42,7 +42,7 @@ jobs:
           grep -q '^windbot=' "$RUNNER_TEMP/runtime/koishi-runtime-revisions.txt"
 
       - name: Upload runtime proof
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: KoishiPro-WindBot-iOS-runtime-proof
           path: |

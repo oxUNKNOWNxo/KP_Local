@@ -22,7 +22,7 @@ jobs:
       SOURCE_COMMIT: c1850e1120df6a5885692eadacad8ad114a3cf11
     steps:
       - name: Checkout patch
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: control
 

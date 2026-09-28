@@ -1275,3 +1275,28 @@ Unicode escapeを復号して設定関連Prefabを再監査し、未翻訳ラベ
 
 ユーザー指定により、RT系のモード表記は `RTモード` へ統一。
 設定画面限定のexact-match方式を維持し、グローバル翻訳は再導入しない。
+
+
+---
+
+## 38. 2026-09-28 GitHub Actions Node.js 24対応
+
+iOS buildログでGitHub Actionsから以下の警告を確認。
+
+- `Node.js 20 is deprecated`
+- Node.js 20対象ActionがNode.js 24へ強制実行されている
+- 対象: `actions/checkout@v4`、`actions/cache/restore@v4`、
+  `actions/cache/save@v4`、`actions/upload-artifact@v4`
+
+2026-09-28時点の公式最新版を確認し、Node.js 24実行世代へ統一。
+
+- `actions/checkout@v7`（latest release v7.0.1 / node24）
+- `actions/cache/restore@v6` / `actions/cache/save@v6`
+  （actions/cache latest release v6.1.0 / node24）
+- `actions/upload-artifact@v7`（latest release v7.0.1 / node24）
+
+既に `checkout@v7 / cache@v6` だった診断Workflowはそのまま維持。
+残っていたv4参照を全Workflowから更新した。
+
+ユーザー希望により、この変更だけでは新しいiOSビルドを要求しない。
+次版ビルドからNode.js 24対応Actionを使用する。

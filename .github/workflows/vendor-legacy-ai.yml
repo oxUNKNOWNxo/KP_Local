@@ -21,7 +21,7 @@ jobs:
       REMOVAL_COMMIT: 1cd5d12ad7b888b8774da7d67c8dba9898a108ee
     steps:
       - name: Checkout control repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 

@@ -21,13 +21,13 @@ jobs:
       SOURCE_COMMIT: c1850e1120df6a5885692eadacad8ad114a3cf11
       AI_REMOVAL_COMMIT: 1cd5d12ad7b888b8774da7d67c8dba9898a108ee
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           path: control
 
       - name: Restore fixed KoishiPro2 source snapshot
         id: source-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: source
           key: koishipro2-source-${{ env.SOURCE_COMMIT }}-v1
@@ -727,7 +727,7 @@ jobs:
           PY
 
       - name: Upload UI inspection
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: KoishiPro2-runtime-ui-inspection
           path: |

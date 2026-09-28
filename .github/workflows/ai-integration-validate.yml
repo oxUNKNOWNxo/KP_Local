@@ -33,7 +33,7 @@ jobs:
 
     steps:
       - name: Checkout control repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: control
 
@@ -53,7 +53,7 @@ jobs:
 
       - name: Restore fixed KoishiPro2 source snapshot
         id: source-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: source
           key: koishipro2-source-${{ env.SOURCE_COMMIT }}-v1
@@ -351,7 +351,7 @@ jobs:
 
       - name: Upload validation snapshot
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: KoishiPro2-WindBot-integration-validation
           path: |

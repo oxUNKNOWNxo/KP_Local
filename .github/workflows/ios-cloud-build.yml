@@ -34,7 +34,7 @@ jobs:
 
     steps:
       - name: Checkout build control files
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: control
 
@@ -101,7 +101,7 @@ jobs:
 
       - name: Restore fixed KoishiPro2 source snapshot
         id: source-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: source
           key: koishipro2-source-${{ env.SOURCE_COMMIT }}-v1
@@ -142,7 +142,7 @@ jobs:
 
       - name: Save fixed KoishiPro2 source snapshot
         if: steps.source-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: source
           key: koishipro2-source-${{ env.SOURCE_COMMIT }}-v1
@@ -163,7 +163,7 @@ jobs:
 
       - name: Restore prebuilt iOS AI core
         id: ai-core-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: ~/.cache/koishipro2-ai-core
           key: koishipro2-ai-core-${{ runner.os }}-${{ runner.arch }}-${{ env.AI_CORE_COMMIT }}-v1
@@ -176,7 +176,7 @@ jobs:
 
       - name: Save prebuilt iOS AI core
         if: steps.ai-core-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: ~/.cache/koishipro2-ai-core
           key: koishipro2-ai-core-${{ runner.os }}-${{ runner.arch }}-${{ env.AI_CORE_COMMIT }}-v1
@@ -302,7 +302,7 @@ jobs:
 
       - name: Restore Unity Library cache
         id: library-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: source/Library
           key: koishipro2-library-${{ runner.os }}-${{ runner.arch }}-${{ env.UNITY_VERSION }}-ios-${{ env.SOURCE_COMMIT }}-${{ steps.patch-fingerprint.outputs.hash }}-${{ env.UNITY_CACHE_SCHEMA }}
@@ -387,7 +387,7 @@ jobs:
 
       - name: Save Unity Library cache
         if: steps.unity-import.outcome == 'success' && steps.library-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: source/Library
           key: koishipro2-library-${{ runner.os }}-${{ runner.arch }}-${{ env.UNITY_VERSION }}-ios-${{ env.SOURCE_COMMIT }}-${{ steps.patch-fingerprint.outputs.hash }}-${{ env.UNITY_CACHE_SCHEMA }}
@@ -592,7 +592,7 @@ jobs:
           ls -lh KoishiPro2-unsigned.ipa
 
       - name: Upload IPA
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: KoishiPro2-iOS-cloud-build
           path: |
