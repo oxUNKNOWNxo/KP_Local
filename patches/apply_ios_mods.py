@@ -70,14 +70,15 @@ if already_synced_old not in text:
     raise SystemExit("Could not locate already-synced UseBundledBasicData branch")
 text = text.replace(already_synced_old, already_synced_new, 1)
 
-# iPhone X responsiveness: the upstream texture pump may decode up to five
-# textures in one frame while eight downloads feed the queue. A single image
-# decode can already exceed a mobile frame budget, so five consecutive decodes
-# can look like a multi-second UI freeze. Keep the background system intact,
-# but constrain iOS to two network jobs and one main-thread texture creation.
+# iPhone X responsiveness: keep the upstream background texture system, but
+# avoid its full 8-download / 5-decode burst on older iPhones. The first iOS
+# throttle (2 downloads / 1 decode) eliminated large stalls but made deck-editor
+# art visibly slower than stock KoishiPro2. Use a middle ground: four network
+# jobs and two main-thread texture creations, while retaining touch-frame
+# prioritization below.
 download_limit_old = "    private const int MAX_CONCURRENT_DOWNLOADS = 8;"
 download_limit_new = """#if UNITY_IOS || UNITY_IPHONE
-    private const int MAX_CONCURRENT_DOWNLOADS = 2;
+    private const int MAX_CONCURRENT_DOWNLOADS = 4;
 #else
     private const int MAX_CONCURRENT_DOWNLOADS = 8;
 #endif"""
@@ -96,7 +97,7 @@ if texture_tasks_index < 0:
     raise SystemExit("Could not locate texture per-frame task limit")
 texture_abs = texture_method_index + texture_tasks_index
 texture_tasks_new = """#if UNITY_IOS || UNITY_IPHONE
-        int maxTasksPerFrame = 1;
+        int maxTasksPerFrame = 2;
 #else
         int maxTasksPerFrame = 5;
 #endif"""

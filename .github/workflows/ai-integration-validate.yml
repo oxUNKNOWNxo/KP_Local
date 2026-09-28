@@ -116,6 +116,8 @@ jobs:
             test -s "$f"
           done
 
+          grep -q 'private const int MAX_CONCURRENT_DOWNLOADS = 4;' "$PROGRAM"
+          grep -q 'int maxTasksPerFrame = 2;' "$PROGRAM"
           grep -q 'KoishiWindBotBridge' "$AIROOM"
           grep -q 'GetDeckNames' "$AIROOM"
           grep -q 'HideControl("life_")' "$AIROOM"
@@ -246,6 +248,8 @@ jobs:
           grep -q '{ "资源下载", "素材DL" }' "$MENU_LAYOUT"
           grep -q 'AlignLabelToIconCenter' "$MENU_LAYOUT"
           grep -q 'const float MinimumHeaderGap = 18f' "$MENU_LAYOUT"
+          grep -q 'const float LeftHorizontalPadding = 12f' "$MENU_LAYOUT"
+          grep -q 'float panelLeft = contentBounds.min.x - LeftHorizontalPadding' "$MENU_LAYOUT"
           SETTING='source/Assets/SibylSystem/Setting/Setting.cs'
           SETTING_JP='source/Assets/SibylSystem/Setting/SettingJapaneseLayout.cs'
           test -s "$SETTING_JP"
@@ -253,12 +257,16 @@ jobs:
           grep -q '{ "系统设置", "システム設定" }' "$SETTING_JP"
           grep -q '{ "连锁特效", "チェーン演出" }' "$SETTING_JP"
           grep -q '{ "启用音乐", "BGMを有効化" }' "$SETTING_JP"
+          grep -q '{ "忽略所有观战者消息", "全ての観戦者メッセージを無視" }' "$SETTING_JP"
           grep -q 'PlayerDeckList' "$AIROOM"
           grep -q 'AiDeckList' "$AIROOM"
           grep -q 'OnPlayerDeckSelected' "$AIROOM"
           grep -q 'OnAiDeckSelected' "$AIROOM"
           grep -q 'PopulatePlayerDeckList' "$AIROOM"
           grep -q 'PopulateAiDeckList' "$AIROOM"
+          grep -q 'const string RandomAiDeckLabel = "ランダム"' "$AIROOM"
+          grep -q 'ResolveAiDeckSelection' "$AIROOM"
+          grep -q 'UnityEngine.Random.Range(0, aiDeckNames.Length)' "$AIROOM"
           grep -q 'const int DeckListWidth = 330' "$AIROOM"
           grep -q 'const int DeckListClipWidth = 290' "$AIROOM"
           grep -q 'const int ActionButtonWidth = 250' "$AIROOM"

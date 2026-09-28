@@ -23,6 +23,7 @@ public class AIRoom : WindowServantSP
     const string BackButtonName = "WindBotBack";
     const string LocalRpsHash = "WindBot_LocalRps";
     const string LocalTurnChoiceHash = "WindBot_LocalTurnChoice";
+    const string RandomAiDeckLabel = "ランダム";
 
     UIselectableList playerDeckList;
     UIselectableList aiDeckList;
@@ -1190,10 +1191,15 @@ public class AIRoom : WindowServantSP
         aiDeckList.clear();
         string selected = Config.Get("list_aideck", "RadiantTyphoon");
 
+        // "ランダム" is UI-only. Resolve it to a real registered deck before
+        // the WindBot pregame/duel code receives the selection.
+        aiDeckList.add(RandomAiDeckLabel);
         for (int i = 0; i < aiDeckNames.Length; ++i)
             aiDeckList.add(aiDeckNames[i]);
 
-        if (Array.IndexOf(aiDeckNames, selected) < 0 && aiDeckNames.Length > 0)
+        if (selected != RandomAiDeckLabel
+            && Array.IndexOf(aiDeckNames, selected) < 0
+            && aiDeckNames.Length > 0)
         {
             selected = aiDeckNames[0];
             Config.Set("list_aideck", selected);
@@ -1203,6 +1209,18 @@ public class AIRoom : WindowServantSP
         aiDeckList.toTop();
         aiDeckList.mark();
         ApplyDeckListRowStyle(aiDeckList);
+    }
+
+    string ResolveAiDeckSelection(string selected)
+    {
+        if (selected != RandomAiDeckLabel)
+            return selected;
+
+        if (aiDeckNames == null || aiDeckNames.Length == 0)
+            return "";
+
+        int index = UnityEngine.Random.Range(0, aiDeckNames.Length);
+        return aiDeckNames[index];
     }
 
     void ApplyStableLayout()
@@ -1224,7 +1242,13 @@ public class AIRoom : WindowServantSP
             return;
 
         pendingPlayerDeck = "deck/" + Config.Get("deckInUse", "miaowu") + ".ydk";
-        pendingAiDeck = Config.Get("list_aideck", "RadiantTyphoon");
+        pendingAiDeck = ResolveAiDeckSelection(
+            Config.Get("list_aideck", "RadiantTyphoon"));
+        if (String.IsNullOrWhiteSpace(pendingAiDeck))
+        {
+            RMSshow_none("利用できるAIデッキがありません。");
+            return;
+        }
         if (noShuffleToggle == null || playerFirstToggle == null)
             throw new InvalidOperationException("WindBot center toggles are unavailable.");
 

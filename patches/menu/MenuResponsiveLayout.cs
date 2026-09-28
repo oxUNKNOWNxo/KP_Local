@@ -39,7 +39,8 @@ public static class MenuResponsiveLayout
             { "資源下載中", "素材DL中" },
         };
     const float LabelExtraWidth = 8f;
-    const float HorizontalPadding = 22f;
+    const float LeftHorizontalPadding = 12f;
+    const float RightHorizontalPadding = 22f;
     const float VerticalPadding = 14f;
     const float MinimumHeaderGap = 18f;
     const float IconAspectTolerance = 0.35f;
@@ -117,17 +118,15 @@ public static class MenuResponsiveLayout
         Bounds backBounds = back == null
             ? GetCombinedRowBounds(rows, space)
             : GetWidgetBoundsInSpace(back, space);
-        float panelCenterX = backBounds.center.x;
         float panelCenterY = backBounds.center.y;
 
-        // Expand/shrink the panel from actual post-translation visual bounds.
+        // Fit the frame to the actual icon/text bounds instead of keeping the
+        // old Chinese-prefab center and expanding symmetrically around it.
         Bounds contentBounds = GetCombinedRowBounds(rows, space);
-        float halfWidth = Mathf.Max(
-            panelCenterX - contentBounds.min.x,
-            contentBounds.max.x - panelCenterX);
-        float panelWidth = Mathf.Max(
-            1f,
-            (halfWidth + HorizontalPadding) * 2f);
+        float panelLeft = contentBounds.min.x - LeftHorizontalPadding;
+        float panelRight = contentBounds.max.x + RightHorizontalPadding;
+        float panelCenterX = (panelLeft + panelRight) * 0.5f;
+        float panelWidth = Mathf.Max(1f, panelRight - panelLeft);
 
         // Keep the original row spacing if it was already generous. Increase
         // it only when the fixed font/icon height requires more room.
@@ -163,6 +162,11 @@ public static class MenuResponsiveLayout
             ClearAnchors(back);
             back.width = Mathf.Max(1, Mathf.CeilToInt(panelWidth));
             back.height = Mathf.Max(1, Mathf.CeilToInt(panelHeight));
+            MoveVisualCenterInSpace(
+                back.transform,
+                space,
+                panelCenterX,
+                panelCenterY);
 
             BoxCollider backCollider = back.GetComponent<BoxCollider>();
             if (backCollider == null)
@@ -213,7 +217,9 @@ public static class MenuResponsiveLayout
         }
 
         // Make the clickable row area follow the responsive panel width.
-        float clickableWidth = Mathf.Max(1f, panelWidth - HorizontalPadding * 2f);
+        float clickableWidth = Mathf.Max(
+            1f,
+            panelWidth - LeftHorizontalPadding - RightHorizontalPadding);
         for (int i = 0; i < rows.Count; ++i)
         {
             BoxCollider collider = PrimaryCollider(rows[i].root);
