@@ -213,6 +213,79 @@ jobs:
           print(out.read_text(encoding='utf-8'))
           PY
 
+      - name: Inspect selectable-list implementation and deck-manager prefab
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          root=Path('source/Assets')
+          out=Path('deck-list-definition-report.txt')
+          lines=[]
+          def add(x=''): lines.append(str(x))
+
+          add('=== UIselectableList definition ===')
+          defs=[]
+          for p in root.rglob('*.cs'):
+              try: t=p.read_text(encoding='utf-8-sig',errors='replace')
+              except: continue
+              if re.search(r'class\s+UIselectableList\b',t):
+                  defs.append((p,t))
+          for p,t in defs:
+              add(f'--- {p} ---')
+              for i,row in enumerate(t.splitlines(),1):
+                  add(f'{i}: {row}')
+
+          add('\n=== Program.remaster_deckManager serialized references ===')
+          refs=[]
+          for p in list(root.rglob('*.prefab'))+list(root.rglob('*.unity'))+list(root.rglob('*.asset')):
+              try: t=p.read_text(encoding='utf-8-sig',errors='replace')
+              except: continue
+              if 'remaster_deckManager:' in t:
+                  refs.append((p,t))
+          guids=set()
+          for p,t in refs:
+              add(f'--- {p} ---')
+              rows=t.splitlines()
+              for i,row in enumerate(rows):
+                  if 'remaster_deckManager:' not in row: continue
+                  lo=max(0,i-4); hi=min(len(rows),i+6)
+                  for j in range(lo,hi):
+                      add(f'{j+1}: {rows[j]}')
+                  m=re.search(r'guid:\s*([0-9a-fA-F]+)', row)
+                  if m: guids.add(m.group(1))
+
+          add(f'guids={sorted(guids)}')
+          targets=[]
+          for meta in root.rglob('*.meta'):
+              try: mt=meta.read_text(encoding='utf-8-sig',errors='replace')
+              except: continue
+              for g in guids:
+                  if f'guid: {g}' in mt:
+                      targets.append(meta.with_suffix(''))
+                      add(f'GUID {g} -> {meta.with_suffix("")}')
+
+          props=('m_Name:','m_LocalPosition:','m_LocalScale:','mFontSize:','mWidth:',
+                 'mHeight:','mClipRange:','mOverflow:','mPivot:','m_Script:','m_Enabled:',
+                 'panel:','mod:','bar_','selected','items')
+          add('\n=== remaster_deckManager prefab relevant geometry ===')
+          for p in targets:
+              if not p.is_file(): continue
+              t=p.read_text(encoding='utf-8-sig',errors='replace')
+              rows=t.splitlines()
+              add(f'--- {p} ---')
+              # Print all names/font/geometry, prefab is small enough and this
+              # avoids missing the list template because scripts serialize by GUID.
+              for i,row in enumerate(rows,1):
+                  if any(k in row for k in props):
+                      add(f'{i}: {row}')
+
+          out.write_text('\n'.join(lines)+'\n',encoding='utf-8')
+          print(out.read_text(encoding='utf-8'))
+          PY
+
       - name: Upload UI inspection
         uses: actions/upload-artifact@v4
         with:
@@ -220,5 +293,6 @@ jobs:
           path: |
             runtime-ui-report.txt
             deck-ui-report.txt
+            deck-list-definition-report.txt
           if-no-files-found: error
           retention-days: 1
