@@ -1300,3 +1300,22 @@ iOS buildログでGitHub Actionsから以下の警告を確認。
 
 ユーザー希望により、この変更だけでは新しいiOSビルドを要求しない。
 次版ビルドからNode.js 24対応Actionを使用する。
+
+---
+
+## 39. レジェンド・オブ・ハート情報ウィンドウ互換（2026-10-01）
+
+カスタムカード3082「レジェンド・オブ・ハート」は、EDOProでは HINT_MESSAGE が1件ずつ確認ウィンドウとして表示されるが、固定KoishiPro2ではデュエルログへ送られるため表示方式が一致しなかった。
+
+KoishiPro2版カードスクリプトはstr1～str3を順番に1件ずつ Duel.SelectOption で要求する。
+
+固定KoishiPro2クライアントは通常、選択肢が1件だけの場合はUIを出さず自動的に0を返す。そのため patches/apply_ios_mods.py で GameMessage.SelectOption を局所修正し、description IDが3082のstr1～str3（3082*16+0～2）の場合だけ RMSshow_onlyYes を使ったOK付き情報ウィンドウを表示する。
+
+- 1枚目を閉じるまでocgcoreは次のDuel.SelectOptionへ進まない
+- 閉じるとstr2、次にstr3を表示
+- 3枚目を閉じた後にカード効果処理を継続
+- 3082以外の単一選択肢は従来どおり自動選択
+- グローバルなHINT_MESSAGE挙動は変更しない
+
+関連commit:
+- 4122eb4c862259f4397afeec26734acbb3401163
