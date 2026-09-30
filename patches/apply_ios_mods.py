@@ -102,52 +102,6 @@ print("  - disabled resize-time Resources.UnloadUnusedAssets on iOS")
 print("  - left explicit/manual Resource Update behavior unchanged")
 
 # ---------------------------------------------------------------------------
-# KoishiPro2 renders HINT_MESSAGE as duel-log text, while EDOPro presents the
-# three Legend of Heart lines as one-at-a-time acknowledgement windows.
-# The card script uses three single-option prompts (3082 str1-str3) so that
-# ocgcore naturally pauses between lines. Only those three prompts are changed
-# from the legacy "auto-select a single option" behavior.
-# ---------------------------------------------------------------------------
-ocgcore_ui_path = assets / "SibylSystem" / "Ocgcore" / "Ocgcore.cs"
-if not ocgcore_ui_path.is_file():
-    raise SystemExit(f"Ocgcore UI source not found: {ocgcore_ui_path}")
-ocgcore_ui_text = ocgcore_ui_path.read_text(encoding="utf-8-sig")
-single_option_old = """                else
-                {
-                    binaryMaster = new BinaryMaster();
-                    binaryMaster.writer.Write(0);
-                    sendReturn(binaryMaster.get());
-                }
-
-                break;
-            case GameMessage.SelectTribute:"""
-single_option_new = """                else
-                {
-                    int singleDescP = r.ReadInt32();
-                    if (singleDescP >= 3082 * 16 && singleDescP <= 3082 * 16 + 2)
-                    {
-                        desc = GameStringManager.get(singleDescP);
-                        RMSshow_onlyYes("return", desc, new messageSystemValue { value = "0", hint = "yes" });
-                    }
-                    else
-                    {
-                        binaryMaster = new BinaryMaster();
-                        binaryMaster.writer.Write(0);
-                        sendReturn(binaryMaster.get());
-                    }
-                }
-
-                break;
-            case GameMessage.SelectTribute:"""
-if single_option_old not in ocgcore_ui_text:
-    raise SystemExit("Could not locate KoishiPro2 single-option auto-select block")
-ocgcore_ui_text = ocgcore_ui_text.replace(single_option_old, single_option_new, 1)
-ocgcore_ui_path.write_text(ocgcore_ui_text, encoding="utf-8")
-print(f"Patched: {ocgcore_ui_path}")
-print("  - Legend of Heart one-option information windows enabled (str1 -> str2 -> str3)")
-print("  - other one-option prompts keep legacy auto-select behavior")
-
-# ---------------------------------------------------------------------------
 # Restore the last upstream in-process AI implementation removed by
 # 1cd5d12ad7b888b8774da7d67c8dba9898a108ee (parent bd251b8...).
 # ---------------------------------------------------------------------------
