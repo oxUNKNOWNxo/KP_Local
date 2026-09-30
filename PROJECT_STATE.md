@@ -1305,17 +1305,29 @@ iOS buildログでGitHub Actionsから以下の警告を確認。
 
 ## 39. レジェンド・オブ・ハート情報ウィンドウ互換（2026-10-01）
 
-カスタムカード3082「レジェンド・オブ・ハート」は、EDOProでは HINT_MESSAGE が1件ずつ確認ウィンドウとして表示されるが、固定KoishiPro2ではデュエルログへ送られるため表示方式が一致しなかった。
+クライアント側の3082専用例外は撤回した。
 
-KoishiPro2版カードスクリプトはstr1～str3を順番に1件ずつ Duel.SelectOption で要求する。
+理由:
+- 固定KoishiPro2は SelectOption が1件だけの場合は自動的に0を返し、UIを表示しない
+- ただし2件以上なら既存の選択ウィンドウを通常表示する
+- そのため本体改修は不要で、カードLuaだけで演出を成立させられる
 
-固定KoishiPro2クライアントは通常、選択肢が1件だけの場合はUIを出さず自動的に0を返す。そのため patches/apply_ios_mods.py で GameMessage.SelectOption を局所修正し、description IDが3082のstr1～str3（3082*16+0～2）の場合だけ RMSshow_onlyYes を使ったOK付き情報ウィンドウを表示する。
+KoishiPro2版 c3082.lua は、各台詞について
 
-- 1枚目を閉じるまでocgcoreは次のDuel.SelectOptionへ進まない
-- 閉じるとstr2、次にstr3を表示
-- 3枚目を閉じた後にカード効果処理を継続
-- 3082以外の単一選択肢は従来どおり自動選択
-- グローバルなHINT_MESSAGE挙動は変更しない
+```lua
+Duel.SelectOption(tp,aux.Stringid(id,0),1212)
+Duel.SelectOption(tp,aux.Stringid(id,1),1212)
+Duel.SelectOption(tp,aux.Stringid(id,2),1212)
+```
 
-関連commit:
-- 4122eb4c862259f4397afeec26734acbb3401163
+とする。
+
+- 1行目: レジェンド・オブ・ハートのstr
+- 2行目: system 1212（日本語stringsでは「戻る」）
+- SelectOptionの戻り値は使わないため、どちらを押しても次の台詞へ進む
+- CDB textsは変更しない
+- KoishiPro2本体の再ビルドは不要
+- グローバルなSelectOption処理は変更しない
+
+3082専用クライアントパッチを削除したcommit:
+- ee2809b0c228a7ab2744a6bd4a430d5bcb124570
