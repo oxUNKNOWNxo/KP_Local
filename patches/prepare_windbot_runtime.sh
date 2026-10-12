@@ -48,8 +48,28 @@ for line in lines[1:]:
         raise SystemExit("Malformed WindBot deck catalog row: " + line)
     rows.append(fields)
 
-matched = {row[0] for row in rows if row[0] in excluded}
-missing = sorted(excluded - matched)
+# The user-facing exclusion list normally follows the YDK filename without
+# the AI_ prefix (for example BlueEyes), while WindBot's Deck attribute may
+# expose a different display name (for example Blue-Eyes). Accept either the
+# registered deck name, the exact YDK basename, or the YDK basename without
+# AI_ so upstream display-name punctuation changes do not resurrect a deck.
+def row_aliases(row):
+    name, deck_file, level, executor = row
+    aliases = {name, deck_file}
+    if deck_file.startswith("AI_"):
+        aliases.add(deck_file[3:])
+    return aliases
+
+excluded_rows = []
+matched_tokens = set()
+for row in rows:
+    tokens = excluded & row_aliases(row)
+    if not tokens:
+        continue
+    excluded_rows.append(row)
+    matched_tokens.update(tokens)
+
+missing = sorted(excluded - matched_tokens)
 if missing:
     print("WindBot exclusions not present upstream: " + ", ".join(missing))
 
@@ -59,9 +79,10 @@ anchor = "            _list = new List<DeckInstance>();"
 if anchor not in manager_text:
     raise SystemExit("WindBot DecksManager list anchor not found")
 
+excluded_names = sorted({row[0] for row in excluded_rows}, key=str.lower)
 remove_lines = "".join(
     '            _decks.Remove("' + name.replace("\\", "\\\\").replace('"', '\\"') + '");\n'
-    for name in sorted(matched, key=str.lower)
+    for name in excluded_names
 )
 manager_text = manager_text.replace(
     anchor,
@@ -70,14 +91,17 @@ manager_text = manager_text.replace(
 )
 manager.write_text(manager_text, encoding="utf-8")
 
+excluded_row_keys = {(row[0], row[1]) for row in excluded_rows}
 kept = []
 for row in rows:
     name, deck_file, level, executor = row
-    if name in excluded:
+    if (name, deck_file) in excluded_row_keys:
         ydk = subset / "data" / "Decks" / (deck_file + ".ydk")
         if ydk.exists():
             ydk.unlink()
-        print("Excluded WindBot deck: " + name + " -> " + deck_file)
+        matched_for_row = sorted(excluded & row_aliases(row))
+        requested = ",".join(matched_for_row)
+        print("Excluded WindBot deck: " + requested + " => " + name + " -> " + deck_file)
         continue
     kept.append(row)
 
@@ -87,12 +111,19 @@ catalog.write_text(
     encoding="utf-8",
 )
 
-remaining_names = {row[0] for row in kept}
-leaked = sorted(excluded & remaining_names)
-if leaked:
-    raise SystemExit("Excluded WindBot decks remained in catalog: " + ", ".join(leaked))
+for row in kept:
+    leaked_tokens = excluded & row_aliases(row)
+    if leaked_tokens:
+        raise SystemExit(
+            "Excluded WindBot deck remained in catalog: " +
+            row[0] + " (" + ", ".join(sorted(leaked_tokens)) + ")"
+        )
 
-print("Applied persistent WindBot exclusions: " + str(len(matched)) + " decks")
+print(
+    "Applied persistent WindBot exclusions: " +
+    str(len(excluded_rows)) + " registered decks / " +
+    str(len(matched_tokens)) + " requested entries"
+)
 PY
 fi
 
@@ -116,7 +147,7 @@ test -s "$DATA/Decks/AI_DarkMagician.ydk"
 test ! -e "$DATA/Decks/AI_BlueEyes.ydk"
 test ! -e "$DATA/Decks/AI_Test.ydk"
 test -s "$DATA/deck-catalog.tsv"
-! grep -q '^BlueEyes[[:space:]]' "$DATA/deck-catalog.tsv"
+! grep -q '^Blue-Eyes[[:space:]]' "$DATA/deck-catalog.tsv"
 ! grep -q '^Test[[:space:]]' "$DATA/deck-catalog.tsv"
 test -s "$DATA/Dialogs/wof-Kasumisawa-Haruma.json"
 test "$(find "$MANAGED/Game/AI/Decks" -maxdepth 1 -type f -name '*.cs' | wc -l | tr -d ' ')" -gt 20
