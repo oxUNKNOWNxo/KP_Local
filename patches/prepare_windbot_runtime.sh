@@ -138,6 +138,10 @@ mkdir -p "$DATA/licenses"
 cp "$WORK/subset/WindBot-LICENSE.txt" "$DATA/licenses/WindBot-LICENSE.txt"
 cp "$WORK/subset/windbot-revision.txt" "$DATA/windbot-revision.txt"
 
+# Patch only the generated WindBot/Koishi integration. The stock result panel,
+# replay save setting, and all non-AI surrender paths remain unchanged.
+python3 "$CONTROL_ROOT/patches/prepare_windbot_surrender.py" "$SOURCE_ROOT"
+
 test -s "$MANAGED/Game/AI/Decks/RadiantTyphoonExecutor.cs"
 test -s "$MANAGED/Game/AI/Decks/DarkMagicianExecutor.cs"
 test -s "$MANAGED/LocalRuntime/LocalDuelNative.cs"
@@ -152,6 +156,14 @@ test -s "$DATA/deck-catalog.tsv"
 test -s "$DATA/Dialogs/wof-Kasumisawa-Haruma.json"
 test "$(find "$MANAGED/Game/AI/Decks" -maxdepth 1 -type f -name '*.cs' | wc -l | tr -d ' ')" -gt 20
 test "$(find "$DATA/Decks" -maxdepth 1 -type f -name '*.ydk' | wc -l | tr -d ' ')" -gt 20
+
+grep -Fq 'public void SurrenderHuman()' "$MANAGED/LocalRuntime/LocalDuelRouter.cs"
+grep -Fq 'byte[] win = new byte[] { MsgWin, (byte)_aiPlayer, 0x04 };' "$MANAGED/LocalRuntime/LocalDuelRouter.cs"
+grep -Fq 'public void SurrenderHuman()' "$MANAGED/LocalRuntime/RadiantTyphoonLocalDuel.cs"
+grep -Fq 'BeginWindBotSurrenderPrompt' "$SOURCE_ROOT/Assets/SibylSystem/Room/AIRoom.cs"
+grep -Fq 'HandleWindBotSurrenderPromptResult' "$SOURCE_ROOT/Assets/SibylSystem/Ocgcore/Ocgcore.cs"
+grep -Fq 'UIHelper.registEvent(toolBar, "exit_", onSurrender);' "$SOURCE_ROOT/Assets/SibylSystem/Ocgcore/Ocgcore.cs"
+grep -Fq 'surrenderPromptPending' "$SOURCE_ROOT/Assets/SibylSystem/KoishiWindBotBridge.cs"
 
 echo "Prepared WindBot managed runtime: $MANAGED"
 echo "Prepared WindBot data: $DATA"
