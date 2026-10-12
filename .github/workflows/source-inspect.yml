@@ -22,6 +22,7 @@ jobs:
     env:
       SOURCE_REPO: https://code.moenext.com/hex/ygopro2.git
       SOURCE_COMMIT: c1850e1120df6a5885692eadacad8ad114a3cf11
+      WINDBOT_REPO: https://github.com/purerosefallen/windbot.git
 
     steps:
       - name: Checkout control repository
@@ -68,6 +69,13 @@ jobs:
           mkdir -p inspection
           printf '%s\n' "$SOURCE_COMMIT" > inspection/fixed-commit.txt
           printf '%s\n' "$LATEST_COMMIT" > inspection/latest-commit.txt
+          if [ "$LATEST_COMMIT" = "$SOURCE_COMMIT" ]; then
+            printf 'up-to-date\n' > inspection/source-update-status.txt
+          else
+            printf 'update-available\n' > inspection/source-update-status.txt
+          fi
+          git -C source show -s --format='%H%n%cI%n%s' "$SOURCE_COMMIT" > inspection/fixed-commit-info.txt
+          git -C source show -s --format='%H%n%cI%n%s' "$LATEST_COMMIT" > inspection/latest-commit-info.txt
 
           {
             echo '=== fixed loose lua ==='
@@ -121,6 +129,73 @@ jobs:
                                   print(' ', n)
                   except zipfile.BadZipFile:
                       pass
+          PY
+
+      - name: Inspect current WindBot upstream and empty decks
+        shell: bash
+        run: |
+          set -euo pipefail
+          WINDBOT_ROOT="$PWD/latest-windbot"
+          rm -rf "$WINDBOT_ROOT"
+          git init -q "$WINDBOT_ROOT"
+          git -C "$WINDBOT_ROOT" remote add origin "$WINDBOT_REPO"
+          git -C "$WINDBOT_ROOT" config http.version HTTP/1.1
+          git -C "$WINDBOT_ROOT" fetch --quiet --no-tags --depth=1 origin master
+          git -C "$WINDBOT_ROOT" checkout --quiet --detach FETCH_HEAD
+
+          WINDBOT_COMMIT=$(git -C "$WINDBOT_ROOT" rev-parse HEAD)
+          echo "latest WindBot commit: $WINDBOT_COMMIT"
+          printf '%s\n' "$WINDBOT_COMMIT" > inspection/windbot-latest-commit.txt
+          git -C "$WINDBOT_ROOT" show -s --format='%H%n%cI%n%s' HEAD > inspection/windbot-latest-commit-info.txt
+
+          python3 - "$WINDBOT_ROOT" <<'PY' | tee inspection/windbot-empty-decks.txt
+          from pathlib import Path
+          import re
+          import sys
+
+          root = Path(sys.argv[1])
+          decks = root / 'Decks'
+          executors = root / 'Game' / 'AI' / 'Decks'
+
+          empty = []
+          nonempty = []
+          for path in sorted(decks.glob('*.ydk')):
+              count = 0
+              section = None
+              for raw in path.read_text(encoding='utf-8-sig', errors='replace').splitlines():
+                  line = raw.strip()
+                  if not line:
+                      continue
+                  if line.startswith('#') or line.startswith('!'):
+                      section = line
+                      continue
+                  if line.isdigit():
+                      count += 1
+              (empty if count == 0 else nonempty).append((path.stem, count))
+
+          deck_attr = re.compile(r'\[Deck\(\s*"([^"]+)"(?:\s*,\s*"([^"]*)")?')
+          registered = []
+          for path in sorted(executors.glob('*.cs')):
+              text = path.read_text(encoding='utf-8-sig', errors='replace')
+              for m in deck_attr.finditer(text):
+                  name = m.group(1)
+                  deck_file = m.group(2) or name
+                  registered.append((name, deck_file, path.name))
+
+          print(f'ydk_total={len(empty)+len(nonempty)}')
+          print(f'empty_ydk_count={len(empty)}')
+          for name, count in empty:
+              refs = [x for x in registered if x[1] == name]
+              print(f'EMPTY\t{name}\tcards={count}\tregistered={bool(refs)}\trefs={refs}')
+
+          missing_files = []
+          for name, deck_file, source in registered:
+              if not (decks / f'{deck_file}.ydk').is_file():
+                  missing_files.append((name, deck_file, source))
+          print(f'registered_executor_count={len(registered)}')
+          print(f'executor_missing_ydk_count={len(missing_files)}')
+          for row in missing_files:
+              print('MISSING_YDK\t' + '\t'.join(row))
           PY
 
       - name: Inspect script download and extraction paths
