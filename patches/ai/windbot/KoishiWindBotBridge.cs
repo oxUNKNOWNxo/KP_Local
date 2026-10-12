@@ -134,7 +134,7 @@ public sealed class KoishiWindBotBridge
         Program.I().ocgcore.returnServant = Program.I().aiRoom;
         Program.I().ocgcore.name_0 = Config.Get("name", "Player");
         Program.I().ocgcore.name_0_c = Program.I().ocgcore.name_0;
-        Program.I().ocgcore.name_1 = "WindBot - " + aiDeckName;
+        Program.I().ocgcore.name_1 = "WindBot";
         Program.I().ocgcore.name_1_c = Program.I().ocgcore.name_1;
         Program.I().ocgcore.name_0_tag = "---";
         Program.I().ocgcore.name_1_tag = "---";

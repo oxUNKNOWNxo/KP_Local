@@ -27,16 +27,14 @@ uitexture_guid = guid_from_meta(uitexture_meta)
 text = prefab.read_text(encoding="utf-8-sig")
 parts = re.split(r"(?=--- !u!)", text)
 
-# Keep first-show geometry consistent with the runtime rule. The user sees
-# the translucent glass, not the outer mainWindow. Its vertical inset is 25px
-# while its horizontal inset is 18px, so equal outer-frame margins still look
-# wider on the sides.
+# Keep first-show geometry consistent with the runtime rule. Match the visible
+# horizontal deck-list margin to the visible lower margin, without adding an
+# extra outer-frame inset on the left and right.
 MAIN_HEIGHT = 480
 DECK_WIDTH = 330
 DECK_HEIGHT = 314
 DECK_OFFSET_X = 310
 DECK_CENTER_Y = -25
-GLASS_HORIZONTAL_INSET = 18
 GLASS_VERTICAL_INSET = 25
 VISIBLE_BOTTOM_MARGIN = round(
     (MAIN_HEIGHT * 0.5 - GLASS_VERTICAL_INSET)
@@ -47,10 +45,9 @@ MAIN_WIDTH = round(
         DECK_OFFSET_X
         + DECK_WIDTH * 0.5
         + VISIBLE_BOTTOM_MARGIN
-        + GLASS_HORIZONTAL_INSET
     )
 )
-GLASS_WIDTH = MAIN_WIDTH - GLASS_HORIZONTAL_INSET * 2
+GLASS_WIDTH = MAIN_WIDTH
 LINE_WIDTH = MAIN_WIDTH - 32
 
 def block_header(block: str):
@@ -139,14 +136,15 @@ def replace_local_x(block: str, target: int, accepted: tuple[int, ...]) -> str:
 # any widened mainWindow/list is still cut back to the legacy rectangle.
 container_go = game_object_id("GameObject")
 idx = component_index(container_go, "114", uipanel_guid)
-parts[idx] = replace_clip_width(parts[idx], MAIN_WIDTH, (500, 980, 1052, 1066, 1100))
+parts[idx] = replace_clip_width(parts[idx], MAIN_WIDTH, (500, 980, 1016, 1052, 1066, 1100))
 parts[idx] = replace_clip_height(parts[idx], MAIN_HEIGHT, (400, 420, 460))
 
 # The sibling glass texture supplies the translucent/blurred backdrop around
-# the modal. Widen it with the window so it does not remain a legacy-sized box.
+# the modal. Keep it flush with the adjusted outer frame so the side margin
+# matches the visible lower margin.
 glass_go = game_object_id("glass")
 idx = component_index(glass_go, "114", uitexture_guid)
-parts[idx] = replace_number(parts[idx], "mWidth", GLASS_WIDTH, (464, 944, 1016, 1030, 1064))
+parts[idx] = replace_number(parts[idx], "mWidth", GLASS_WIDTH, (464, 944, 980, 1016, 1030, 1064))
 parts[idx] = replace_number(parts[idx], "mHeight", MAIN_HEIGHT - 50, (350, 370, 410))
 
 # The original AI room is only 500x400, while one deck list already consumes
@@ -154,7 +152,7 @@ parts[idx] = replace_number(parts[idx], "mHeight", MAIN_HEIGHT - 50, (350, 370, 
 # NGUI prefab itself so the first activation cannot restore the old dimensions.
 main_go = game_object_id("mainWindow")
 idx = component_index(main_go, "114", uisprite_guid)
-parts[idx] = replace_number(parts[idx], "mWidth", MAIN_WIDTH, (500, 980, 1052, 1066, 1100))
+parts[idx] = replace_number(parts[idx], "mWidth", MAIN_WIDTH, (500, 980, 1016, 1052, 1066, 1100))
 parts[idx] = replace_number(parts[idx], "mHeight", MAIN_HEIGHT, (400, 420, 460))
 
 # Widen the original deck-list frame before AIRoom clones it for the AI side.
@@ -171,10 +169,10 @@ bar_go = game_object_id("bar_")
 idx = component_index(bar_go, "4")
 parts[idx] = replace_local_x(parts[idx], 160, (110, 135))
 
-# The separator belongs to the main frame. Let it span the widened window.
+# The separator belongs to the main frame. Let it span the adjusted window.
 line_go = game_object_id("line_")
 idx = component_index(line_go, "114", uisprite_guid)
-parts[idx] = replace_number(parts[idx], "mWidth", LINE_WIDTH, (468, 948, 1020, 1034, 1068))
+parts[idx] = replace_number(parts[idx], "mWidth", LINE_WIDTH, (468, 948, 984, 1020, 1034, 1068))
 
 patched = "".join(parts)
 prefab.write_text(patched, encoding="utf-8")

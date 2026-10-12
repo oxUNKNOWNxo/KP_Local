@@ -102,6 +102,7 @@ jobs:
           BRIDGE='source/Assets/SibylSystem/KoishiWindBotBridge.cs'
           ROUTER='source/Assets/SibylSystem/WindBotRuntime/LocalRuntime/LocalDuelRouter.cs'
           NATIVE='source/Assets/SibylSystem/WindBotRuntime/LocalRuntime/LocalDuelNative.cs'
+          LOCAL_DUEL='source/Assets/SibylSystem/WindBotRuntime/LocalRuntime/RadiantTyphoonLocalDuel.cs'
           DECKS_MANAGER='source/Assets/SibylSystem/WindBotRuntime/Game/AI/DecksManager.cs'
           EXECUTOR='source/Assets/SibylSystem/WindBotRuntime/Game/AI/Decks/RadiantTyphoonExecutor.cs'
           ALTEXECUTOR='source/Assets/SibylSystem/WindBotRuntime/Game/AI/Decks/BlueEyesExecutor.cs'
@@ -112,9 +113,10 @@ jobs:
           CORE='source/Assets/Plugins/iOS/libkoishi_ocgcore.a'
           SCRIPTS='source/Assets/StreamingAssets/koishi-main-script-update.zip'
 
-          for f in "$PROGRAM" "$MENU" "$AIROOM" "$BRIDGE" "$ROUTER" "$NATIVE" "$DECKS_MANAGER" "$EXECUTOR" "$ALTEXECUTOR" "$DECK" "$ALTDECK" "$CATALOG" "$DIALOG" "$CORE" "$SCRIPTS"; do
+          for f in "$PROGRAM" "$MENU" "$AIROOM" "$BRIDGE" "$ROUTER" "$NATIVE" "$LOCAL_DUEL" "$DECKS_MANAGER" "$EXECUTOR" "$ALTEXECUTOR" "$DECK" "$CATALOG" "$DIALOG" "$CORE" "$SCRIPTS"; do
             test -s "$f"
           done
+          test ! -e "$ALTDECK"
 
           grep -q 'KoishiWindBotBridge' "$AIROOM"
           grep -q 'GetDeckNames' "$AIROOM"
@@ -199,25 +201,32 @@ jobs:
           grep -q 'layoutRefreshFrames = 3' "$AIROOM"
           PREFAB='source/Assets/transUI/prefab/trans_AIroom.prefab'
           test -s "$PREFAB"
-          grep -q 'mWidth: 1052' "$PREFAB"
+          test "$(grep -c 'mWidth: 1016' "$PREFAB")" -ge 2
           grep -q 'mHeight: 480' "$PREFAB"
-          grep -q 'mClipRange: {x: 0, y: 0, z: 1052, w: 480}' "$PREFAB"
-          grep -q 'mWidth: 1016' "$PREFAB"
+          grep -q 'mClipRange: {x: 0, y: 0, z: 1016, w: 480}' "$PREFAB"
           grep -q 'mHeight: 430' "$PREFAB"
           grep -q 'mWidth: 330' "$PREFAB"
           grep -q 'z: 290, w: 314' "$PREFAB"
           grep -q 'm_LocalPosition: {x: 160, y: 0, z: 0}' "$PREFAB"
-          grep -q 'const int SerializedMainWindowWidth = 1052' "$AIROOM"
+          grep -q 'const int SerializedMainWindowWidth = 1016' "$AIROOM"
           grep -q 'const int MainWindowHeight = 480' "$AIROOM"
           grep -q 'const float DeckListOffset = 310f' "$AIROOM"
           grep -q 'CalculateMainWindowWidth' "$AIROOM"
           grep -q 'float visibleBottomMargin' "$AIROOM"
-          grep -q 'float horizontalGlassInset' "$AIROOM"
+          ! grep -q 'float horizontalGlassInset' "$AIROOM"
           grep -q 'ConfigureMainWindow' "$AIROOM"
           grep -q 'mainWindow.parent.GetComponent<UIPanel>()' "$AIROOM"
           grep -q 'rootPanel.baseClipRegion = clip' "$AIROOM"
-          grep -q 'glassWidget.width = mainWindowWidth - 36' "$AIROOM"
+          grep -Fq 'glassWidget.width = mainWindowWidth;' "$AIROOM"
+          ! grep -Fq 'glassWidget.width = mainWindowWidth - 36' "$AIROOM"
           grep -q 'mainWindowWidth \* 0.5f - 28f' "$AIROOM"
+          grep -Fq 'RMSshow_none("WindBotとの対戦を開始します。");' "$AIROOM"
+          ! grep -Fq 'pendingAiDeck + " で開始します。"' "$AIROOM"
+          grep -Fq 'Program.I().ocgcore.name_1 = "WindBot";' "$BRIDGE"
+          ! grep -Fq 'Program.I().ocgcore.name_1 = "WindBot - " + aiDeckName;' "$BRIDGE"
+          grep -Fq '_native.SetRegistry("player_name_0", _humanPlayer == 0 ? "Player" : "WindBot");' "$LOCAL_DUEL"
+          grep -Fq '_native.SetRegistry("player_name_1", _humanPlayer == 1 ? "Player" : "WindBot");' "$LOCAL_DUEL"
+          ! grep -Fq '"WindBot - " + _aiDeckName' "$LOCAL_DUEL"
           JA_REFERENCE='source/Assets/StreamingAssets/koishi-ja-translation-reference.conf'
           INTERSTRING='source/Assets/SibylSystem/InterString.cs'
           UIHELPER='source/Assets/SibylSystem/MonoHelpers/UIHelper.cs'
@@ -316,7 +325,8 @@ jobs:
           grep -q 'explicit iOS registry' "$DECKS_MANAGER"
           grep -q 'class RadiantTyphoonExecutor' "$EXECUTOR"
           grep -q 'class BlueEyesExecutor' "$ALTEXECUTOR"
-          awk -F '\t' '$1=="Blue-Eyes" && $2=="AI_BlueEyes" { found=1 } END { exit(found ? 0 : 1) }' "$CATALOG"
+          grep -Fq '_decks.Remove("Blue-Eyes");' "$DECKS_MANAGER"
+          ! grep -q '^Blue-Eyes[[:space:]]' "$CATALOG"
           awk -F '\t' '$1=="RadiantTyphoon" && $2=="AI_RadiantTyphoon" { found=1 } END { exit(found ? 0 : 1) }' "$CATALOG"
           deck_count=$(tail -n +2 "$CATALOG" | wc -l | tr -d ' ')
           echo "registered WindBot decks=$deck_count"
@@ -359,6 +369,7 @@ jobs:
             source/Assets/SibylSystem/KoishiWindBotBridge.cs
             source/Assets/SibylSystem/WindBotRuntime/LocalRuntime/LocalDuelRouter.cs
             source/Assets/SibylSystem/WindBotRuntime/LocalRuntime/LocalDuelNative.cs
+            source/Assets/SibylSystem/WindBotRuntime/LocalRuntime/RadiantTyphoonLocalDuel.cs
             source/Assets/SibylSystem/WindBotRuntime/Game/AI/DecksManager.cs
             source/Assets/SibylSystem/WindBotRuntime/Game/AI/Decks/RadiantTyphoonExecutor.cs
             source/Assets/SibylSystem/WindBotRuntime/Game/AI/Decks/BlueEyesExecutor.cs
@@ -367,7 +378,6 @@ jobs:
             source/Assets/Plugins/iOS/koishi-runtime-revisions.txt
             source/Assets/StreamingAssets/WindBotData/windbot-revision.txt
             source/Assets/StreamingAssets/WindBotData/Decks/AI_RadiantTyphoon.ydk
-            source/Assets/StreamingAssets/WindBotData/Decks/AI_BlueEyes.ydk
             source/Assets/StreamingAssets/koishi-main-scripts-revision.txt
           if-no-files-found: warn
           retention-days: 1

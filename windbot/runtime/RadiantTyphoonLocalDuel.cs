@@ -125,8 +125,8 @@ namespace KoishiWindBot.Local
             _native.SetRegistry("start_lp", life.ToString());
             _native.SetRegistry("start_hand", startHand.ToString());
             _native.SetRegistry("draw_count", drawCount.ToString());
-            _native.SetRegistry("player_name_0", _humanPlayer == 0 ? "Player" : "WindBot - " + _aiDeckName);
-            _native.SetRegistry("player_name_1", _humanPlayer == 1 ? "Player" : "WindBot - " + _aiDeckName);
+            _native.SetRegistry("player_name_0", _humanPlayer == 0 ? "Player" : "WindBot");
+            _native.SetRegistry("player_name_1", _humanPlayer == 1 ? "Player" : "WindBot");
             _native.SetRegistry("player_type_0", _aiPlayer == 0 ? "1" : "0");
             _native.SetRegistry("player_type_1", _aiPlayer == 1 ? "1" : "0");
 

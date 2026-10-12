@@ -9,7 +9,7 @@ public class AIRoom : WindowServantSP
     const int OptionFontSize = 22;
     const int DeckListFontSize = 22;
     const int TitleFontSize = 28;
-    const int SerializedMainWindowWidth = 1052;
+    const int SerializedMainWindowWidth = 1016;
     const int MainWindowHeight = 480;
     const int DeckListWidth = 330;
     const int DeckListClipWidth = 290;
@@ -443,9 +443,8 @@ public class AIRoom : WindowServantSP
         Bounds playerBounds = GetWidgetBoundsInLayout(playerFrame);
         Bounds aiBounds = GetWidgetBoundsInLayout(aiFrame);
 
-        // Match what is actually visible on-device: the translucent glass is
-        // inset farther vertically than horizontally. Measuring against the
-        // outer mainWindow therefore makes the side gap look slightly wider.
+        // Match the visible horizontal deck-list margin to the visible lower
+        // margin. Do not add the old extra 18px outer-frame inset on each side.
         float deckBottom = Mathf.Min(playerBounds.min.y, aiBounds.min.y);
         float visibleBottomMargin =
             Mathf.Max(0f, deckBottom - glassBounds.min.y);
@@ -454,15 +453,9 @@ public class AIRoom : WindowServantSP
         float halfContentWidth = Mathf.Max(
             mainBounds.center.x - deckLeft,
             deckRight - mainBounds.center.x);
-        float leftGlassInset =
-            Mathf.Max(0f, glassBounds.min.x - mainBounds.min.x);
-        float rightGlassInset =
-            Mathf.Max(0f, mainBounds.max.x - glassBounds.max.x);
-        float horizontalGlassInset =
-            Mathf.Max(leftGlassInset, rightGlassInset);
 
         float desiredWidth =
-            (halfContentWidth + visibleBottomMargin + horizontalGlassInset) * 2f;
+            (halfContentWidth + visibleBottomMargin) * 2f;
         return Mathf.Max(1, Mathf.RoundToInt(desiredWidth));
     }
 
@@ -499,7 +492,7 @@ public class AIRoom : WindowServantSP
             UIWidget glassWidget = glass.GetComponent<UIWidget>();
             if (glassWidget != null)
             {
-                glassWidget.width = mainWindowWidth - 36;
+                glassWidget.width = mainWindowWidth;
                 glassWidget.height = MainWindowHeight - 50;
             }
         }
@@ -1391,7 +1384,7 @@ public class AIRoom : WindowServantSP
 
         pregamePending = false;
         if (windbot.StartAI(pendingPlayerDeck, pendingAiDeck, playerGoFirst, pendingNoShuffle, DefaultLife))
-            RMSshow_none("WindBot: " + pendingAiDeck + " で開始します。");
+            RMSshow_none("WindBotとの対戦を開始します。");
         else
             SetSetupScreenVisible(true);
     }
