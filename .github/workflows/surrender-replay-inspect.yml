@@ -1,0 +1,84 @@
+name: KoishiPro2 surrender/replay inspection
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/surrender-replay-inspect.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: koishipro2-surrender-replay-inspection
+  cancel-in-progress: true
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SOURCE_REPO: https://code.moenext.com/hex/ygopro2.git
+      SOURCE_COMMIT: c1850e1120df6a5885692eadacad8ad114a3cf11
+
+    steps:
+      - name: Checkout control repository
+        uses: actions/checkout@v7
+        with:
+          path: control
+
+      - name: Restore fixed KoishiPro2 source snapshot
+        id: source-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: source
+          key: koishipro2-source-${{ env.SOURCE_COMMIT }}-v1
+
+      - name: Ensure fixed source is available
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -d source/.git ] || [ "$(git -C source rev-parse HEAD 2>/dev/null || true)" != "$SOURCE_COMMIT" ]; then
+            rm -rf source
+            mkdir source
+            git -C source init -q
+            git -C source remote add origin "$SOURCE_REPO"
+            git -C source config http.version HTTP/1.1
+            git -C source fetch --quiet --no-tags --depth=1 origin "$SOURCE_COMMIT"
+            git -C source checkout --quiet --detach FETCH_HEAD
+          fi
+          test "$(git -C source rev-parse HEAD)" = "$SOURCE_COMMIT"
+
+      - name: Inspect surrender and replay result paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p inspection
+          {
+            echo '=== surrender/give-up references ==='
+            grep -RniE -C 16 --include='*.cs' \
+              'surrender|Surrender|giveup|GiveUp|give[[:space:]_-]*up|投降|认输|認輸' \
+              source/Assets/SibylSystem source/Assets/YGOSharp 2>/dev/null | head -7000 || true
+
+            echo
+            echo '=== replay save / autosave references ==='
+            grep -RniE -C 16 --include='*.cs' \
+              'replay|Replay|saveReplay|SaveReplay|save.*replay|auto.*save|AutoSave|录像|录像保存|録画|保存录像' \
+              source/Assets/SibylSystem source/Assets/YGOSharp 2>/dev/null | head -9000 || true
+
+            echo
+            echo '=== duel result / defeat / end references ==='
+            grep -RniE -C 16 --include='*.cs' \
+              'duel.*end|end.*duel|game.*over|victory|defeat|lose|lost|win|winner|result|finish|胜利|失败|敗北|勝利' \
+              source/Assets/SibylSystem source/Assets/YGOSharp 2>/dev/null | head -9000 || true
+          } | tee inspection/surrender-replay-paths.txt
+
+      - name: Upload inspection snapshot
+        uses: actions/upload-artifact@v7
+        with:
+          name: KoishiPro2-surrender-replay-inspection
+          path: inspection/surrender-replay-paths.txt
+          if-no-files-found: error
+          retention-days: 1
