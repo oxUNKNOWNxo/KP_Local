@@ -96,4 +96,14 @@ jobs:
           for filename in cards.cdb lflist.conf strings.conf; do
             grep -Fq "https://cdn01.moestart.com/koishipro/ygopro-database/zh-CN/$filename" "$PROGRAM"
           done
+          python3 - "$PROGRAM" <<'PY'
+          from pathlib import Path
+          import sys
+          content = Path(sys.argv[1]).read_text(encoding='utf-8-sig')
+          start = content.index('private IEnumerator UpdateClientCoroutine()')
+          body = content[start:]
+          assert body.count('forceDownload: true') >= 3, 'Manual DB refresh does not bypass stale ETag checks'
+          assert 'InitializeBasicDataSyncState();' in content
+          print('Manual DB sync explicitly forces fresh resources; startup remains bundled-only.')
+          PY
           echo 'Startup DB protection validation passed; manual Resource Update uses YGOPro DB distribution.'
