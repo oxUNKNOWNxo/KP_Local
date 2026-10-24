@@ -36,6 +36,11 @@ jobs:
               print('First bytes:',path.read_bytes()[:48].hex())
               raise SystemExit(0)
           with zipfile.ZipFile(path) as z:
+              for script_name in ('script/c101307052.lua','script/c101307051.lua','script/c101307030.lua'):
+                  if script_name in z.namelist():
+                      print('FULL SCRIPT',script_name)
+                      for line_no,ln in enumerate(z.read(script_name).decode('utf-8-sig',errors='replace').splitlines(),1):
+                          print(f'{line_no:04d} {ln}')
               entries=z.namelist()
               print('Archive entries',len(entries))
               cdbs=[x for x in entries if x.lower().endswith(('.cdb','.db'))]
@@ -50,6 +55,7 @@ jobs:
                           con=sqlite3.connect(str(f))
                           cols=[c[1] for c in con.execute('pragma table_info(texts)').fetchall()]
                           if 'name' not in cols: continue
+                          for drow in con.execute('select id,alias,setcode,type from datas where id in (3016,10000010,10000011,101307052,101307051,101307030)').fetchall():print('DATA',fn,drow)
                           rows=con.execute('select id,name from texts where name like ? or name like ? or name like ? or name like ? or name like ?',('%太阳神%','%太陽神%','%翼神龙%','%翼神竜%','%ラー%')).fetchall()
                           con.close()
                           for id,name in rows:
