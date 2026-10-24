@@ -70,6 +70,24 @@ if already_synced_old not in text:
     raise SystemExit("Could not locate already-synced UseBundledBasicData branch")
 text = text.replace(already_synced_old, already_synced_new, 1)
 
+# The fixed upstream revision still points its *manual* BasicData sync to
+# cdntx2/koishipro/content. That CDN endpoint was superseded. Keep startup
+# network sync disabled, but redirect explicit Resource Update requests to the
+# YGOPro database resource distribution, preserving existing integrity checks,
+# transactional rollback and hot reload in UpdateClientCoroutine().
+manual_basic_data_urls = {
+    "cards.cdb": "https://cdn01.moestart.com/koishipro/ygopro-database/zh-CN/cards.cdb",
+    "lflist.conf": "https://cdn01.moestart.com/koishipro/ygopro-database/zh-CN/lflist.conf",
+    "strings.conf": "https://cdn01.moestart.com/koishipro/ygopro-database/zh-CN/strings.conf",
+}
+for filename, new_url in manual_basic_data_urls.items():
+    old_url = "https://cdntx2.moecube.com/koishipro/content/" + filename
+    if text.count(old_url) != 1:
+        raise SystemExit(f"Expected exactly one legacy manual BasicData URL for {filename}")
+    text = text.replace(old_url, new_url, 1)
+if "RetryBasicDataUpdate()" not in text or "UpdateClientCoroutine()" not in text:
+    raise SystemExit("Manual BasicData update methods unexpectedly disappeared")
+
 # Keep the fixed KoishiPro2 texture download/decode behavior unchanged.
 # Image-loading delay was traced to card/script content rather than this queue,
 # so do not throttle download concurrency, per-frame texture creation, or the
@@ -99,7 +117,7 @@ print(f"Patched: {program_path}")
 print("  - disabled forced basic-data sync at startup")
 print("  - normalized already-synced basic-data state to Ready")
 print("  - disabled resize-time Resources.UnloadUnusedAssets on iOS")
-print("  - left explicit/manual Resource Update behavior unchanged")
+print("  - retained manual Resource Update with current YGOPro DB distribution URLs")
 
 # ---------------------------------------------------------------------------
 # Restore the last upstream in-process AI implementation removed by
