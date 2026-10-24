@@ -93,4 +93,7 @@ jobs:
           grep -q 'UpdateClientCoroutine()' "$PROGRAM"
           grep -q 'RetryBasicDataUpdate()' "$PROGRAM"
           grep -q 'BasicDataState = BasicDataUpdateState.Ready;' "$PROGRAM"
-          echo 'Startup DB protection validation passed; manual Resource Update remains available.'
+          for filename in cards.cdb lflist.conf strings.conf; do
+            grep -Fq "https://cdn01.moestart.com/koishipro/ygopro-database/zh-CN/$filename" "$PROGRAM"
+          done
+          echo 'Startup DB protection validation passed; manual Resource Update uses YGOPro DB distribution.'
