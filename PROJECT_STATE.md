@@ -79,31 +79,39 @@ An item with the same key has already been added. Key: 572850
 
 原因は、KoishiPro2本体ですでに統合されているカードを、WindBot側の独立辞書にも追加CDBから再登録しようとしたため。
 
-### 3.2 現在の正しいカードデータ経路
+### 3.2 現在の正しいカードデータ経路（2026-10-24修正）
 
 WindBotのバンドル済み `cards.cdb` は**独立したまま保持する**。
-
-ocgcoreがカードデータを要求した場合:
+WindBotのAIロジックは引き続き独立DBを使用できるが、
+**ローカルocgcoreへのカード情報コールバックは、KoishiPro2本体の上書き済みデータを優先する**。
 
 ```
-WindBot側の標準 cards.cdb にカードがある
-    ↓ YES
-標準WindBotカードデータを使用
-
-    ↓ NO
-
-KoishiPro2本体の YGOSharp.CardsManager に問い合わせる
+ローカルocgcoreがカードデータを要求
     ↓
-本体が expansions/*.cdb から既に読み込んだカード情報を使用
+KoishiPro2本体の YGOSharp.CardsManager に該当IDあり
+    ↓ YES
+expansions/*.cdb で上書き済みの本体カード情報を使用
+    ↓ NO
+WindBot側の独立 cards.cdb からフォールバック
 ```
 
 この方式により、
 
 - 標準WindBotカードDBを汚さない
-- 同一IDの二重登録を避ける
-- 超先行カードのみ本体側から補完できる
+- 同一IDの二重登録を避ける（WindBot側へのexpansions再読込は禁止）
+- 新規カードだけでなく、**既存カードの公式超先行setcode更新**もローカル対戦へ反映する
+- 本体側に欠けているカードだけWindBot標準DBへフォールバックできる
 
-という状態になっている。
+という状態にする。
+
+修正理由: 公式ラー `10000010` は通常DBでは `setcode=0`、
+超先行 `test-update.cdb` では `setcode=0x2f0`。
+旧実装はWindBot独立DBを先に参照したため、既存ラーIDでは
+本体の超先行更新を使わず、《闇へ誘う太陽神》の
+`IsSetCard(0x2f0)` に失敗する経路があった。
+修正: `windbot/runtime/RadiantTyphoonLocalDuel.cs` の
+`ResolveDuelCard()` で本体を優先。
+`windbot-duel-smoke.yml` に既存IDのsetcode上書き回帰テストを追加。
 
 ### 3.3 Luaスクリプト
 
