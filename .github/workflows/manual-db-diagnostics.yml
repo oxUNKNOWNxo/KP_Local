@@ -1,0 +1,67 @@
+name: KoishiPro2 manual database and Ra diagnostic
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/manual-db-diagnostics.yml']
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch fixed and latest upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir upstream
+          git -C upstream init -q
+          git -C upstream remote add origin https://code.moenext.com/hex/ygopro2.git
+          git -C upstream config http.version HTTP/1.1
+          for ref in c1850e1120df6a5885692eadacad8ad114a3cf11 HEAD; do
+            echo "Fetching $ref"
+            git -C upstream fetch --quiet --no-tags --depth=1 origin "$ref"
+            mkdir -p "/tmp/koishi-${ref:0:6}"
+            git -C upstream archive FETCH_HEAD | tar -x -C "/tmp/koishi-${ref:0:6}"
+            echo "REF $ref => $(git -C upstream rev-parse FETCH_HEAD)"
+          done
+      - name: Inspect database update paths
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          for root in sorted(Path('/tmp').glob('koishi-*')):
+              base=root/'Assets'/'SibylSystem'
+              print('\n============== UPSTREAM',root,'==============')
+              for rel in ['Program.cs','Menu/Menu.cs','Setting/Setting.cs']:
+                  path=base/rel
+                  if not path.exists(): continue
+                  s=path.read_text(encoding='utf-8-sig',errors='replace').splitlines()
+                  regex=re.compile(r'BasicData|cards\.cdb|RetryBasicDataUpdate|UpdateClientCoroutine|ResourceUpdate|资源更新|Download.*Database|Download.*Resource|IsAuto|auto.*update|cdn\d|moestart|moecube|Reload.*Data|Refresh.*Database|下载资源|下载.*卡',re.I)
+                  hits=[i for i,x in enumerate(s) if regex.search(x)]
+                  print('FILE',rel,'hits',len(hits))
+                  blocks=[]
+                  for i in hits:
+                      st=max(0,i-5);en=min(len(s),i+8)
+                      if blocks and st<=blocks[-1][1]: blocks[-1]=(blocks[-1][0],max(blocks[-1][1],en))
+                      else:blocks.append((st,en))
+                  total=0
+                  for st,en in blocks:
+                      if total>500:break
+                      for i in range(st,en):
+                          print(f'{i+1:05d} {s[i][:220]}')
+                      total+=en-st
+          PY
+      - name: Check candidate official DB download endpoints
+        shell: bash
+        run: |
+          for url in \
+            https://cdntx2.moecube.com/koishipro/content/cards.cdb \
+            https://cdn01.moestart.com/koishipro/ygopro-database/zh-CN/cards.cdb \
+            http://cdn01.moestart.com/koishipro/ygopro-database/zh-CN/cards.cdb; do
+              echo "URL $url"
+              curl -L --max-time 15 -o /dev/null -sS -w 'status=%{http_code} type=%{content_type} bytes=%{size_download} effective=%{url_effective}\n' -r 0-100 "$url" || true
+          done
