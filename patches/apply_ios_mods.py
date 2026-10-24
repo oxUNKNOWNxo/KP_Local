@@ -102,7 +102,7 @@ for failure_var in manual_download_callbacks:
     callback = "(reason) => { " + failure_var + " = reason; }"
     if text.count(callback) != 1:
         raise SystemExit(f"Expected exactly one manual BasicData callback for {failure_var}")
-    text = text.replace(callback, callback + ",\\n                    forceDownload: true", 1)
+    text = text.replace(callback, callback + ",\n                    forceDownload: true", 1)
 
 # Keep the fixed KoishiPro2 texture download/decode behavior unchanged.
 # Image-loading delay was traced to card/script content rather than this queue,
