@@ -207,6 +207,7 @@ jobs:
               private const int ExpansionMonster = 19999999;
               private const int ExpansionAliasMonster = 19999998;
               private const int ExpansionAliasTarget = 55144522;
+              private const int OfficialRa = 10000010;
               private const byte MsgSelectBattleCmd = 10;
               private const byte MsgSelectIdleCmd = 11;
               private const byte MsgSelectEffectYn = 12;
@@ -328,6 +329,24 @@ jobs:
 
                       LocalDuelNative.CardProvider hostCardProvider = code =>
                       {
+                          if (code == OfficialRa)
+                          {
+                              // Mimic expansions/test-update.cdb overriding the
+                              // bundled cards.cdb where this existing ID has setcode 0.
+                              return new CardRecord
+                              {
+                                  Code = OfficialRa,
+                                  Alias = 0,
+                                  Setcode = 0x2f0,
+                                  Type = 33,
+                                  Level = 10,
+                                  Attribute = 1,
+                                  Race = 0x400,
+                                  Attack = 0,
+                                  Defense = 0,
+                                  RuleCode = 0
+                              };
+                          }
                           if (code == ExpansionMonster)
                           {
                               return new CardRecord
@@ -379,6 +398,23 @@ jobs:
                           hostCardProvider,
                           false))
                       {
+                          var windBotRa = KoishiWindBot.OCGWrapper.Card.Get(OfficialRa);
+                          if (windBotRa == null)
+                              throw new Exception("Official Ra is missing from WindBot's base cards.cdb.");
+                          var overriddenRa = RadiantTyphoonLocalDuel.ResolveDuelCard(
+                              OfficialRa, hostCardProvider);
+                          if (overriddenRa == null || overriddenRa.Setcode != 0x2f0ul)
+                              throw new Exception("Local native core ignored the official Ra expansion setcode.");
+                          var fallbackRa = RadiantTyphoonLocalDuel.ResolveDuelCard(
+                              OfficialRa, code => null);
+                          if (fallbackRa == null ||
+                              fallbackRa.Setcode != unchecked((ulong)windBotRa.Setcode))
+                              throw new Exception("WindBot standard card fallback was lost.");
+                          var hostOnly = RadiantTyphoonLocalDuel.ResolveDuelCard(
+                              ExpansionMonster, hostCardProvider);
+                          if (hostOnly == null || hostOnly.Code != ExpansionMonster)
+                              throw new Exception("Expansion-only host card fallback was lost.");
+                          Console.WriteLine("SMOKE: official Ra expansion setcode overrides local WindBot base.");
                           var windBotExpansionCard = KoishiWindBot.OCGWrapper.Card.Get(ExpansionMonster);
                           if (windBotExpansionCard != null)
                               throw new Exception("Expansion-only card unexpectedly leaked into WindBot's bundled database.");
@@ -507,6 +543,7 @@ jobs:
           grep -q 'SMOKE: player main-deck shuffle toggle verified.' "$ROOT/smoke.log"
           grep -q 'SMOKE: multi-deck registry verified;' "$ROOT/smoke.log"
           grep -q 'SMOKE: host card-data fallback and expansion script fallback verified.' "$ROOT/smoke.log"
+          grep -q 'SMOKE: official Ra expansion setcode overrides local WindBot base.' "$ROOT/smoke.log"
           grep -q 'using expansion card script: expansions/script/c19999998.lua' "$ROOT/smoke.log"
           grep -q 'WINDBOT_CHANT_TURN_SMOKE_OK' "$ROOT/smoke.log"
 
