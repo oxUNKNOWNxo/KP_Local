@@ -1,0 +1,67 @@
+name: KoishiPro2 Sun God prerelease diagnostics
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/ra-prerelease-diagnostics.yml']
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Fetch official Koishi super-prerelease archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          for u in \
+            https://cdntx2.moecube.com/ygopro-super-pre/archive/ygopro-super-pre.ypk \
+            https://cdn02.moecube.com:444/ygopro-super-pre/archive/ygopro-super-pre.ypk; do
+            if curl -fLsS --connect-timeout 10 --max-time 150 --retry 2 -o /tmp/super-pre.ypk "$u"; then
+              echo "Downloaded $(stat -c%s /tmp/super-pre.ypk) bytes from $u"
+              break
+            fi
+          done
+          test -s /tmp/super-pre.ypk
+      - name: Inspect Ra and new Sun God card conditions
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile,sqlite3,re,tempfile
+          path=Path('/tmp/super-pre.ypk')
+          print('zip archive:',zipfile.is_zipfile(path))
+          if not zipfile.is_zipfile(path):
+              print('First bytes:',path.read_bytes()[:48].hex())
+              raise SystemExit(0)
+          with zipfile.ZipFile(path) as z:
+              entries=z.namelist()
+              print('Archive entries',len(entries))
+              cdbs=[x for x in entries if x.lower().endswith(('.cdb','.db'))]
+              print('CDBs:',cdbs[:30])
+              scripts={x for x in entries if x.lower().endswith('.lua')}
+              ids=set()
+              for fn in cdbs:
+                  with tempfile.TemporaryDirectory() as d:
+                      f=Path(d)/'db.cdb'
+                      f.write_bytes(z.read(fn))
+                      try:
+                          con=sqlite3.connect(str(f))
+                          cols=[c[1] for c in con.execute('pragma table_info(texts)').fetchall()]
+                          if 'name' not in cols: continue
+                          rows=con.execute('select id,name from texts where name like ? or name like ? or name like ? or name like ? or name like ?',('%太阳神%','%太陽神%','%翼神龙%','%翼神竜%','%ラー%')).fetchall()
+                          con.close()
+                          for id,name in rows:
+                              ids.add(id);print('CARD',fn,id,repr(name))
+                      except Exception as e:print('DB read failed',fn,str(e)[:160])
+              for id in sorted(ids):
+                  hits=[s for s in scripts if s.endswith('/c'+str(id)+'.lua') or s=='c'+str(id)+'.lua']
+                  for fn in hits:
+                      src=z.read(fn).decode('utf-8-sig',errors='replace')
+                      print('SCRIPT',fn,'length',len(src))
+                      for i,line in enumerate(src.splitlines(),1):
+                          if re.search(r'IsCode|IsSetCard|IsFusionSetCard|3016|10000010|0x1e7|aux\.IsCode|GetCode|GetOriginalCode|LOCATION_DECK|IsAbleToGraveAsCost',line,re.I):
+                              print(f'  {i}: {line[:220]}')
+              print('Scripts referenced by card ID',len(ids))
+          PY
