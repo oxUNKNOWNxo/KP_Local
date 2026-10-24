@@ -88,6 +88,22 @@ for filename, new_url in manual_basic_data_urls.items():
 if "RetryBasicDataUpdate()" not in text or "UpdateClientCoroutine()" not in text:
     raise SystemExit("Manual BasicData update methods unexpectedly disappeared")
 
+# Users explicitly request resource synchronization from Menu > Resource Update.
+# Avoid stale/missing ETag misclassifying an out-of-date local DB as current.
+# This only affects the three BasicData sync downloads in UpdateClientCoroutine;
+# startup does NOT invoke the coroutine, so automatic updates stay disabled.
+# The existing ValidateDownloadedFile/transaction/rollback/reload code remains.
+manual_download_callbacks = (
+    "cardsDbFailure",
+    "lflistFailure",
+    "stringsFailure",
+)
+for failure_var in manual_download_callbacks:
+    callback = "(reason) => { " + failure_var + " = reason; }"
+    if text.count(callback) != 1:
+        raise SystemExit(f"Expected exactly one manual BasicData callback for {failure_var}")
+    text = text.replace(callback, callback + ",\\n                    forceDownload: true", 1)
+
 # Keep the fixed KoishiPro2 texture download/decode behavior unchanged.
 # Image-loading delay was traced to card/script content rather than this queue,
 # so do not throttle download concurrency, per-frame texture creation, or the
@@ -117,7 +133,7 @@ print(f"Patched: {program_path}")
 print("  - disabled forced basic-data sync at startup")
 print("  - normalized already-synced basic-data state to Ready")
 print("  - disabled resize-time Resources.UnloadUnusedAssets on iOS")
-print("  - retained manual Resource Update with current YGOPro DB distribution URLs")
+print("  - retained manual Resource Update with current YGOPro DB URLs and explicit refresh (bypasses stale ETags)")
 
 # ---------------------------------------------------------------------------
 # Restore the last upstream in-process AI implementation removed by
