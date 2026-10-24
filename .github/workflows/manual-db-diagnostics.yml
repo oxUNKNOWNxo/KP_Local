@@ -1,4 +1,4 @@
-name: KoishiPro2 manual database and Ra diagnostic
+name: KoishiPro2 manual database CDN diagnostic
 on:
   workflow_dispatch:
   push:
@@ -7,61 +7,47 @@ on:
 permissions:
   contents: read
 jobs:
-  inspect:
+  probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-      - name: Fetch fixed and latest upstream
+      - name: Probe HEAD and GET as used by the Unity card downloader
         shell: bash
         run: |
-          set -euo pipefail
-          mkdir upstream
-          git -C upstream init -q
-          git -C upstream remote add origin https://code.moenext.com/hex/ygopro2.git
-          git -C upstream config http.version HTTP/1.1
-          for ref in c1850e1120df6a5885692eadacad8ad114a3cf11 HEAD; do
-            echo "Fetching $ref"
-            git -C upstream fetch --quiet --no-tags --depth=1 origin "$ref"
-            mkdir -p "/tmp/koishi-${ref:0:6}"
-            git -C upstream archive FETCH_HEAD | tar -x -C "/tmp/koishi-${ref:0:6}"
-            echo "REF $ref => $(git -C upstream rev-parse FETCH_HEAD)"
+          set -u
+          for host in \
+            https://cdntx2.moecube.com/koishipro/content \
+            https://cdn01.moestart.com/koishipro/ygopro-database/zh-CN \
+            http://cdn01.moestart.com/koishipro/ygopro-database/zh-CN; do
+            for filename in cards.cdb lflist.conf strings.conf; do
+              url="$host/$filename"
+              echo "=== $url ==="
+              echo -n 'HEAD: '
+              curl --max-time 15 -L -I -sS -o /dev/null -w 'HTTP %{http_code}, length %{content_length_download}, effective %{url_effective}\n' "$url" || true
+              echo -n 'GET: '
+              tmp=$(mktemp)
+              curl --max-time 20 -L -sS --range 0-47 -o "$tmp" -w 'HTTP %{http_code}, bytes %{size_download}, effective %{url_effective}\n' "$url" || true
+              echo -n 'first 16 bytes (hex): '
+              head -c 16 "$tmp" | od -An -tx1
+              rm -f "$tmp"
+            done
           done
-      - name: Inspect database update paths
+      - name: Inspect fixed program from existing cache when available
+        uses: actions/cache/restore@v4
+        with:
+          path: source
+          key: koishipro2-source-c1850e1120df6a5885692eadacad8ad114a3cf11-v1
+      - name: Inspect installed update code without new network fetch
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import re
-          for root in sorted(Path('/tmp').glob('koishi-*')):
-              base=root/'Assets'/'SibylSystem'
-              print('\n============== UPSTREAM',root,'==============')
-              for rel in ['Program.cs','Menu/Menu.cs','Setting/Setting.cs']:
-                  path=base/rel
-                  if not path.exists(): continue
-                  s=path.read_text(encoding='utf-8-sig',errors='replace').splitlines()
-                  regex=re.compile(r'BasicData|cards\.cdb|RetryBasicDataUpdate|UpdateClientCoroutine|ResourceUpdate|资源更新|Download.*Database|Download.*Resource|IsAuto|auto.*update|cdn\d|moestart|moecube|Reload.*Data|Refresh.*Database|下载资源|下载.*卡',re.I)
-                  hits=[i for i,x in enumerate(s) if regex.search(x)]
-                  print('FILE',rel,'hits',len(hits))
-                  blocks=[]
-                  for i in hits:
-                      st=max(0,i-5);en=min(len(s),i+8)
-                      if blocks and st<=blocks[-1][1]: blocks[-1]=(blocks[-1][0],max(blocks[-1][1],en))
-                      else:blocks.append((st,en))
-                  total=0
-                  for st,en in blocks:
-                      if total>500:break
-                      for i in range(st,en):
-                          print(f'{i+1:05d} {s[i][:220]}')
-                      total+=en-st
+          p=Path('source/Assets/SibylSystem/Program.cs')
+          if not p.exists():
+              print('No upstream source cache available; previous workflow logs cover fixed Program.cs.')
+          else:
+              s=p.read_text(encoding='utf-8-sig').splitlines()
+              for i,x in enumerate(s):
+                  if 'RetryBasicDataUpdate()' in x or 'UpdateClientCoroutine()' in x or 'koishipro/content' in x:
+                      print('\n'.join('%s %s' % (k+1,s[k]) for k in range(max(0,i-5),min(len(s),i+10))))
           PY
-      - name: Check candidate official DB download endpoints
-        shell: bash
-        run: |
-          for url in \
-            https://cdntx2.moecube.com/koishipro/content/cards.cdb \
-            https://cdn01.moestart.com/koishipro/ygopro-database/zh-CN/cards.cdb \
-            http://cdn01.moestart.com/koishipro/ygopro-database/zh-CN/cards.cdb; do
-              echo "URL $url"
-              curl -L --max-time 15 -o /dev/null -sS -w 'status=%{http_code} type=%{content_type} bytes=%{size_download} effective=%{url_effective}\n' -r 0-100 "$url" || true
-          done
