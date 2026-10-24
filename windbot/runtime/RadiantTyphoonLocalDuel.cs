@@ -64,38 +64,48 @@ namespace KoishiWindBot.Local
                         routerRef.HandleAiClientPacket(packet);
                 });
 
+            // The host CardsManager already applied expansions/*.cdb overrides.
+            // Give the native duel core the same card data shown by KoishiPro2;
+            // WindBot's independent base DB is only a fallback, never re-import
+            // expansion databases into its dictionary (duplicate-key regression).
             LocalDuelNative.Configure(
                 Directory.GetCurrentDirectory(),
-                code =>
-                {
-                    Card card = Card.Get((int)code);
-                    if (card != null)
-                    {
-                        return new CardRecord
-                        {
-                            Code = (uint)card.Id,
-                            Alias = (uint)card.Alias,
-                            Setcode = unchecked((ulong)card.Setcode),
-                            Type = (uint)card.Type,
-                            Level = (uint)card.Level,
-                            Attribute = (uint)card.Attribute,
-                            Race = (uint)card.Race,
-                            Attack = card.Attack,
-                            Defense = card.Defense,
-                            LScale = (uint)card.LScale,
-                            RScale = (uint)card.RScale,
-                            LinkMarker = (uint)card.LinkMarker,
-                            RuleCode = 0
-                        };
-                    }
-
-                    return externalCardProvider == null ? null : externalCardProvider(code);
-                },
+                code => ResolveDuelCard(code, externalCardProvider),
                 log);
 
             _native = new LocalDuelNative();
             _router = new LocalDuelRouter(_native, _windBot, humanGameMessage, log, humanFirst);
             routerRef = _router;
+        }
+
+        internal static CardRecord ResolveDuelCard(uint code, LocalDuelNative.CardProvider hostCardProvider)
+        {
+            // Prefer the host's post-expansion record even when the card ID
+            // also exists in WindBot's base cards.cdb (e.g. Ra 10000010).
+            CardRecord hostCard = hostCardProvider == null ? null : hostCardProvider(code);
+            if (hostCard != null)
+                return hostCard;
+
+            Card card = Card.Get((int)code);
+            if (card == null)
+                return null;
+
+            return new CardRecord
+            {
+                Code = (uint)card.Id,
+                Alias = (uint)card.Alias,
+                Setcode = unchecked((ulong)card.Setcode),
+                Type = (uint)card.Type,
+                Level = (uint)card.Level,
+                Attribute = (uint)card.Attribute,
+                Race = (uint)card.Race,
+                Attack = card.Attack,
+                Defense = card.Defense,
+                LScale = (uint)card.LScale,
+                RScale = (uint)card.RScale,
+                LinkMarker = (uint)card.LinkMarker,
+                RuleCode = 0
+            };
         }
 
         public void Start(IList<int> humanMain, IList<int> humanExtra, bool noShuffle = false, int life = 8000, int startHand = 5, int drawCount = 1, int duelRule = 5)
