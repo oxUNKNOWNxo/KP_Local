@@ -193,8 +193,14 @@ jobs:
             echo 'Forced startup RetryBasicDataUpdate call is still present.'
             exit 1
           fi
-          grep -q 'https://cdntx2.moecube.com/koishipro/content/cards.cdb' "$PROGRAM"
-          echo 'Forced DB sync removal validation passed; manual Resource Update remains available.'
+          for filename in cards.cdb lflist.conf strings.conf; do
+            grep -Fq "https://cdn01.moestart.com/koishipro/ygopro-database/zh-CN/$filename" "$PROGRAM"
+            if grep -Fq "https://cdntx2.moecube.com/koishipro/content/$filename" "$PROGRAM"; then
+              echo "Legacy BasicData URL remains: $filename"
+              exit 1
+            fi
+          done
+          echo 'Forced startup DB sync remains disabled; manual Resource Update URLs are updated.'
 
       - name: Verify patched managed sources before Unity
         shell: bash
