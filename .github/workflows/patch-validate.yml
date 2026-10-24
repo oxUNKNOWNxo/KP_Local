@@ -103,6 +103,10 @@ jobs:
           start = content.index('private IEnumerator UpdateClientCoroutine()')
           body = content[start:]
           assert body.count('forceDownload: true') >= 3, 'Manual DB refresh does not bypass stale ETag checks'
+          for failure_var in ('cardsDbFailure', 'lflistFailure', 'stringsFailure'):
+              callback = '(reason) => { ' + failure_var + ' = reason; },' + chr(10) + '                    forceDownload: true'
+              assert body.count(callback) == 1, f'Manual update callback incorrectly escaped or duplicated: {failure_var}'
+          assert ',\\n                    forceDownload: true' not in body, 'Literal backslash-n breaks generated C# syntax'
           assert 'InitializeBasicDataSyncState();' in content
           print('Manual DB sync explicitly forces fresh resources; startup remains bundled-only.')
           PY
