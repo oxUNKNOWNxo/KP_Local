@@ -24,6 +24,37 @@ jobs:
             fi
           done
           test -s /tmp/super-pre.ypk
+      - name: Download current official basic cards database
+        shell: bash
+        run: |
+          curl -fLsS --connect-timeout 10 --max-time 100 --retry 2 \
+            -o /tmp/current-cards.cdb \
+            'https://cdn01.moestart.com/koishipro/ygopro-database/zh-CN/cards.cdb'
+          sqlite3 /tmp/current-cards.cdb 'PRAGMA quick_check;'
+      - name: Compare actual official Ra records and archive overrides
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import sqlite3,zipfile,tempfile
+          ids=(10000010,10000011,10000012,10000013,10000014,10000015,10000080,10000090,101307030,101307051,101307052,3016)
+          dbs=[('main',Path('/tmp/current-cards.cdb'))]
+          with zipfile.ZipFile('/tmp/super-pre.ypk') as z, tempfile.TemporaryDirectory() as d:
+              for name in ['test-release.cdb','test-update.cdb']:
+                  path=Path(d)/name
+                  path.write_bytes(z.read(name))
+                  dbs.append((name,path))
+              for label,path in dbs:
+                  con=sqlite3.connect(str(path))
+                  print('DATABASE',label,'bytes',path.stat().st_size)
+                  for code in ids:
+                      data=con.execute('SELECT id,alias,setcode,type FROM datas WHERE id=?',(code,)).fetchone()
+                      title=con.execute('SELECT name FROM texts WHERE id=?',(code,)).fetchone()
+                      if data:
+                          print('RA DATA',label,code,'alias',data[1],'setcode',data[2],hex(data[2]) if isinstance(data[2],int) else '', 'type',data[3], 'name',title[0] if title else '')
+                  print('DB count',con.execute('select count(*) from datas').fetchone()[0])
+                  con.close()
+          PY
       - name: Inspect Ra and new Sun God card conditions
         shell: bash
         run: |
