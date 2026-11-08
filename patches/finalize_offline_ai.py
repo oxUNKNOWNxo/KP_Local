@@ -28,16 +28,28 @@ shutil.copyfile(viewport_source, viewport_target)
 program_path = assets / "SibylSystem" / "Program.cs"
 program = program_path.read_text(encoding="utf-8-sig")
 if "IPhone16x9Viewport.EnsureInstalled();" not in program:
+    # The basic-data startup path is now a user-controlled if/else instead
+    # of two consecutive calls. Install the iOS viewport marker after the
+    # shared initialization statement, regardless of whether DB sync is ON.
+    game_start = program.index("    void gameStart()")
+    game_end = program.index("    public static bool Running", game_start)
+    game_body = program[game_start:game_end]
     startup_pattern = re.compile(
-        r"(?m)^(?P<indent>[ \t]*)InitializeBasicDataSyncState\(\);[ \t]*\n"
-        r"(?P=indent)UseBundledBasicData\(\);[ \t]*$"
+        r"(?m)^(?P<indent>[ \t]*)InitializeBasicDataSyncState\\(\\);[ \t]*$"
     )
-    match = startup_pattern.search(program)
-    if not match:
-        raise SystemExit("Could not locate patched Program startup sequence for viewport installation")
+    matches = list(startup_pattern.finditer(game_body))
+    if len(matches) != 1:
+        raise SystemExit(
+            f"Could not uniquely locate Program.gameStart sync initialization for viewport: {len(matches)}"
+        )
+    match = matches[0]
     indent = match.group("indent")
-    replacement = match.group(0) + "\n" + indent + "IPhone16x9Viewport.EnsureInstalled();"
-    program = program[: match.start()] + replacement + program[match.end() :]
+    insert_at = game_start + match.end()
+    program = (
+        program[:insert_at]
+        + "\\n" + indent + "IPhone16x9Viewport.EnsureInstalled();"
+        + program[insert_at:]
+    )
 # Prepare shared card scripts and AI-specific data before the main menu
 # becomes interactive. This keeps AI-room entry free of installation/copy work.
 startup_anchor = "        backGroundPic.show();\n        shiftToServant(menu);"
