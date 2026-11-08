@@ -35,7 +35,7 @@ if "IPhone16x9Viewport.EnsureInstalled();" not in program:
     game_end = program.index("    public static bool Running", game_start)
     game_body = program[game_start:game_end]
     startup_pattern = re.compile(
-        r"(?m)^(?P<indent>[ \t]*)InitializeBasicDataSyncState\\(\\);[ \t]*$"
+        r"(?m)^(?P<indent>[ \t]*)InitializeBasicDataSyncState\(\);[ \t]*$"
     )
     matches = list(startup_pattern.finditer(game_body))
     if len(matches) != 1:
@@ -47,7 +47,7 @@ if "IPhone16x9Viewport.EnsureInstalled();" not in program:
     insert_at = game_start + match.end()
     program = (
         program[:insert_at]
-        + "\\n" + indent + "IPhone16x9Viewport.EnsureInstalled();"
+        + "\n" + indent + "IPhone16x9Viewport.EnsureInstalled();"
         + program[insert_at:]
     )
 # Prepare shared card scripts and AI-specific data before the main menu
