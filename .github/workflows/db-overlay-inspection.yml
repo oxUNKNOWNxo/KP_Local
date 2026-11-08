@@ -103,26 +103,24 @@ jobs:
                   print(f'{i+1:05d}',line[:230])
           PY
 
-      - name: Inspect saved checkbox names in settings prefabs and config
+      - name: Inspect all named settings controls and database toggle labels
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
           import re
           root=Path('source/Assets')
-          pattern=re.compile(r'(?:DB|database|data.?base|自动更新|自动下载|卡片数据|卡牌数据|启用|アップデート|更新|update|autopic)',re.I)
-          count=0
-          for p in sorted(root.rglob('*')):
-            if p.suffix.lower() not in ('.prefab','.asset','.conf','.txt','.json','.unity'):continue
-            if not p.is_file() or p.stat().st_size>2000000:continue
+          for p in sorted(root.rglob('*setting*.prefab')):
+            if not p.is_file() or p.stat().st_size>3000000:continue
             try: lines=p.read_text(encoding='utf-8-sig').splitlines()
-            except (OSError, UnicodeError):continue
-            hits=[i for i,t in enumerate(lines) if pattern.search(t)]
-            if not hits:continue
-            if 'setting' not in str(p).lower() and not 'config' in str(p).lower():continue
-            print('FILE',p,'HITS',len(hits))
-            for i in hits[:45]:
-              print(f'{i+1:05d}',lines[i][:270])
-            count+=1
-            if count>=50:break
+            except (OSError,UnicodeError):continue
+            print('FILE',p)
+            names=[]
+            for i,t in enumerate(lines):
+              if re.search(r'^  (m_Name|mText): ',t):
+                value=t.strip()
+                if value not in names:names.append(value)
+              if re.search(r'(?:数据库|卡牌数据|卡片数据|DB|Database|AutoPicDownload|enable.?update|auto.?update)',t,re.I):
+                print('TARGET',i+1,t[:350])
+            print('SETTINGS LABELS',repr(names[:210]))
           PY
