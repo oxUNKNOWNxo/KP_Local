@@ -69,3 +69,39 @@ jobs:
                       lo=max(0,i-2);hi=min(len(src),i+5)
                       print(' / '.join(f'{j+1}:{src[j][:220]}' for j in range(lo,hi)))
           PY
+
+      - name: Audit settings opt-in DB update and startup callback
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          base=Path('source/Assets')
+          if not base.exists():
+              print('NO_CACHE')
+              raise SystemExit(1)
+          terms=re.compile(r'RetryBasicDataUpdate|UpdateClientCoroutine|UseBundledBasicData|InitializeBasicDataSyncState|auto.?update|update.?db|db.?update|update.?card|update.?data|data.?update|自动更新|数据库更新|更新数据库|データベース更新|DBのアップデート|基本数据更新|auto.?sync|sync.?auto|database.?sync|dbAuto|dbupdate|db_update',re.I)
+          for p in sorted(base.rglob('*')):
+              if p.suffix.lower() not in ('.cs','.conf','.txt','.json','.xml','.prefab','.asset'): continue
+              if not p.is_file() or p.stat().st_size > 700000:continue
+              try: ss=p.read_text(encoding='utf-8-sig')
+              except (UnicodeError,OSError):continue
+              lines=ss.splitlines()
+              hits=[i for i,x in enumerate(lines) if terms.search(x)]
+              if not hits:continue
+              print('MATCH FILE',p,'HITS',len(hits))
+              max_lines=330 if p.name=='Program.cs' else 160
+              spans=[]
+              for i in hits[:65]:
+                  lo=max(0,i-(12 if p.name=='Program.cs' else 5))
+                  hi=min(len(lines),i+(22 if p.name=='Program.cs' else 12))
+                  if spans and lo<=spans[-1][1]:spans[-1][1]=max(hi,spans[-1][1])
+                  else:spans.append([lo,hi])
+              printed=0
+              for lo,hi in spans:
+                  if printed>=max_lines:break
+                  for j in range(lo,min(hi,lo+max_lines-printed)):
+                      print(f'{j+1:05d} {lines[j][:210]}')
+                      printed+=1
+                  print('---')
+          PY
