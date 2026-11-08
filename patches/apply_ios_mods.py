@@ -46,11 +46,22 @@ m = startup_matches[0]
 indent = m.group("indent")
 startup_replacement = (
     f"{indent}InitializeBasicDataSyncState();\n"
-    f"{indent}UseBundledBasicData();"
+    f"{indent}// Honor the existing card picture/new-card download setting on startup.\n"
+    f"{indent}if (UIHelper.fromStringToBool(Config.Get(\"*AutoPicDownload\", \"0\")))\n"
+    f"{indent}{{\n"
+    f"{indent}    RetryBasicDataUpdate();\n"
+    f"{indent}}}\n"
+    f"{indent}else\n"
+    f"{indent}{{\n"
+    f"{indent}    UseBundledBasicData();\n"
+    f"{indent}}}"
 )
 text = text[: m.start()] + startup_replacement + text[m.end() :]
-if re.search(r"(?m)^[ \t]*RetryBasicDataUpdate\(\);[ \t]*$", text):
-    raise SystemExit("Startup RetryBasicDataUpdate call is still present after patch")
+if len(re.findall(r"(?m)^[ \t]*RetryBasicDataUpdate\\(\\);[ \t]*$", text)) != 1:
+    raise SystemExit("Expected one opt-in startup RetryBasicDataUpdate call after patch")
+if text.count('Config.Get("*AutoPicDownload", "0")') != 1:
+    raise SystemExit("Startup opt-in must read the persisted settings toggle")
+
 # A completed previous online sync must not leave the UI in the default
 # Checking/0% state. Without this, UseBundledBasicData() returns early and
 # the main menu permanently shows a bogus "checking card data... 0%" line.
@@ -130,7 +141,7 @@ text = text.replace(resize_unload_old, resize_unload_new, 1)
 
 program_path.write_text(text, encoding="utf-8")
 print(f"Patched: {program_path}")
-print("  - disabled forced basic-data sync at startup")
+print("  - startup DB sync follows saved *AutoPicDownload; disabled by default; manual refresh retained")
 print("  - normalized already-synced basic-data state to Ready")
 print("  - disabled resize-time Resources.UnloadUnusedAssets on iOS")
 print("  - retained manual Resource Update with current YGOPro DB URLs and explicit refresh (bypasses stale ETags)")
