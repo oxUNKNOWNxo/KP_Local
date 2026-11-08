@@ -57,6 +57,20 @@ jobs:
             root/'SibylSystem/Setting/Setting.cs',
             root/'SibylSystem/Config.cs',
           )
+          program=(root/'SibylSystem/Program.cs').read_text(encoding='utf-8-sig',errors='replace').splitlines()
+          print('EXACT STARTUP CONTEXT')
+          for i,line in enumerate(program):
+            if 'RetryBasicDataUpdate();' in line or 'Config.Get(' in line:
+              lo=max(0,i-24);hi=min(len(program),i+25)
+              print('--- HIT',i+1)
+              for j in range(lo,hi):
+                print(f'{j+1:05d} {program[j][:230]}')
+          print('EXACT ALL STARTUP OPTIONS IN CONFIG')
+          setting=(root/'SibylSystem/Setting/Setting.cs').read_text(encoding='utf-8-sig',errors='replace').splitlines()
+          for i,line in enumerate(setting):
+            if 'AutoPicDownload' in line or 'collection[i].name' in line:
+              for j in range(max(0,i-5),min(len(setting),i+7)):
+                print(f'{j+1:05d} {setting[j][:230]}')
           for p in relevant:
             if not p.exists():
               print('NOT_FOUND',p)
