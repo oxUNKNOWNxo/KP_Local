@@ -57,7 +57,7 @@ startup_replacement = (
     f"{indent}}}"
 )
 text = text[: m.start()] + startup_replacement + text[m.end() :]
-if len(re.findall(r"(?m)^[ \t]*RetryBasicDataUpdate\\(\\);[ \t]*$", text)) != 1:
+if len(re.findall(r"(?m)^[ \t]*RetryBasicDataUpdate\(\);[ \t]*$", text)) != 1:
     raise SystemExit("Expected one opt-in startup RetryBasicDataUpdate call after patch")
 if text.count('Config.Get("*AutoPicDownload", "0")') != 1:
     raise SystemExit("Startup opt-in must read the persisted settings toggle")
