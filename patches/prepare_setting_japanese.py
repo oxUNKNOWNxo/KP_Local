@@ -69,6 +69,26 @@ for source, target in literal_replacements.items():
     elif target not in text:
         raise SystemExit(f"Settings dynamic localization anchor missing: {source}")
 
+# Keep auto-fetch opt-in by default: the settings UI and Program.gameStart
+# must both use the same default for the existing *AutoPicDownload toggle.
+default_on = '                    || collection[i].name == "*AutoPicDownload"\n'
+if text.count(default_on) != 1:
+    raise SystemExit("Could not uniquely locate *AutoPicDownload default-on setting")
+text = text.replace(default_on, "", 1)
+
+# UIToggle settings were previously saved only on Settings close/application
+# shutdown. Persist immediately, including if iOS terminates the app.
+download_assignment = "GameTextureManager.AutoPicDownload = setting.autoPicDownload.value;"
+if text.count(download_assignment) != 1:
+    raise SystemExit("Could not uniquely locate onchangeDownload handler")
+text = text.replace(
+    download_assignment,
+    download_assignment
+    + '\n        Config.Set("*AutoPicDownload", '
+    + 'UIHelper.fromBoolToString(setting.autoPicDownload.value));',
+    1,
+)
+
 setting_path.write_text(text, encoding="utf-8")
 
 verify = setting_path.read_text(encoding="utf-8")
@@ -95,6 +115,10 @@ for needle in (
     if needle not in helper_verify:
         raise SystemExit(f"Settings Japanese helper verification failed: {needle}")
 
+if '|| collection[i].name == "*AutoPicDownload"' in verify:
+    raise SystemExit("Auto DB update toggle must be OFF until explicitly enabled")
+if 'Config.Set("*AutoPicDownload", ' not in verify:
+    raise SystemExit("Auto DB update toggle must persist immediately on change")
 print("Prepared screen-local Japanese settings UI:")
 print(f"  - patched Setting.initialize(): {setting_path}")
 print(f"  - exact-match translator: {helper_target}")
