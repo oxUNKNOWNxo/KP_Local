@@ -1339,3 +1339,23 @@ Duel.SelectOption(tp,aux.Stringid(id,2),1212)
 
 3082専用クライアントパッチを削除したcommit:
 - ee2809b0c228a7ab2744a6bd4a430d5bcb124570
+
+
+## 2026-11-09 — 設定ONでもカードDB自動更新が始まらない問題
+
+元の `Program.gameStart()` は `RetryBasicDataUpdate()` を毎回呼んでいたが、
+以前のiOSパッチはこれを設定確認なしで `UseBundledBasicData()` に置き換えていた。
+そのため、設定画面で自動ダウンロードを有効にしてもDB同期が起動しなかった。
+
+修正後は `Config.Get("*AutoPicDownload", "0")` で**既存の
+「カード画像とDBの自動更新」**設定を確認する。
+- OFF（初期値）: `InitializeBasicDataSyncState()` と `UseBundledBasicData()` のみ
+- ON: `RetryBasicDataUpdate()` を起動し、更新された基本DBを安全に適用
+- 設定画面の `onchangeDownload()` で `Config.Set("*AutoPicDownload", ...)` を直ちに保存
+- メニュー「リソース更新」の明示的同期はON/OFFに関わらず利用可能
+- 超先行カードの更新チェックおよびローカルAI用DBの優先順序は変更しない
+
+`patches/apply_ios_mods.py`、`patches/prepare_setting_japanese.py`、
+`patches/settings/SettingJapaneseLayout.cs` を更新。
+パッチ検証とiOSビルドのワークフローで、ON/OFFと設定永続化を確認する。
+
