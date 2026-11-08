@@ -181,18 +181,30 @@ jobs:
           path: ~/.cache/koishipro2-ai-core
           key: koishipro2-ai-core-${{ runner.os }}-${{ runner.arch }}-${{ env.AI_CORE_COMMIT }}-v1
 
-      - name: Verify forced DB sync removal
+      - name: Verify opt-in startup DB update and manual refresh
         shell: bash
         run: |
           set -euo pipefail
           PROGRAM="source/Assets/SibylSystem/Program.cs"
-          test -f "$PROGRAM"
-          echo "Program source: $PROGRAM"
-          grep -q 'UseBundledBasicData();' "$PROGRAM"
-          if grep -Eq '^[[:space:]]*RetryBasicDataUpdate\(\);[[:space:]]*$' "$PROGRAM"; then
-            echo 'Forced startup RetryBasicDataUpdate call is still present.'
-            exit 1
-          fi
+          SETTING="source/Assets/SibylSystem/Setting/Setting.cs"
+          test -s "$PROGRAM"
+          test -s "$SETTING"
+          python3 - "$PROGRAM" "$SETTING" <<'PY'
+          from pathlib import Path
+          import sys
+          program=Path(sys.argv[1]).read_text(encoding='utf-8-sig')
+          settings=Path(sys.argv[2]).read_text(encoding='utf-8-sig')
+          startup=program[program.index('void gameStart()'):]
+          startup=startup[:startup.index('public static bool Running')]
+          assert 'Config.Get("*AutoPicDownload", "0")' in startup
+          assert startup.count('RetryBasicDataUpdate();')==1
+          assert 'UseBundledBasicData();' in startup
+          assert 'InitializeBasicDataSyncState();' in startup
+          assert '|| collection[i].name == "*AutoPicDownload"' not in settings
+          assert 'Config.Set("*AutoPicDownload", ' in settings
+          assert program.count('forceDownload: true')>=3
+          print('Card DB updates are opt-in and persisted; manual refresh intact.')
+          PY
           for filename in cards.cdb lflist.conf strings.conf; do
             grep -Fq "https://cdn01.moestart.com/koishipro/ygopro-database/zh-CN/$filename" "$PROGRAM"
             if grep -Fq "https://cdntx2.moecube.com/koishipro/content/$filename" "$PROGRAM"; then
@@ -200,7 +212,6 @@ jobs:
               exit 1
             fi
           done
-          echo 'Forced startup DB sync remains disabled; manual Resource Update URLs are updated.'
 
       - name: Verify patched managed sources before Unity
         shell: bash
