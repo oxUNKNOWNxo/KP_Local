@@ -83,12 +83,21 @@ jobs:
           python3 - "$PROGRAM" <<'PY'
           from pathlib import Path
           import sys
-          lines = Path(sys.argv[1]).read_text(encoding='utf-8-sig').splitlines()
-          if any(line.strip() == 'RetryBasicDataUpdate();' for line in lines):
-              raise SystemExit('Forced startup RetryBasicDataUpdate call remains.')
+          content = Path(sys.argv[1]).read_text(encoding='utf-8-sig')
+          start = content.index('void gameStart()')
+          end = content.index('public static bool Running', start)
+          body = content[start:end]
+          assert body.count('RetryBasicDataUpdate();') == 1, 'Opt-in DB startup callback missing'
+          assert 'Config.Get("*AutoPicDownload", "0")' in body, 'DB sync must be default-off'
+          assert body.index('Config.Get("*AutoPicDownload", "0")') < body.index('RetryBasicDataUpdate();')
+          assert 'else' in body and 'UseBundledBasicData();' in body, 'DB sync OFF must use local data'
+          settings = Path('source/Assets/SibylSystem/Setting/Setting.cs').read_text(encoding='utf-8-sig')
+          assert '|| collection[i].name == "*AutoPicDownload"' not in settings, 'Settings toggle default must be OFF'
+          assert 'Config.Set("*AutoPicDownload", ' in settings, 'Settings changes must persist immediately'
+          print('DB auto update respects saved opt-in; disabled by default.')
           PY
           # Do not pin this validation to particular CDN URLs. The important
-          # behavior is that automatic startup sync is gone while the existing
+          # behavior is that startup sync is opt-in while the existing
           # manual Resource Update coroutine/method remains in the client.
           grep -q 'UpdateClientCoroutine()' "$PROGRAM"
           grep -q 'RetryBasicDataUpdate()' "$PROGRAM"
@@ -108,6 +117,6 @@ jobs:
               assert body.count(callback) == 1, f'Manual update callback incorrectly escaped or duplicated: {failure_var}'
           assert ',\\n                    forceDownload: true' not in body, 'Literal backslash-n breaks generated C# syntax'
           assert 'InitializeBasicDataSyncState();' in content
-          print('Manual DB sync explicitly forces fresh resources; startup remains bundled-only.')
+          print('Manual DB sync explicitly forces fresh resources; startup respects the saved toggle.')
           PY
-          echo 'Startup DB protection validation passed; manual Resource Update uses YGOPro DB distribution.'
+          echo 'Default-off opt-in DB sync validation passed; manual Resource Update remains available.'
