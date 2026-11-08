@@ -9,67 +9,37 @@ permissions:
 jobs:
   inspect:
     runs-on: macos-15-intel
-    timeout-minutes: 8
+    timeout-minutes: 16
     steps:
       - name: Restore fixed Koishi source cache
         uses: actions/cache/restore@v6
         with:
           path: source
           key: koishipro2-source-c1850e1120df6a5885692eadacad8ad114a3cf11-v1
-      - name: Inspect source card load/update/pack extraction logic
+      - name: Fetch exact KoishiPro2 source when cache has expired
         shell: bash
+        env:
+          SOURCE_REPO: https://code.moenext.com/hex/ygopro2.git
+          SOURCE_COMMIT: c1850e1120df6a5885692eadacad8ad114a3cf11
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-          base=Path('source/Assets')
-          expected=base/'SibylSystem/Program.cs'
-          if not expected.exists():
-              print('SOURCE_CACHE_UNAVAILABLE')
-              raise SystemExit(0)
-          for rel in ('SibylSystem/Program.cs','SibylSystem/Menu/Menu.cs'):
-              p=base/rel
-              if not p.exists():continue
-              src=p.read_text(encoding='utf-8-sig',errors='replace').splitlines()
-              print('FILE',rel,'lines',len(src))
-              hits=[i for i,l in enumerate(src) if re.search('LoadDatabaseFile|CardsManager\\.initialize|expansions|test-update\\.cdb|test-release\\.cdb|DownloadAndApplySuperPre|DownloadFileWithHeadCheck|ExtractZip|ReloadGameDatabases|Register.*Database|SearchDatabase',l,re.I)]
-              blocks=[]
-              for i in hits:
-                  lo=max(0,i-7);hi=min(len(src),i+12)
-                  if blocks and lo<=blocks[-1][1]:blocks[-1][1]=max(hi,blocks[-1][1])
-                  else: blocks.append([lo,hi])
-              linesprinted=0
-              for lo,hi in blocks:
-                  if linesprinted>1000:break
-                  for i in range(lo,hi):
-                      print(f'{i+1:05d} {src[i][:220]}')
-                  print('---')
-                  linesprinted+=hi-lo
-          print('=== CORE DB READER CONNECTIONS ===')
-          for p in sorted(base.rglob('*.cs')):
-              try: body=p.read_text(encoding='utf-8-sig',errors='replace')
-              except: continue
-              if 'new smallYgopro(' not in body and 'OnCardReader' not in body and 'cardHandler(' not in body and 'HowToReadCard' not in body:continue
-              print('FILE',p)
-              lines=body.splitlines()
-              for i,ln in enumerate(lines):
-                  if any(x in ln for x in ('new smallYgopro(', 'OnCardReader','cardHandler(', 'HowToReadCard','set_card_api(')):
-                      for j in range(max(0,i-9),min(len(lines),i+14)):
-                          print(f'{j+1:05d} {lines[j][:200]}')
-          print('=== CARDSMANAGER CORE IMPLEMENTATION ===')
-          cardpath=base/'YGOSharp/CardsManager.cs'
-          cardlines=cardpath.read_text(encoding='utf-8-sig',errors='replace').splitlines()
-          for i in range(0,min(160,len(cardlines))):
-              print(f'{i+1:05d} {cardlines[i][:225]}')
-          for p in base.rglob('CardsManager.cs'):
-              print('FILE',p,'lines')
-              src=p.read_text(encoding='utf-8-sig',errors='replace').splitlines()
-              for i,l in enumerate(src):
-                  if re.search('initialize|setcode|alias|dictionary|SELECT|datas|cache|clear|reload',l,re.I):
-                      lo=max(0,i-2);hi=min(len(src),i+5)
-                      print(' / '.join(f'{j+1}:{src[j][:220]}' for j in range(lo,hi)))
-          PY
-
+          set -euo pipefail
+          if [ -d source/.git ] && [ "$(git -C source rev-parse HEAD 2>/dev/null || true)" = "$SOURCE_COMMIT" ]; then
+            echo "Using cached exact revision."
+          else
+            rm -rf source
+            mkdir source
+            git -C source init -q
+            git -C source remote add origin "$SOURCE_REPO"
+            git -C source config http.version HTTP/1.1
+            for attempt in 1 2 3; do
+              if git -C source fetch --quiet --no-tags --depth=1 origin "$SOURCE_COMMIT"; then
+                git -C source checkout --quiet --detach FETCH_HEAD
+                break
+              fi
+              echo "Source fetch attempt $attempt failed; retrying."
+            done
+          fi
+          test "$(git -C source rev-parse HEAD)" = "$SOURCE_COMMIT"
       - name: Audit settings opt-in DB update and startup callback
         shell: bash
         run: |
