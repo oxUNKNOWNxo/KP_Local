@@ -1359,3 +1359,12 @@ Duel.SelectOption(tp,aux.Stringid(id,2),1212)
 `patches/settings/SettingJapaneseLayout.cs` を更新。
 パッチ検証とiOSビルドのワークフローで、ON/OFFと設定永続化を確認する。
 
+
+
+## 2026-11-16 — ローカルAIの未完了リプレイ保存を抑止
+
+元の Program.OnApplicationQuit() は TcpHelper.SaveRecord() を呼ぶ。SaveRecord は勝敗確定を必須条件としておらず、記録が一定量あれば保存していた。そのため未完了のローカルAI対戦でもアプリ正常終了時に replay/*.yrp3d が生成され得た。
+
+対策: patches/skip_incomplete_ai_replays.py を apply_ios_mods.py のパッチ処理に追加。ReplayRecord に IsLocalAI と HasDuelResult を持たせる。ローカルAI記録は GameMessage.Win（正式な勝敗/降参）を受信するまで SaveRecord のファイル書き込みを抑止する。正常終了、切断、次の対戦開始時の SaveRecord に共通適用する。完了したAI対戦は既存の自動保存ON/OFF・手動保存に従い、オンライン対戦は従来どおり。
+
+iOS強制終了時に OnApplicationQuit が実行されるとは限らないが、実行された場合にも未完了AIリプレイを残さない。patch-validate.yml に回帰テストを追加。
