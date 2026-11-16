@@ -120,3 +120,19 @@ jobs:
           print('Manual DB sync explicitly forces fresh resources; startup respects the saved toggle.')
           PY
           echo 'Default-off opt-in DB sync validation passed; manual Resource Update remains available.'
+          python3 - <<'PY'
+          from pathlib import Path
+          content=Path('source/Assets/SibylSystem/MonoHelpers/TcpHelper.cs').read_text(encoding='utf-8-sig')
+          header=content.index('public static void SaveRecord(ReplayRecord record, bool forceAutoSave = false)')
+          ending=content.index('static void WriteRecordPacket',header)
+          save=content[header:ending]
+          guard='if (record.IsLocalAI && !record.HasDuelResult)'
+          assert save.count(guard)==1, 'Interrupted AI duel could be saved at app shutdown'
+          assert save.index(guard)<save.index('Directory.CreateDirectory("replay")'), 'Guard must precede replay write'
+          assert content.count('IsLocalAI = Program.I().ocgcore.InAI')==1, 'AI record must retain its duel origin'
+          add=content[content.index('public static void AddRecordLine(Package p)'):]
+          assert add.index('currentRecord.HasDuelResult = true')<add.index('currentRecord.Packets.Add(p)'), 'Win must be marked before save'
+          assert 'if (p.Fuction == (int)GameMessage.Win && AutoSaveReplayEnabled)' in add, 'Keep existing autosave on result'
+          print('Incomplete local AI replays are discarded; results and online replays remain saveable.')
+          PY
+
